@@ -1,0 +1,51 @@
+name: Bug Report
+description: Report a functional defect in RepoRepublic.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the bug clearly and concretely.
+      placeholder: What failed, where, and under which command?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal steps to reproduce.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python, uv, Codex, and tracker mode when relevant.
+      placeholder: macOS / Python 3.12 / uv 0.10.x / codex-cli 0.107.0 / fixture mode
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      description: Paste the relevant error output.
+      render: shell
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+      description: Links, suspected cause, or affected files.

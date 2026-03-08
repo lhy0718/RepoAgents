@@ -1,0 +1,198 @@
+# Operations Runbook
+
+This runbook is the day-2 operating guide for RepoRepublic maintainers.
+
+## Scope
+
+Use this document when you need to:
+
+- start or stop routine repository maintenance
+- inspect a failed or stuck run
+- re-run a specific issue safely
+- validate webhook-driven execution
+- review runtime artifacts, logs, and dashboard output
+
+## Primary operator loop
+
+Normal operating flow:
+
+1. Check environment health with `uv run republic doctor`
+2. Inspect the latest state with `uv run republic status`
+3. Render the local dashboard with `uv run republic dashboard`
+4. Run the polling loop with `uv run republic run`
+5. Use `uv run republic trigger <issue-id>` or `uv run republic webhook ...` for targeted intervention
+
+## Command reference
+
+```bash
+uv run republic doctor
+uv run republic run
+uv run republic run --once
+uv run republic run --dry-run
+uv run republic trigger 123
+uv run republic trigger 123 --dry-run
+uv run republic webhook --event issues --payload webhook.json --dry-run
+uv run republic status
+uv run republic status --issue 123
+uv run republic sync ls
+uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
+uv run republic sync apply --issue 1 --tracker local-file --action comment --latest
+uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest
+uv run republic clean --sync-applied --dry-run
+uv run republic retry 123
+uv run republic clean --dry-run
+uv run republic clean
+uv run republic dashboard
+uv run republic dashboard --format all
+```
+
+## Runtime locations
+
+- config: `.ai-republic/reporepublic.yaml`
+- state: `.ai-republic/state/runs.json`
+- artifacts: `.ai-republic/artifacts/issue-<id>/<run-id>/`
+- workspaces: `.ai-republic/workspaces/issue-<id>/<run-id>/repo/`
+- dashboard: `.ai-republic/dashboard/index.html`
+- dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
+- dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- logs when enabled: `.ai-republic/logs/reporepublic.jsonl`
+- sync staging: `.ai-republic/sync/<tracker>/issue-<id>/`
+- sync applied archive: `.ai-republic/sync-applied/<tracker>/issue-<id>/`
+
+## Dashboard sync handoffs
+
+The dashboard now includes a `Sync handoffs` section sourced from `.ai-republic/sync-applied/**/manifest.json`.
+
+Use it when you need to:
+
+- inspect which staged publish proposals were already handled
+- open archived `branch` / `pr` / `pr-body` bundle members from one place
+- follow normalized links such as `metadata_artifact` after the original staged file has moved
+
+Refresh all exports with:
+
+```bash
+uv run republic dashboard --format all
+```
+
+## Normal checks
+
+Before starting live runs:
+
+- confirm `codex --version` and `codex login`
+- confirm `GITHUB_TOKEN` if the tracker is in live GitHub mode
+- run `uv run republic doctor`
+- if the repo uses `workspace.strategy: worktree`, confirm the target repo is a valid Git work tree
+- inspect `workspace.dirty_policy` before running against a locally modified repository
+
+## Failure handling
+
+### A run is `retry_pending`
+
+1. Inspect the latest run: `uv run republic status --issue <id>`
+2. Open the role artifacts for the failing run
+3. Fix the underlying cause if needed
+4. Force a new retry window: `uv run republic retry <id>`
+5. Rebuild the dashboard: `uv run republic dashboard`
+
+### A run is `failed`
+
+Check these first:
+
+- Codex CLI availability and login state
+- GitHub auth, rate limit, or network health
+- policy findings in reviewer artifacts
+- dirty working tree or worktree setup problems
+
+Then either:
+
+- re-run one issue directly with `uv run republic trigger <id>`
+- or schedule it back into retry with `uv run republic retry <id>`
+
+### The polling loop appears idle
+
+Use:
+
+```bash
+uv run republic status
+uv run republic run --once
+uv run republic dashboard
+```
+
+If `run --once` finds nothing:
+
+- verify the tracker input source
+- verify issue state and labels
+- verify the issue fingerprint did not already complete
+- use `trigger` for a one-off forced rerun when appropriate
+
+### Webhook payload did not start a run
+
+1. Save the payload to disk
+2. Validate it with:
+
+```bash
+uv run republic webhook --event issues --payload webhook.json --dry-run
+```
+
+3. Confirm the payload maps to an open issue number
+4. If the issue is intentionally already complete, use `trigger --force` only after human review
+
+## Safe manual intervention
+
+Use the least destructive option first:
+
+1. `status --issue <id>` to inspect
+2. `dashboard` to rebuild the view
+3. `retry <id>` to reopen the run
+4. `trigger <id> --dry-run` to preview one issue
+5. `trigger <id>` to execute one issue
+6. `clean --dry-run` before any cleanup
+
+Avoid deleting state or workspace files by hand unless the CLI cleanup path cannot recover.
+
+## Offline publish handoff
+
+When a tracker stages publish proposals locally instead of applying them directly:
+
+1. inspect the inventory with `uv run republic sync ls`
+2. open one artifact with `uv run republic sync show ...`
+3. apply supported tracker helpers with `uv run republic sync apply ...` when appropriate, for example `local-file` or `local-markdown` comment and label proposals
+4. copy any remaining handoff proposal manually
+5. review the archive under `.ai-republic/sync-applied/` and the dashboard `Sync handoffs` section
+6. use `uv run republic clean --sync-applied --dry-run` before pruning old applied handoff groups
+
+## Human approval boundary
+
+RepoRepublic remains conservative by default:
+
+- reviewer approval does not merge code
+- dangerous diffs still require human judgment
+- docs/tests changes may open a draft PR depending on policy, but merge stays manual
+- secrets, CI/CD changes, auth-sensitive paths, and large deletions should be reviewed as incidents
+
+## Recommended routine
+
+Daily:
+
+- `doctor`
+- `status`
+- `dashboard`
+
+For each incident:
+
+- inspect the failing run
+- collect artifacts and logs
+- decide whether to `retry`, `trigger`, or leave the issue pending
+
+Weekly:
+
+- clean stale local data with `clean --dry-run` then `clean`
+- review template drift with `republic init --upgrade`
+
+## Related examples
+
+- live GitHub ops blueprint: [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
+- live GitHub rollout walkthrough: [./live-github-ops.md](./live-github-ops.md)
+- local webhook receiver: [../examples/webhook-receiver/README.md](../examples/webhook-receiver/README.md)
+- signed local webhook receiver: [../examples/webhook-signature-receiver/README.md](../examples/webhook-signature-receiver/README.md)

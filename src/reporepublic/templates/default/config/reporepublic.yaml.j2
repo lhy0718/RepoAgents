@@ -1,0 +1,54 @@
+tracker:
+  kind: {{ tracker_kind }}
+{% if tracker_kind == "github" %}
+  repo: {{ tracker_repo }}
+  poll_interval_seconds: 60
+  mode: {{ tracker_mode }}
+{% if fixtures_path %}
+  fixtures_path: {{ fixtures_path }}
+{% endif %}
+{% else %}
+  path: {{ tracker_path or fixtures_path or "issues.json" }}
+  poll_interval_seconds: 60
+{% endif %}
+workspace:
+  root: ./.ai-republic/workspaces
+  strategy: copy
+  dirty_policy: warn
+agent:
+  max_concurrent_runs: 2
+  max_turns: 20
+  role_timeout_seconds: 900
+  retry_limit: 3
+  base_retry_seconds: 30
+  debug_artifacts: false
+roles:
+  enabled:
+    - triage
+    - planner
+    - engineer
+    - reviewer
+merge_policy:
+  mode: human_approval
+auto_merge:
+  allowed_types:
+    - docs
+    - tests
+safety:
+  allow_write_comments: true
+  allow_open_pr: false
+llm:
+  mode: codex
+codex:
+  command: codex
+  model: gpt-5.4
+  use_agents_md: true
+  sandbox: workspace-write
+  approval_policy: never
+logging:
+  json: true
+  level: INFO
+  file_enabled: false
+  directory: ./.ai-republic/logs
+cleanup:
+  sync_applied_keep_groups_per_issue: 20

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_DIR="$ROOT_DIR/examples/qa-role-pack"
+DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
+
+if [[ -z "$DEST_DIR" ]]; then
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-qa-role-pack-XXXXXX")"
+else
+  rm -rf "$DEST_DIR"
+  mkdir -p "$DEST_DIR"
+fi
+
+cp -R "$SOURCE_DIR/." "$DEST_DIR/"
+
+pushd "$DEST_DIR" >/dev/null
+
+uv run --project "$ROOT_DIR" republic init \
+  --preset python-library \
+  --fixture-issues issues.json \
+  --tracker-repo demo/qa-role-pack \
+  --backend mock
+
+uv run --project "$ROOT_DIR" python - <<'PY'
+from pathlib import Path
+import yaml
+
+path = Path(".ai-republic/reporepublic.yaml")
+payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+payload["roles"]["enabled"] = ["triage", "planner", "engineer", "qa", "reviewer"]
+path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+PY
+
+uv run --project "$ROOT_DIR" republic doctor
+uv run --project "$ROOT_DIR" republic trigger 1
+uv run --project "$ROOT_DIR" republic status --issue 1
+uv run --project "$ROOT_DIR" republic dashboard
+
+popd >/dev/null
+
+printf 'Demo workspace: %s\n' "$DEST_DIR"

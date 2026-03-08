@@ -1,0 +1,49 @@
+name: Docs Task
+description: Track documentation or quickstart improvements.
+title: "[Docs] "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: gap
+    attributes:
+      label: Documentation gap
+      description: What is unclear, missing, outdated, or misleading?
+      placeholder: README, QUICKSTART, examples, architecture docs, or policy docs.
+    validations:
+      required: true
+  - type: textarea
+    id: audience
+    attributes:
+      label: Target audience
+      description: Who is blocked by this documentation issue?
+      placeholder: First-time operator, maintainer, contributor, release engineer, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What documents or examples should be updated?
+      placeholder: |
+        - README.md
+        - QUICKSTART.md
+        - docs/architecture.md
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Define completion conditions.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How should the docs be verified?
+      placeholder: Fresh-run quickstart, command copy/paste check, link validation, bilingual sync.

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 201,
+    "number": 201,
+    "title": "Improve README quickstart",
+    "body": "Document how to start the app locally and where to find the preview URL.",
+    "labels": ["docs"],
+    "comments": []
+  },
+  {
+    "id": 202,
+    "number": 202,
+    "title": "Add empty state docs for dashboard",
+    "body": "The empty state behavior is not described anywhere and support keeps asking.",
+    "labels": ["docs"],
+    "comments": []
+  }
+]

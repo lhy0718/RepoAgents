@@ -1,0 +1,11 @@
+{
+  "action": "opened",
+  "issue": {
+    "number": 1,
+    "state": "open",
+    "title": "Fix empty input crash"
+  },
+  "repository": {
+    "full_name": "demo/webhook-signature-receiver"
+  }
+}

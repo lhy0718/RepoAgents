@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "number": 1,
+    "title": "Improve README quickstart for first-time contributors",
+    "body": "Tighten the quickstart section, keep examples copy/paste friendly, and stay inside Markdown and docs guidance only.",
+    "labels": ["docs"],
+    "comments": []
+  },
+  {
+    "id": 2,
+    "number": 2,
+    "title": "Clarify documentation policy for examples",
+    "body": "Document how maintainers should review command snippets and reference links before approving docs changes.",
+    "labels": ["docs"],
+    "comments": []
+  }
+]

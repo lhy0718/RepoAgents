@@ -1,0 +1,31 @@
+[
+  {
+    "id": 101,
+    "number": 101,
+    "title": "Fix empty input crash",
+    "body": "Calling `parse_items(\"\")` should return an empty list instead of failing downstream.",
+    "labels": ["bug"],
+    "comments": [
+      {
+        "author": "maintainer",
+        "body": "This shows up in onboarding examples when the input box is empty."
+      }
+    ]
+  },
+  {
+    "id": 102,
+    "number": 102,
+    "title": "Improve README quickstart",
+    "body": "The quickstart should explain install and test commands for new contributors.",
+    "labels": ["docs"],
+    "comments": []
+  },
+  {
+    "id": 103,
+    "number": 103,
+    "title": "Add missing unit tests for parser",
+    "body": "We need coverage for whitespace trimming and empty input behavior.",
+    "labels": ["tests"],
+    "comments": []
+  }
+]

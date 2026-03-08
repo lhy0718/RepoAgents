@@ -1,0 +1,17 @@
+# Scope Policy
+
+Preset: `{{ preset.name }}`
+
+{{ preset.scope_summary }}
+
+## Rules
+{% for rule in preset.rules %}
+- {{ rule }}
+{% endfor %}
+
+## Always out of scope without human approval
+
+- Secrets or credential files
+- CI/CD workflow rewrites
+- Large destructive deletions
+- Permission or auth-sensitive configuration changes

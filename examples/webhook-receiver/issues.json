@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "number": 1,
+    "title": "Fix empty input crash",
+    "body": "Calling parse_items on an empty string should return an empty list instead of returning a blank item.",
+    "labels": ["bug"],
+    "comments": []
+  },
+  {
+    "id": 2,
+    "number": 2,
+    "title": "Improve offline quickstart",
+    "body": "Document how to drive RepoRepublic from a local webhook receiver without GitHub network access.",
+    "labels": ["docs"],
+    "comments": []
+  }
+]

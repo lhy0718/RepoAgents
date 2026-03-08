@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# IDE files
+.idea/
+.vscode/
+
+# RepoRepublic runtime outputs
+.ai-republic/artifacts/
+.ai-republic/branches/
+.ai-republic/dashboard/
+.ai-republic/inbox/
+.ai-republic/logs/
+.ai-republic/sync/
+.ai-republic/sync-applied/
+.ai-republic/workspaces/
+.ai-republic/state/runs.json

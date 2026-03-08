@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "number": 1,
+    "title": "Fix empty input crash",
+    "body": "Calling parse_items on an empty string should return an empty list and add focused validation before review.",
+    "labels": ["bug"],
+    "comments": []
+  },
+  {
+    "id": 2,
+    "number": 2,
+    "title": "Add missing parser unit tests",
+    "body": "Expand parser coverage and let the QA role summarize any remaining gaps.",
+    "labels": ["tests"],
+    "comments": []
+  }
+]
