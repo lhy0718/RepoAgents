@@ -150,7 +150,9 @@ bash ../../scripts/demo_local_markdown_sync.sh
 `uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest`를 실행하면 최신 comment proposal이 원본 Markdown issue에 반영되고, 처리된 artifact는 `.ai-republic/sync-applied/`로 이동합니다.
 `uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle`을 실행하면 관련 branch/PR handoff set을 한 번에 archive할 수 있습니다.
 같은 JSON inbox 경로에서는 `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`를 사용하면 됩니다.
+`uv run republic sync check --issue 1`로 applied manifest 무결성을 확인하고, `uv run republic sync repair --issue 1 --dry-run`으로 canonicalize/adopt 결과를 미리 볼 수 있습니다.
 오래된 applied handoff group을 지우기 전에는 `uv run republic clean --sync-applied --dry-run`으로 manifest-aware retention 결과를 먼저 확인합니다.
+`uv run republic dashboard --format all`을 실행하면 `Sync handoffs`와 함께 `Sync retention`도 볼 수 있고, prunable group 수, prunable bytes, oldest prunable age를 한눈에 확인할 수 있습니다.
 
 ## 4. 운영 모드로 전환
 
@@ -192,6 +194,8 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard: `.ai-republic/dashboard/index.html`
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - 선택적 JSONL 로그: `.ai-republic/logs/reporepublic.jsonl`
 - 특정 이슈 상태: `uv run republic status --issue 123`
 - 특정 이슈 즉시 실행: `uv run republic trigger 123`
@@ -199,6 +203,10 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - 즉시 재시도 예약: `uv run republic retry 123`
 - 오래된 local 정리 미리보기: `uv run republic clean --dry-run`
 - applied sync archive 정리 미리보기: `uv run republic clean --sync-applied --dry-run`
+- cleanup preview/report export: `uv run republic clean --sync-applied --dry-run --report --report-format all`
+- applied manifest 무결성 검사: `uv run republic sync check --issue 123`
+- applied manifest repair 미리보기: `uv run republic sync repair --issue 123 --dry-run`
+- sync audit bundle export: `uv run republic sync audit --format all`
 - 로컬 대시보드 다시 생성: `uv run republic dashboard`
 - timed reload가 있는 대시보드 생성: `uv run republic dashboard --refresh-seconds 30`
 - HTML, JSON, Markdown을 함께 export: `uv run republic dashboard --format all`

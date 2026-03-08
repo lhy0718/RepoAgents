@@ -183,6 +183,9 @@ uv run republic dashboard
 For staged local publish proposals:
 
 - `uv run republic sync ls --issue 1`
+- `uv run republic sync check --issue 1`
+- `uv run republic sync repair --issue 1 --dry-run`
+- `uv run republic sync audit --format all`
 - `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`
 - `uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest`
 - `uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle`
@@ -223,7 +226,7 @@ codex exec --help
 codex login
 ```
 
-Use `republic doctor` after initialization to confirm the configured Codex command is executable. It also checks GitHub auth and network reachability, writable runtime directories, and managed template drift.
+Use `republic doctor` after initialization to confirm the configured Codex command is executable. It also checks GitHub auth and network reachability, writable runtime directories, managed template drift, the current `dashboard.report_freshness_policy` posture, whether raw sync/cleanup report exports were generated under a different embedded policy, and an aggregate report policy health summary that combines threshold posture with embedded-policy drift. When drift is detected, `doctor` now emits the same remediation guidance used by `status` and the dashboard.
 
 Optional live smoke tests:
 
@@ -268,10 +271,15 @@ Helpful flags:
 - `republic init --upgrade --force` refreshes drifted managed files from the packaged scaffold.
 - `republic run --once` executes a single polling cycle and exits.
 - `republic status --issue 123` inspects the latest persisted run for one issue.
+- `republic status` also summarizes current report health, the active policy thresholds, and an aggregate `policy_health` line so operators can see both the severity and the escalation baseline without opening the dashboard, and it warns when raw report exports still carry an older embedded policy. `status` and `doctor` now reuse the same related-report detail block shape as the sync/cleanup CLI, so drift warnings and remediation render consistently across operator surfaces.
 - `republic retry 123` pushes the latest stored run back into the retry queue.
 - `republic clean --dry-run` previews stale local workspace and artifact cleanup.
 - `republic clean --sync-applied --dry-run` previews manifest-aware retention for `.ai-republic/sync-applied/`.
-- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together.
+- `republic clean --sync-applied --dry-run --report --report-format all` exports machine-readable cleanup previews under `.ai-republic/reports/` and summarizes linked sync-audit drift counts in CLI output. Add `--show-remediation` to print the re-export guidance inline, or `--show-mismatches` to print linked sync-audit issue-filter mismatch warnings inline. When both flags are set, the CLI groups drift and mismatch details into one related-report block.
+- `republic sync check` reports applied manifest integrity problems such as dangling entries, duplicate keys, and orphan archives.
+- `republic sync repair --dry-run` previews manifest reconstruction and orphan adoption before writing.
+- `republic sync audit --format all` exports JSON and Markdown sync audit reports under `.ai-republic/reports/`, links matching cleanup preview/result exports, warns when a cleanup report was generated for a different `issue_filter`, records `policy_alignment` metadata for those related cleanup exports directly inside the raw report, and summarizes linked cleanup policy drift counts in CLI output. Add `--show-remediation` to print the same guidance inline, or `--show-mismatches` to print linked cleanup issue-filter mismatch warnings inline. When both flags are set, the CLI groups drift and mismatch details into one related-report block.
+- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, so mismatch warnings, related policy drifts, and remediation guidance read the same way in shared exports.
 
 </details>
 
@@ -372,7 +380,7 @@ RepoRepublic controls Codex behavior through repository files rather than a hidd
 - `.ai-republic/policies/*.md` encodes merge and scope guardrails.
 - `WORKFLOW.md` explains the operator-facing pipeline.
 
-`republic dashboard` generates local exports under `.ai-republic/dashboard/` with recent run summaries, artifact links, failure reasons, search and status filters, optional timed reload, and JSON or Markdown snapshots for sharing or automation.
+`republic dashboard` generates local exports under `.ai-republic/dashboard/` with recent run summaries, artifact links, failure reasons, search and status filters, optional timed reload, JSON or Markdown snapshots for sharing or automation, sync retention views that surface prunable groups, prunable bytes, and repair-needed applied archives, and a `Reports` section that links directly to sync audit and cleanup exports under `.ai-republic/reports/`. The sync audit card now also shows applied manifest integrity breakdowns such as finding counts and affected issue samples, cross-links to related cleanup cards, issue-filter mismatch warnings for linked cleanup reports, and action-oriented hints for common integrity findings. Cleanup report cards also show freshness and age so stale exports stand out, the report summary metrics aggregate both overall report freshness and cleanup-specific freshness, those freshness aggregates now carry `issues/attention/clean` severity plus a short reason, and `dashboard.report_freshness_policy` lets each repo tune how stale, unknown, aging, and future counts escalate. The dashboard exports now also persist the effective policy thresholds as explicit metadata so shared JSON or Markdown snapshots keep the exact severity inputs, and each report card carries that same policy context directly in its detail view. Dashboard report cards now also compare that live policy context with any embedded raw-report policy metadata and surface `Policy drift reports` when old exports no longer match current config. Cross-reference panels now carry related-report policy drift notes as well, so linked sync audit and cleanup cards show when the other side was rendered under an older threshold. That policy drift now also feeds the dashboard-only report summary severity, so the hero can move to `attention` even when freshness counts are still clean. Dashboard cards, `doctor`, and `status` now share the same remediation guidance for that drift, including the recommended re-export commands, and the raw `sync-audit` / `cleanup` exports now embed that same remediation text in both JSON and Markdown bodies. The hero banner mirrors that severity so operators land on a top-level report-health summary before scanning the detailed cards. Dedicated `Aging reports`, `Future reports`, `Unknown freshness reports`, `Policy drift reports`, `Cleanup aging reports`, `Cleanup future reports`, `Cleanup unknown freshness reports`, and `Stale cleanup reports` cards call out the current aging, future, unknown, policy-drift, cleanup-aging, cleanup-future, cleanup-unknown, and stale counts.
 
 </details>
 

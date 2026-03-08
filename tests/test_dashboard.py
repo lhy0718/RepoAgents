@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import json
+
+import yaml
 
 from reporepublic.config import load_config
 from reporepublic.dashboard import build_dashboard
@@ -203,3 +206,784 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
     assert "- status: failed" in dashboard_markdown
     assert "## Sync handoffs" in dashboard_markdown
     assert "- bundle_key: issue:1|head:reporepublic/issue-1-fix-empty-input" in dashboard_markdown
+
+
+def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> None:
+    _configure_sync_retention(demo_repo, keep_groups=1)
+    loaded = load_config(demo_repo)
+    applied_root = loaded.sync_applied_dir / "local-file" / "issue-1"
+    applied_root.mkdir(parents=True, exist_ok=True)
+    stale_branch = applied_root / "20260308T010001000001Z-branch.json"
+    stale_pr = applied_root / "20260308T010002000001Z-pr.json"
+    fresh_comment = applied_root / "20260308T010101000001Z-comment.md"
+    stale_branch.write_text('{"action":"branch","issue_id":1}\n', encoding="utf-8")
+    stale_pr.write_text('{"action":"pr","issue_id":1}\n', encoding="utf-8")
+    fresh_comment.write_text("---\nissue_id: 1\n---\n\nRecent comment handoff.\n", encoding="utf-8")
+    manifest_entries = [
+        _manifest_entry(
+            tracker="local-file",
+            issue_id=1,
+            action="branch",
+            applied_at="2026-03-08T01:00:01+00:00",
+            staged_at="20260308T010001000001Z",
+            archived_path=stale_branch,
+            group_key="issue:1|head:reporepublic/old-branch",
+            artifact_role="branch-proposal",
+        ),
+        _manifest_entry(
+            tracker="local-file",
+            issue_id=1,
+            action="pr",
+            applied_at="2026-03-08T01:00:02+00:00",
+            staged_at="20260308T010002000001Z",
+            archived_path=stale_pr,
+            group_key="issue:1|head:reporepublic/old-branch",
+            artifact_role="pr-proposal",
+        ),
+        _manifest_entry(
+            tracker="local-file",
+            issue_id=1,
+            action="comment",
+            applied_at="2026-03-08T01:01:01+00:00",
+            staged_at="20260308T010101000001Z",
+            archived_path=fresh_comment,
+            group_key="issue:1|comment",
+            artifact_role="comment-proposal",
+        ),
+    ]
+    old_group_entry_keys = [
+        str(manifest_entries[0]["entry_key"]),
+        str(manifest_entries[1]["entry_key"]),
+    ]
+    old_group_paths = [
+        str(manifest_entries[0]["source_relative_path"]),
+        str(manifest_entries[1]["source_relative_path"]),
+    ]
+    manifest_entries[0]["handoff"] = {
+        "group_key": "issue:1|head:reporepublic/old-branch",
+        "group_size": 2,
+        "group_index": 0,
+        "group_actions": ["branch", "pr"],
+        "related_entry_keys": old_group_entry_keys,
+        "related_source_paths": old_group_paths,
+    }
+    manifest_entries[1]["handoff"] = {
+        "group_key": "issue:1|head:reporepublic/old-branch",
+        "group_size": 2,
+        "group_index": 1,
+        "group_actions": ["branch", "pr"],
+        "related_entry_keys": old_group_entry_keys,
+        "related_source_paths": old_group_paths,
+    }
+    (applied_root / "manifest.json").write_text(
+        json.dumps(manifest_entries, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Sync retention" in html
+    assert "Retention posture" in html
+    assert "status-prunable" in html
+    assert "Prunable groups" in html
+    assert payload["sync_retention"]["keep_groups_per_issue"] == 1
+    assert payload["sync_retention"]["prunable_groups"] == 1
+    assert payload["sync_retention"]["entries"][0]["status"] == "prunable"
+    assert payload["sync_retention"]["entries"][0]["prunable_bytes"] > 0
+    assert payload["sync_retention"]["entries"][0]["groups"][0]["status"] == "kept"
+    assert payload["sync_retention"]["entries"][0]["groups"][1]["status"] == "prunable"
+    assert "## Sync retention" in markdown
+    assert "- prunable_groups: 1" in markdown
+    assert "### local-file · issue #1" in markdown
+    assert "status: prunable" in markdown
+
+
+def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -> None:
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Reports" in html
+    assert "Sync audit" in html
+    assert "Cleanup preview" in html
+    assert 'class="hero hero-issues"' in html
+    assert "Report freshness needs action" in html
+    assert "freshness_policy unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
+    assert "Overall reports are issues: stale reports need regeneration or operator review." in html
+    assert "Cleanup reports are issues: stale reports need regeneration or operator review." in html
+    assert "Report freshness" in html
+    assert "Aging reports" in html
+    assert "Future reports" in html
+    assert "Cleanup freshness" in html
+    assert "Cleanup aging reports" in html
+    assert "Cleanup future reports" in html
+    assert "Stale cleanup reports" in html
+    assert "aging 1" in html
+    assert "/ 2 total" in html
+    assert "fresh 0" in html
+    assert "stale 1" in html
+    assert "status-attention" in html
+    assert "status-preview" in html
+    assert "pending_artifacts" in html
+    assert "action_count" in html
+    assert "issues_with_findings" in html
+    assert "missing_manifest=1" in html
+    assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in html
+    assert "cleanup_report_mismatches:</strong> 1" in html
+    assert "Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in html
+    assert 'href="#report-cleanup-preview"' in html
+    assert 'href="#report-sync-audit"' in html
+    assert payload["counts"]["available_reports"] == 2
+    assert payload["counts"]["aging_reports"] == 1
+    assert payload["counts"]["future_reports"] == 0
+    assert payload["counts"]["stale_reports"] == 1
+    assert payload["counts"]["cleanup_reports"] == 1
+    assert payload["counts"]["cleanup_aging_reports"] == 0
+    assert payload["counts"]["cleanup_future_reports"] == 0
+    assert payload["counts"]["cleanup_unknown_reports"] == 0
+    assert payload["counts"]["stale_cleanup_reports"] == 1
+    assert payload["hero"]["severity"] == "issues"
+    assert payload["hero"]["title"] == "Report freshness needs action"
+    assert payload["hero"]["reporting_chips"][0]["severity"] == "issues"
+    assert payload["hero"]["reporting_chips"][1]["severity"] == "issues"
+    assert payload["policy"]["summary"] == "unknown>=1 stale>=1 future>=1 aging>=1"
+    assert payload["policy"]["report_freshness_policy"]["stale_issues_threshold"] == 1
+    assert payload["reports"]["total"] == 2
+    assert payload["reports"]["aging_total"] == 1
+    assert payload["reports"]["future_total"] == 0
+    assert payload["reports"]["stale_total"] == 1
+    assert payload["reports"]["freshness"]["aging"] == 1
+    assert payload["reports"]["freshness"]["future"] == 0
+    assert payload["reports"]["freshness"]["stale"] == 1
+    assert payload["reports"]["freshness_severity"] == "issues"
+    assert payload["reports"]["freshness_severity_reason"] == "stale reports need regeneration or operator review"
+    assert sum(payload["reports"]["freshness"].values()) == 2
+    assert payload["reports"]["cleanup_total"] == 1
+    assert payload["reports"]["cleanup_aging_total"] == 0
+    assert payload["reports"]["cleanup_future_total"] == 0
+    assert payload["reports"]["cleanup_unknown_total"] == 0
+    assert payload["reports"]["cleanup_stale_total"] == 1
+    assert payload["reports"]["cleanup_freshness"]["stale"] == 1
+    assert payload["reports"]["cleanup_freshness_severity"] == "issues"
+    assert (
+        payload["reports"]["cleanup_freshness_severity_reason"]
+        == "stale reports need regeneration or operator review"
+    )
+    assert payload["reports"]["entries"][0]["label"] == "Sync audit"
+    assert payload["reports"]["entries"][0]["status"] == "attention"
+    assert payload["reports"]["entries"][0]["metrics"]["cleanup_report_mismatches"] == 1
+    assert any(
+        hint.startswith("missing_manifest (1):")
+        for hint in payload["reports"]["entries"][0]["details"]["action_hints"]
+    )
+    assert payload["reports"]["entries"][0]["details"]["cleanup_report_mismatches"] == 1
+    assert payload["reports"]["entries"][0]["details"]["cleanup_mismatch_warnings"] == [
+        "Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7"
+    ]
+    assert payload["reports"]["entries"][0]["details"]["issues_with_findings"] == 1
+    assert payload["reports"]["entries"][0]["details"]["finding_counts"]["missing_manifest"] == 1
+    assert payload["reports"]["entries"][0]["details"]["sample_issue_ids"] == [7]
+    assert payload["reports"]["entries"][0]["policy_summary"] == "unknown>=1 stale>=1 future>=1 aging>=1"
+    assert payload["reports"]["entries"][0]["policy"]["unknown_issues_threshold"] == 1
+    assert payload["reports"]["entries"][0]["related_cards"][0]["key"] == "cleanup-preview"
+    assert payload["reports"]["entries"][1]["label"] == "Cleanup preview"
+    assert payload["reports"]["entries"][1]["freshness_status"] == "stale"
+    assert payload["reports"]["entries"][1]["age_seconds"] is not None
+    assert payload["reports"]["entries"][1]["metrics"]["action_count"] == 3
+    assert payload["reports"]["entries"][1]["policy"]["stale_issues_threshold"] == 1
+    assert payload["reports"]["entries"][1]["referenced_by"][0]["key"] == "sync-audit"
+    assert "freshness stale" in html
+    assert "Policy context" in html
+    assert "unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
+    assert "unknown_issues_threshold:</strong> 1" in html
+    assert "## Policy" in markdown
+    assert "- report_freshness_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
+    assert "- stale_issues_threshold: 1" in markdown
+    assert "## Hero" in markdown
+    assert "- severity: issues" in markdown
+    assert "- title: Report freshness needs action" in markdown
+    assert "Report freshness: severity=issues value=fresh 0 · aging 1 · stale 1 / 2 total" in markdown
+    assert "## Reports" in markdown
+    assert "- report_freshness_severity: issues" in markdown
+    assert "- aging_reports: 1" in markdown
+    assert "- future_reports: 0" in markdown
+    assert "- stale_reports: 1" in markdown
+    assert "- reports_by_freshness: aging=1, fresh=0, future=0, stale=1, unknown=0" in markdown
+    assert "stale=1" in markdown
+    assert "- cleanup_reports: 1" in markdown
+    assert "- cleanup_freshness_severity: issues" in markdown
+    assert "- cleanup_aging_reports: 0" in markdown
+    assert "- cleanup_future_reports: 0" in markdown
+    assert "- cleanup_unknown_reports: 0" in markdown
+    assert "- stale_cleanup_reports: 1" in markdown
+    assert "- cleanup_reports_by_freshness: aging=0, fresh=0, future=0, stale=1, unknown=0" in markdown
+    assert "### Sync audit" in markdown
+    assert "### Cleanup preview" in markdown
+    assert "- policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
+    assert "- policy_thresholds: aging_attention_threshold=1, future_attention_threshold=1, stale_issues_threshold=1, unknown_issues_threshold=1" in markdown
+    assert "- metrics: cleanup_report_mismatches=1, integrity_issue_count=1, pending_artifacts=2, prunable_groups=1, repair_needed_issues=1" in markdown
+    assert "- details:" in markdown
+    assert "cleanup_mismatch_warnings=Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in markdown
+    assert "- related_report_details:" in markdown
+    assert "  - mismatches:" in markdown
+    assert "    - Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in markdown
+    assert "cleanup_report_mismatches=1" in markdown
+    assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in markdown
+    assert "orphan_archive (2): review the affected manifest entries and rerun `republic sync check` after repair" in markdown
+    assert "sample_issue_ids=7" in markdown
+    assert "- freshness: stale" in markdown
+    assert "- related_cards: Cleanup preview" in markdown
+    assert "- referenced_by: Sync audit" in markdown
+
+
+def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "cleanup-preview.json").write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "overall_status": "preview",
+                    "action_count": 1,
+                    "affected_issue_count": 1,
+                    "sync_applied_action_count": 1,
+                    "replacement_entry_count": 0,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "cleanup-preview.md").write_text("# Cleanup preview\n", encoding="utf-8")
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Unknown freshness reports" in html
+    assert "Cleanup unknown freshness reports" in html
+    assert 'class="hero hero-issues"' in html
+    assert "Report freshness needs action" in html
+    assert "unknown 1" in html
+    assert payload["counts"]["unknown_reports"] == 1
+    assert payload["counts"]["cleanup_unknown_reports"] == 1
+    assert payload["reports"]["unknown_total"] == 1
+    assert payload["reports"]["cleanup_unknown_total"] == 1
+    assert payload["reports"]["freshness"]["unknown"] == 1
+    assert payload["reports"]["cleanup_freshness"]["unknown"] == 1
+    assert payload["hero"]["severity"] == "issues"
+    assert payload["reports"]["freshness_severity"] == "issues"
+    assert payload["reports"]["cleanup_freshness_severity"] == "issues"
+    assert payload["reports"]["entries"][0]["freshness_status"] == "unknown"
+    assert "- unknown_reports: 1" in markdown
+    assert "- severity: issues" in markdown
+    assert "- report_freshness_severity: issues" in markdown
+    assert "- cleanup_freshness_severity: issues" in markdown
+    assert "- cleanup_unknown_reports: 1" in markdown
+    assert "- reports_by_freshness: aging=0, fresh=0, future=0, stale=0, unknown=1" in markdown
+    assert "- cleanup_reports_by_freshness: aging=0, fresh=0, future=0, stale=0, unknown=1" in markdown
+
+
+def test_build_dashboard_applies_report_freshness_policy_thresholds(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "\n"
+        + "\n".join(
+            [
+                "dashboard:",
+                "  report_freshness_policy:",
+                "    stale_issues_threshold: 2",
+                "    unknown_issues_threshold: 2",
+                "    future_attention_threshold: 2",
+                "    aging_attention_threshold: 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+    )
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert 'class="hero hero-attention"' in html
+    assert "Report freshness needs follow-up" in html
+    assert "freshness_policy unknown&gt;=2 stale&gt;=2 future&gt;=2 aging&gt;=2" in html
+    assert payload["policy"]["summary"] == "unknown>=2 stale>=2 future>=2 aging>=2"
+    assert payload["policy"]["report_freshness_policy"]["unknown_issues_threshold"] == 2
+    assert payload["reports"]["freshness_severity"] == "attention"
+    assert payload["reports"]["freshness_severity_reason"] == "stale reports are below the issue threshold but should be refreshed"
+    assert payload["reports"]["cleanup_freshness_severity"] == "attention"
+    assert (
+        payload["reports"]["cleanup_freshness_severity_reason"]
+        == "stale reports are below the issue threshold but should be refreshed"
+    )
+    assert payload["hero"]["severity"] == "attention"
+    assert payload["hero"]["title"] == "Report freshness needs follow-up"
+    assert payload["reports"]["entries"][0]["policy_summary"] == "unknown>=2 stale>=2 future>=2 aging>=2"
+    assert payload["reports"]["entries"][0]["policy"]["future_attention_threshold"] == 2
+    assert "## Policy" in markdown
+    assert "- report_freshness_policy: unknown>=2 stale>=2 future>=2 aging>=2" in markdown
+    assert "- policy: unknown>=2 stale>=2 future>=2 aging>=2" in markdown
+    assert "- report_freshness_severity: attention" in markdown
+    assert "- severity: attention" in markdown
+    assert "- cleanup_freshness_severity: attention" in markdown
+
+
+def test_build_dashboard_detects_embedded_policy_drift(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "\n"
+        + "\n".join(
+            [
+                "dashboard:",
+                "  report_freshness_policy:",
+                "    stale_issues_threshold: 2",
+                "    unknown_issues_threshold: 2",
+                "    future_attention_threshold: 2",
+                "    aging_attention_threshold: 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+    )
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+    sync_audit_path = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    payload = json.loads(sync_audit_path.read_text(encoding="utf-8"))
+    payload["policy"] = {
+        "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+        "report_freshness_policy": {
+            "unknown_issues_threshold": 1,
+            "stale_issues_threshold": 1,
+            "future_attention_threshold": 1,
+            "aging_attention_threshold": 1,
+        },
+    }
+    sync_audit_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    snapshot = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Policy drift reports" in html
+    assert "refresh raw report exports to align embedded policy metadata" in html
+    assert "re-run `republic sync audit --format all` and `republic clean --report --report-format all`" in html
+    assert "embedded policy drift" in html
+    assert "embedded policy differs from current config" in html
+    assert snapshot["counts"]["policy_drift_reports"] == 1
+    assert snapshot["counts"]["policy_embedded_reports"] == 1
+    assert snapshot["counts"]["policy_metadata_missing_reports"] == 1
+    assert snapshot["reports"]["policy_drift_total"] == 1
+    assert snapshot["reports"]["policy_embedded_total"] == 1
+    assert snapshot["reports"]["policy_missing_total"] == 1
+    assert (
+        snapshot["reports"]["policy_drift_guidance"]
+        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+    )
+    assert snapshot["reports"]["entries"][0]["policy_alignment_status"] == "drift"
+    assert (
+        snapshot["reports"]["entries"][0]["embedded_policy_summary"]
+        == "unknown>=1 stale>=1 future>=1 aging>=1"
+    )
+    assert snapshot["reports"]["entries"][0]["embedded_policy"]["stale_issues_threshold"] == 1
+    assert (
+        snapshot["reports"]["entries"][0]["policy_alignment_note"]
+        == "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
+    )
+    assert (
+        snapshot["reports"]["entries"][0]["policy_alignment_remediation"]
+        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+    )
+    assert snapshot["reports"]["entries"][1]["policy_alignment_status"] == "missing"
+    assert "- policy_drift_reports: 1" in markdown
+    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_embedded_reports: 1" in markdown
+    assert "- reports_without_embedded_policy: 1" in markdown
+    assert "- policy_alignment: drift" in markdown
+    assert "- embedded_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
+    assert "- policy_alignment_remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+
+
+def test_build_dashboard_escalates_hero_when_only_policy_drift_exists(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+    )
+    loaded = load_config(demo_repo)
+    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "sync-audit.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-08T05:30:00+00:00"},
+                "summary": {
+                    "overall_status": "clean",
+                    "pending_artifacts": 0,
+                    "integrity_issue_count": 0,
+                    "prunable_groups": 0,
+                    "repair_needed_issues": 0,
+                },
+                "policy": {
+                    "summary": "unknown>=9 stale>=9 future>=9 aging>=9",
+                    "report_freshness_policy": {
+                        "unknown_issues_threshold": 9,
+                        "stale_issues_threshold": 9,
+                        "future_attention_threshold": 9,
+                        "aging_attention_threshold": 9,
+                    },
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "sync-audit.md").write_text("# Sync audit\n", encoding="utf-8")
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    snapshot = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert 'class="hero hero-attention"' in html
+    assert "Report policy drift needs follow-up" in html
+    assert "Policy drift" in html
+    assert snapshot["reports"]["freshness_severity"] == "clean"
+    assert snapshot["reports"]["policy_drift_severity"] == "attention"
+    assert snapshot["reports"]["report_summary_severity"] == "attention"
+    assert (
+        snapshot["reports"]["report_summary_severity_reason"]
+        == "embedded policy drift was detected in raw report exports; refresh raw report exports to align embedded policy metadata"
+    )
+    assert snapshot["hero"]["severity"] == "attention"
+    assert snapshot["hero"]["title"] == "Report policy drift needs follow-up"
+    assert snapshot["hero"]["reporting_chips"][0]["label"] == "Report freshness"
+    assert snapshot["hero"]["reporting_chips"][0]["severity"] == "attention"
+    assert snapshot["hero"]["reporting_chips"][1] == {
+        "label": "Policy drift",
+        "severity": "attention",
+        "value": "1 report",
+    }
+    assert "- report_freshness_severity: clean" in markdown
+    assert "- report_summary_severity: attention" in markdown
+    assert "- policy_drift_severity: attention" in markdown
+    assert "- title: Report policy drift needs follow-up" in markdown
+    assert "- Policy drift: severity=attention value=1 report" in markdown
+
+
+def test_build_dashboard_surfaces_related_report_policy_drift_notes(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "\n"
+        + "\n".join(
+            [
+                "dashboard:",
+                "  report_freshness_policy:",
+                "    stale_issues_threshold: 2",
+                "    unknown_issues_threshold: 2",
+                "    future_attention_threshold: 2",
+                "    aging_attention_threshold: 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
+    )
+    _write_dashboard_reports(demo_repo)
+    reports_dir = demo_repo / ".ai-republic" / "reports"
+    warning = "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
+    alignment = {
+        "status": "drift",
+        "warning": warning,
+        "current_summary": "unknown>=2 stale>=2 future>=2 aging>=2",
+        "current_report_freshness_policy": {
+            "unknown_issues_threshold": 2,
+            "stale_issues_threshold": 2,
+            "future_attention_threshold": 2,
+            "aging_attention_threshold": 2,
+        },
+        "embedded_summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+        "embedded_report_freshness_policy": {
+            "unknown_issues_threshold": 1,
+            "stale_issues_threshold": 1,
+            "future_attention_threshold": 1,
+            "aging_attention_threshold": 1,
+        },
+    }
+    sync_payload = json.loads((reports_dir / "sync-audit.json").read_text(encoding="utf-8"))
+    sync_payload["related_reports"]["entries"][0]["policy_alignment"] = alignment
+    sync_payload["related_reports"]["policy_drift_reports"] = 1
+    sync_payload["related_reports"]["policy_drifts"] = [
+        {
+            "key": "cleanup-preview",
+            "label": "Cleanup preview",
+            "warning": warning,
+            "embedded_summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+            "current_summary": "unknown>=2 stale>=2 future>=2 aging>=2",
+        }
+    ]
+    sync_payload["summary"]["related_cleanup_policy_drifts"] = 1
+    (reports_dir / "sync-audit.json").write_text(
+        json.dumps(sync_payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    cleanup_payload = json.loads((reports_dir / "cleanup-preview.json").read_text(encoding="utf-8"))
+    cleanup_payload["related_reports"] = {
+        "total_reports": 1,
+        "entries": [
+            {
+                "key": "sync-audit",
+                "label": "Sync audit",
+                "status": "attention",
+                "summary": "pending=2 integrity_issues=1 prunable_groups=1",
+                "issue_filter": None,
+                "json_path": str(reports_dir / "sync-audit.json"),
+                "markdown_path": str(reports_dir / "sync-audit.md"),
+                "policy_alignment": alignment,
+            }
+        ],
+        "mismatch_reports": 0,
+        "mismatches": [],
+        "policy_drift_reports": 1,
+        "policy_drifts": [
+            {
+                "key": "sync-audit",
+                "label": "Sync audit",
+                "warning": warning,
+                "embedded_summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+                "current_summary": "unknown>=2 stale>=2 future>=2 aging>=2",
+            }
+        ],
+    }
+    cleanup_payload["summary"]["related_sync_audit_reports"] = 1
+    cleanup_payload["summary"]["sync_audit_policy_drifts"] = 1
+    cleanup_payload["summary"]["sync_audit_issue_filter_mismatches"] = 0
+    (reports_dir / "cleanup-preview.json").write_text(
+        json.dumps(cleanup_payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    loaded = load_config(demo_repo)
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Cleanup preview: embedded policy differs from current config" in html
+    assert "Sync audit: embedded policy differs from current config" in html
+    assert payload["reports"]["entries"][0]["related_cards"][0]["policy_alignment_status"] == "drift"
+    assert payload["reports"]["entries"][1]["related_cards"][0]["policy_alignment_status"] == "drift"
+    assert payload["reports"]["entries"][1]["details"]["related_report_policy_drifts"] == 1
+    assert payload["reports"]["entries"][1]["details"]["related_report_policy_drift_warnings"] == [
+        f"Sync audit: {warning}"
+    ]
+    assert "related_report_policy_drift_warnings=Sync audit: embedded policy differs from current config" in markdown
+    assert "- related_report_details:" in markdown
+    assert "  - policy_drifts:" in markdown
+    assert f"    - Sync audit: {warning}" in markdown
+    assert (
+        "  - remediation: refresh raw report exports to align embedded policy metadata; "
+        "re-run `republic sync audit --format all` and `republic clean --report "
+        "--report-format all` after updating `dashboard.report_freshness_policy`"
+    ) in markdown
+
+
+def _configure_sync_retention(repo_root: Path, *, keep_groups: int) -> None:
+    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    payload = load_config(repo_root).data.model_dump(mode="json")
+    payload.setdefault("cleanup", {})["sync_applied_keep_groups_per_issue"] = keep_groups
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _manifest_entry(
+    *,
+    tracker: str,
+    issue_id: int,
+    action: str,
+    applied_at: str,
+    staged_at: str,
+    archived_path: Path,
+    group_key: str,
+    artifact_role: str,
+) -> dict[str, object]:
+    archived_relative_path = "/".join(archived_path.parts[-3:])
+    relative_source_path = archived_relative_path
+    return {
+        "entry_key": f"{tracker}:{relative_source_path}",
+        "tracker": tracker,
+        "issue_id": issue_id,
+        "action": action,
+        "format": "markdown" if archived_path.suffix == ".md" else "json",
+        "applied_at": applied_at,
+        "staged_at": staged_at,
+        "summary": f"{action} handoff.",
+        "normalized": {
+            "artifact_role": artifact_role,
+            "issue_key": f"issue:{issue_id}",
+            "bundle_key": group_key,
+            "refs": {},
+            "links": {
+                "self": relative_source_path,
+            },
+        },
+        "source_relative_path": relative_source_path,
+        "archived_relative_path": archived_relative_path,
+        "archived_path": str(archived_path),
+        "effect": f"Archived {action} handoff.",
+        "handoff": {
+            "group_key": group_key,
+            "group_size": 1,
+            "group_index": 0,
+            "group_actions": [action],
+            "related_entry_keys": [f"{tracker}:{relative_source_path}"],
+            "related_source_paths": [relative_source_path],
+        },
+    }
+
+
+def _write_dashboard_reports(repo_root: Path) -> None:
+    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "sync-audit.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-08T02:00:00+00:00"},
+                "summary": {
+                    "overall_status": "attention",
+                    "pending_artifacts": 2,
+                    "integrity_issue_count": 1,
+                    "prunable_groups": 1,
+                    "repair_needed_issues": 1,
+                },
+                "integrity": {
+                    "total_reports": 3,
+                    "issues_with_findings": 1,
+                    "clean_issues": 2,
+                    "finding_counts": {
+                        "missing_manifest": 1,
+                        "orphan_archive": 2,
+                    },
+                    "reports": [
+                        {"issue_id": 7, "status": "issues"},
+                        {"issue_id": 8, "status": "ok"},
+                    ],
+                },
+                "related_reports": {
+                    "total_reports": 1,
+                    "mismatch_reports": 1,
+                    "entries": [
+                        {
+                            "key": "cleanup-preview",
+                            "label": "Cleanup preview",
+                            "status": "preview",
+                            "summary": "actions=3 affected_issues=1",
+                            "issue_filter": None,
+                            "json_path": str(reports_dir / "cleanup-preview.json"),
+                            "markdown_path": str(reports_dir / "cleanup-preview.md"),
+                        }
+                    ],
+                    "mismatches": [
+                        {
+                            "label": "Cleanup result",
+                            "warning": "cleanup report issue_filter=9 does not match audit issue_filter=7",
+                        }
+                    ],
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "sync-audit.md").write_text("# Sync audit\n", encoding="utf-8")
+    (reports_dir / "cleanup-preview.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-05T02:05:00+00:00", "mode": "preview"},
+                "summary": {
+                    "overall_status": "preview",
+                    "action_count": 3,
+                    "affected_issue_count": 1,
+                    "sync_applied_action_count": 2,
+                    "replacement_entry_count": 1,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "cleanup-preview.md").write_text("# Cleanup preview\n", encoding="utf-8")

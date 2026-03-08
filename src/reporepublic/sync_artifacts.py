@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from reporepublic.config import LoadedConfig
+from reporepublic.utils.files import write_json_file
 
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
@@ -65,6 +66,99 @@ class SyncApplyContext:
     group_actions: tuple[str, ...]
     related_entry_keys: tuple[str, ...]
     related_source_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedSyncManifestFinding:
+    code: str
+    message: str
+    entry_key: str | None = None
+    path: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedSyncManifestReport:
+    tracker: str
+    issue_id: int | None
+    issue_root: Path
+    manifest_path: Path
+    manifest_exists: bool
+    archive_files: tuple[str, ...]
+    findings: tuple[AppliedSyncManifestFinding, ...]
+    manifest_entry_count: int
+    referenced_archive_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedSyncManifestRepairResult:
+    tracker: str
+    issue_id: int | None
+    issue_root: Path
+    manifest_path: Path
+    changed: bool
+    dry_run: bool
+    manifest_entry_count_before: int
+    manifest_entry_count_after: int
+    findings_before: int
+    findings_after: int
+    dropped_entries: int
+    adopted_archives: int
+    normalized_entries: int
+
+
+@dataclass(frozen=True, slots=True)
+class SyncAppliedRetentionGroup:
+    group_key: str
+    tracker: str
+    issue_id: int | None
+    status: str
+    actions: tuple[str, ...]
+    archive_paths: tuple[str, ...]
+    total_bytes: int
+    archive_file_count: int
+    newest_at: str | None
+    oldest_at: str | None
+    newest_age_seconds: int | None
+    oldest_age_seconds: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class SyncAppliedRetentionIssueSummary:
+    tracker: str
+    issue_id: int | None
+    issue_root: Path
+    manifest_path: Path
+    status: str
+    keep_groups_limit: int
+    integrity_findings: int
+    finding_codes: tuple[str, ...]
+    total_groups: int
+    kept_groups: int
+    prunable_groups: int
+    total_bytes: int
+    kept_bytes: int
+    prunable_bytes: int
+    newest_group_age_seconds: int | None
+    oldest_group_age_seconds: int | None
+    oldest_prunable_group_age_seconds: int | None
+    groups: tuple[SyncAppliedRetentionGroup, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SyncAppliedRetentionSnapshot:
+    keep_groups_per_issue: int
+    total_issues: int
+    eligible_issues: int
+    stable_issues: int
+    prunable_issues: int
+    repair_needed_issues: int
+    total_groups: int
+    kept_groups: int
+    prunable_groups: int
+    total_bytes: int
+    kept_bytes: int
+    prunable_bytes: int
+    entries: tuple[SyncAppliedRetentionIssueSummary, ...]
 
 
 class SyncActionRegistry:
@@ -394,6 +488,100 @@ def apply_sync_bundle(
     return results
 
 
+def inspect_applied_sync_manifests(
+    loaded: LoadedConfig,
+    *,
+    issue_id: int | None = None,
+    tracker: str | None = None,
+) -> list[AppliedSyncManifestReport]:
+    reports: list[AppliedSyncManifestReport] = []
+    for issue_root in _iter_applied_issue_roots(loaded, issue_id=issue_id, tracker=tracker):
+        reports.append(_inspect_applied_sync_issue_root(loaded, issue_root))
+    return reports
+
+
+def repair_applied_sync_manifests(
+    loaded: LoadedConfig,
+    *,
+    issue_id: int | None = None,
+    tracker: str | None = None,
+    dry_run: bool = False,
+) -> list[AppliedSyncManifestRepairResult]:
+    results: list[AppliedSyncManifestRepairResult] = []
+    for issue_root in _iter_applied_issue_roots(loaded, issue_id=issue_id, tracker=tracker):
+        before_report = _inspect_applied_sync_issue_root(loaded, issue_root)
+        raw_entries, _manifest_error = _load_manifest_payload(before_report.manifest_path)
+        canonical_entries, repair_stats = _repair_issue_manifest_entries(loaded, issue_root, raw_entries)
+        if not dry_run:
+            if canonical_entries or before_report.manifest_exists:
+                write_json_file(before_report.manifest_path, canonical_entries)
+        after_report = (
+            _inspect_repaired_issue_manifest(loaded, issue_root, canonical_entries)
+            if dry_run
+            else _inspect_applied_sync_issue_root(loaded, issue_root)
+        )
+        results.append(
+            AppliedSyncManifestRepairResult(
+                tracker=before_report.tracker,
+                issue_id=before_report.issue_id,
+                issue_root=issue_root,
+                manifest_path=before_report.manifest_path,
+                changed=before_report.findings != after_report.findings or before_report.manifest_entry_count != len(canonical_entries),
+                dry_run=dry_run,
+                manifest_entry_count_before=before_report.manifest_entry_count,
+                manifest_entry_count_after=len(canonical_entries),
+                findings_before=len(before_report.findings),
+                findings_after=len(after_report.findings),
+                dropped_entries=repair_stats["dropped_entries"],
+                adopted_archives=repair_stats["adopted_archives"],
+                normalized_entries=repair_stats["normalized_entries"],
+            )
+        )
+    return results
+
+
+def summarize_sync_applied_retention(
+    loaded: LoadedConfig,
+    *,
+    keep_groups_per_issue: int | None = None,
+    issue_id: int | None = None,
+    tracker: str | None = None,
+    limit: int | None = None,
+) -> SyncAppliedRetentionSnapshot:
+    resolved_keep_groups = keep_groups_per_issue or loaded.data.cleanup.sync_applied_keep_groups_per_issue
+    issue_summaries: list[SyncAppliedRetentionIssueSummary] = []
+    for issue_root in _iter_applied_issue_roots(loaded, issue_id=issue_id, tracker=tracker):
+        summary = _summarize_sync_applied_issue_retention(
+            loaded,
+            issue_root=issue_root,
+            keep_groups_per_issue=resolved_keep_groups,
+        )
+        if summary is not None:
+            issue_summaries.append(summary)
+
+    issue_summaries.sort(key=_retention_issue_sort_key)
+    visible_entries = tuple(issue_summaries if limit is None else issue_summaries[:limit])
+    stable_issues = sum(1 for entry in issue_summaries if entry.status == "stable")
+    prunable_issues = sum(1 for entry in issue_summaries if entry.status == "prunable")
+    repair_needed_issues = sum(1 for entry in issue_summaries if entry.status == "repair-needed")
+    eligible_issues = stable_issues + prunable_issues
+    return SyncAppliedRetentionSnapshot(
+        keep_groups_per_issue=resolved_keep_groups,
+        total_issues=len(issue_summaries),
+        eligible_issues=eligible_issues,
+        stable_issues=stable_issues,
+        prunable_issues=prunable_issues,
+        repair_needed_issues=repair_needed_issues,
+        total_groups=sum(entry.total_groups for entry in issue_summaries),
+        kept_groups=sum(entry.kept_groups for entry in issue_summaries),
+        prunable_groups=sum(entry.prunable_groups for entry in issue_summaries),
+        total_bytes=sum(entry.total_bytes for entry in issue_summaries),
+        kept_bytes=sum(entry.kept_bytes for entry in issue_summaries),
+        prunable_bytes=sum(entry.prunable_bytes for entry in issue_summaries),
+        entries=visible_entries,
+    )
+
+
 def _infer_format(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix == ".json":
@@ -509,6 +697,825 @@ def _iter_sync_roots(loaded: LoadedConfig, scope: str) -> list[tuple[str, Path]]
     if normalized == "all":
         return [("pending", loaded.sync_dir), ("applied", loaded.sync_applied_dir)]
     raise SyncArtifactLookupError(f"Unsupported sync scope '{scope}'. Expected one of: pending, applied, all.")
+
+
+def _iter_applied_issue_roots(
+    loaded: LoadedConfig,
+    *,
+    issue_id: int | None,
+    tracker: str | None,
+) -> list[Path]:
+    tracker_filter = _normalize_tracker_filter(tracker)
+    issue_roots: list[Path] = []
+    if not loaded.sync_applied_dir.exists():
+        return issue_roots
+    for tracker_root in sorted(loaded.sync_applied_dir.iterdir()):
+        if not tracker_root.is_dir():
+            continue
+        if tracker_filter and tracker_root.name != tracker_filter:
+            continue
+        for issue_root in sorted(tracker_root.glob("issue-*")):
+            if not issue_root.is_dir():
+                continue
+            parsed_issue_id = _parse_issue_root_id(issue_root.name)
+            if issue_id is not None and parsed_issue_id != issue_id:
+                continue
+            issue_roots.append(issue_root)
+    return issue_roots
+
+
+def _inspect_applied_sync_issue_root(loaded: LoadedConfig, issue_root: Path) -> AppliedSyncManifestReport:
+    manifest_path = issue_root / "manifest.json"
+    archive_files = sorted(
+        path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+        for path in issue_root.iterdir()
+        if path.is_file() and path.name != "manifest.json"
+    )
+    manifest_exists = manifest_path.exists()
+    findings: list[AppliedSyncManifestFinding] = []
+    raw_entries, manifest_error = _load_manifest_payload(manifest_path)
+
+    if not manifest_exists and archive_files:
+        findings.append(
+            AppliedSyncManifestFinding(
+                code="missing_manifest",
+                message="Applied archive files exist but manifest.json is missing.",
+                path=issue_root.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix(),
+            )
+        )
+    if manifest_error == "invalid_json":
+        findings.append(
+            AppliedSyncManifestFinding(
+                code="invalid_manifest_json",
+                message="manifest.json is not valid JSON.",
+                path=manifest_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix(),
+            )
+        )
+    elif manifest_error == "invalid_format":
+        findings.append(
+            AppliedSyncManifestFinding(
+                code="invalid_manifest_format",
+                message="manifest.json must contain a JSON array of manifest entries.",
+                path=manifest_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix(),
+            )
+        )
+
+    referenced_archives: set[str] = set()
+    entry_keys: dict[str, int] = {}
+    archive_refs: dict[str, int] = {}
+    valid_entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw_entries):
+        if not isinstance(entry, dict):
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="invalid_entry_type",
+                    message="Manifest entry is not a JSON object.",
+                    path=manifest_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix(),
+                )
+            )
+            continue
+        archive_path = _resolve_applied_manifest_archive_path(loaded, entry)
+        archived_relative_path = _resolve_applied_manifest_relative_path(loaded, entry)
+        entry_key = _coerce_text(entry.get("entry_key"))
+        if entry_key:
+            if entry_key in entry_keys:
+                findings.append(
+                    AppliedSyncManifestFinding(
+                        code="duplicate_entry_key",
+                        message="Multiple manifest entries share the same entry_key.",
+                        entry_key=entry_key,
+                        path=archived_relative_path or _coerce_text(entry.get("archived_path")),
+                    )
+                )
+            entry_keys[entry_key] = entry_keys.get(entry_key, 0) + 1
+        if archive_path is None or archived_relative_path is None or not archive_path.exists():
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="dangling_archive_reference",
+                    message="Manifest entry points to an archived artifact that does not exist.",
+                    entry_key=entry_key,
+                    path=archived_relative_path or _coerce_text(entry.get("archived_path")),
+                )
+            )
+            continue
+        valid_entries.append(entry)
+        referenced_archives.add(archived_relative_path)
+        if archived_relative_path in archive_refs:
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="duplicate_archive_reference",
+                    message="Multiple manifest entries point at the same archived artifact.",
+                    entry_key=entry_key,
+                    path=archived_relative_path,
+                )
+            )
+        archive_refs[archived_relative_path] = archive_refs.get(archived_relative_path, 0) + 1
+        if _coerce_text(entry.get("archived_path")) != str(archive_path):
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="mismatched_archived_path",
+                    message="archived_path does not match the artifact currently stored under sync-applied.",
+                    entry_key=entry_key,
+                    path=archived_relative_path,
+                )
+            )
+        if not _coerce_text(entry.get("archived_relative_path")):
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="missing_archived_relative_path",
+                    message="Manifest entry is missing archived_relative_path.",
+                    entry_key=entry_key,
+                    path=archived_relative_path,
+                )
+            )
+
+    orphans = sorted(set(archive_files) - referenced_archives)
+    for orphan in orphans:
+        findings.append(
+            AppliedSyncManifestFinding(
+                code="orphan_archive_file",
+                message="Archived artifact exists under sync-applied but is not referenced by manifest.json.",
+                path=orphan,
+            )
+        )
+
+    _append_group_integrity_findings(findings, valid_entries)
+
+    return AppliedSyncManifestReport(
+        tracker=issue_root.parent.name,
+        issue_id=_parse_issue_root_id(issue_root.name),
+        issue_root=issue_root,
+        manifest_path=manifest_path,
+        manifest_exists=manifest_exists,
+        archive_files=tuple(archive_files),
+        findings=tuple(findings),
+        manifest_entry_count=len(raw_entries),
+        referenced_archive_count=len(referenced_archives),
+    )
+
+
+def _summarize_sync_applied_issue_retention(
+    loaded: LoadedConfig,
+    *,
+    issue_root: Path,
+    keep_groups_per_issue: int,
+) -> SyncAppliedRetentionIssueSummary | None:
+    manifest_path = issue_root / "manifest.json"
+    existing_files = sorted(
+        path for path in issue_root.iterdir() if path.is_file() and path.name != "manifest.json"
+    )
+    if not manifest_path.exists() and not existing_files:
+        return None
+
+    report = _inspect_applied_sync_issue_root(loaded, issue_root)
+    total_bytes = sum(path.stat().st_size for path in existing_files)
+    finding_codes = tuple(sorted({finding.code for finding in report.findings}))
+    if report.findings:
+        return SyncAppliedRetentionIssueSummary(
+            tracker=report.tracker,
+            issue_id=report.issue_id,
+            issue_root=issue_root,
+            manifest_path=manifest_path,
+            status="repair-needed",
+            keep_groups_limit=keep_groups_per_issue,
+            integrity_findings=len(report.findings),
+            finding_codes=finding_codes,
+            total_groups=0,
+            kept_groups=0,
+            prunable_groups=0,
+            total_bytes=total_bytes,
+            kept_bytes=0,
+            prunable_bytes=0,
+            newest_group_age_seconds=None,
+            oldest_group_age_seconds=None,
+            oldest_prunable_group_age_seconds=None,
+            groups=(),
+        )
+
+    payload, manifest_error = _load_manifest_payload(manifest_path)
+    if manifest_error is not None:
+        return SyncAppliedRetentionIssueSummary(
+            tracker=report.tracker,
+            issue_id=report.issue_id,
+            issue_root=issue_root,
+            manifest_path=manifest_path,
+            status="repair-needed",
+            keep_groups_limit=keep_groups_per_issue,
+            integrity_findings=1,
+            finding_codes=(manifest_error,),
+            total_groups=0,
+            kept_groups=0,
+            prunable_groups=0,
+            total_bytes=total_bytes,
+            kept_bytes=0,
+            prunable_bytes=0,
+            newest_group_age_seconds=None,
+            oldest_group_age_seconds=None,
+            oldest_prunable_group_age_seconds=None,
+            groups=(),
+        )
+
+    groups = _build_sync_applied_retention_groups(
+        loaded,
+        issue_root=issue_root,
+        entries=[entry for entry in payload if isinstance(entry, dict)],
+        keep_groups_per_issue=keep_groups_per_issue,
+    )
+    if not groups and total_bytes == 0:
+        return None
+
+    kept_groups = sum(1 for group in groups if group.status == "kept")
+    prunable_groups = sum(1 for group in groups if group.status == "prunable")
+    kept_bytes = sum(group.total_bytes for group in groups if group.status == "kept")
+    prunable_bytes = sum(group.total_bytes for group in groups if group.status == "prunable")
+    newest_group_age_seconds = min(
+        (group.newest_age_seconds for group in groups if group.newest_age_seconds is not None),
+        default=None,
+    )
+    oldest_group_age_seconds = max(
+        (group.oldest_age_seconds for group in groups if group.oldest_age_seconds is not None),
+        default=None,
+    )
+    oldest_prunable_group_age_seconds = max(
+        (
+            group.oldest_age_seconds
+            for group in groups
+            if group.status == "prunable" and group.oldest_age_seconds is not None
+        ),
+        default=None,
+    )
+    return SyncAppliedRetentionIssueSummary(
+        tracker=report.tracker,
+        issue_id=report.issue_id,
+        issue_root=issue_root,
+        manifest_path=manifest_path,
+        status="prunable" if prunable_groups else "stable",
+        keep_groups_limit=keep_groups_per_issue,
+        integrity_findings=0,
+        finding_codes=(),
+        total_groups=len(groups),
+        kept_groups=kept_groups,
+        prunable_groups=prunable_groups,
+        total_bytes=total_bytes,
+        kept_bytes=kept_bytes,
+        prunable_bytes=prunable_bytes,
+        newest_group_age_seconds=newest_group_age_seconds,
+        oldest_group_age_seconds=oldest_group_age_seconds,
+        oldest_prunable_group_age_seconds=oldest_prunable_group_age_seconds,
+        groups=tuple(groups),
+    )
+
+
+def _build_sync_applied_retention_groups(
+    loaded: LoadedConfig,
+    *,
+    issue_root: Path,
+    entries: list[dict[str, Any]],
+    keep_groups_per_issue: int,
+) -> list[SyncAppliedRetentionGroup]:
+    now = datetime.now(timezone.utc)
+    grouped: dict[str, list[tuple[dict[str, Any], Path]]] = {}
+    for index, entry in enumerate(entries):
+        archive_path = _resolve_applied_manifest_archive_path(loaded, entry)
+        if archive_path is None or not archive_path.exists():
+            continue
+        group_key = _manifest_group_key(entry, index=index)
+        grouped.setdefault(group_key, []).append((entry, archive_path))
+
+    ordered_groups = sorted(
+        grouped.items(),
+        key=lambda item: _retention_group_order_key(item[1]),
+        reverse=True,
+    )
+    keep_group_keys = {group_key for group_key, _items in ordered_groups[:keep_groups_per_issue]}
+    groups: list[SyncAppliedRetentionGroup] = []
+    for group_key, items in ordered_groups:
+        ordered_items = sorted(items, key=lambda item: _manifest_entry_sort_key(item[0]))
+        timestamps = [_manifest_entry_timestamp(entry, archive_path) for entry, archive_path in ordered_items]
+        archive_paths = [archive_path.resolve() for _entry, archive_path in ordered_items]
+        actions = [
+            str(entry.get("action"))
+            for entry, _archive_path in ordered_items
+            if entry.get("action") is not None
+        ]
+        groups.append(
+            SyncAppliedRetentionGroup(
+                group_key=group_key,
+                tracker=issue_root.parent.name,
+                issue_id=_parse_issue_root_id(issue_root.name),
+                status="kept" if group_key in keep_group_keys else "prunable",
+                actions=tuple(actions),
+                archive_paths=tuple(
+                    path.relative_to(loaded.sync_applied_dir.resolve()).as_posix() for path in archive_paths
+                ),
+                total_bytes=sum(path.stat().st_size for path in archive_paths),
+                archive_file_count=len(archive_paths),
+                newest_at=timestamps[-1].isoformat() if timestamps else None,
+                oldest_at=timestamps[0].isoformat() if timestamps else None,
+                newest_age_seconds=_age_seconds(now, timestamps[-1]) if timestamps else None,
+                oldest_age_seconds=_age_seconds(now, timestamps[0]) if timestamps else None,
+            )
+        )
+    return groups
+
+
+def _retention_group_order_key(items: list[tuple[dict[str, Any], Path]]) -> tuple[str, str]:
+    newest_timestamp = max(
+        _manifest_entry_timestamp(entry, archive_path) for entry, archive_path in items
+    )
+    return (newest_timestamp.isoformat(), str(items[0][1]))
+
+
+def _manifest_entry_timestamp(entry: dict[str, Any], archive_path: Path) -> datetime:
+    applied_at = _coerce_text(entry.get("applied_at"))
+    if applied_at:
+        parsed = _parse_iso_datetime(applied_at)
+        if parsed is not None:
+            return parsed
+    staged_at = _coerce_text(entry.get("staged_at"))
+    if staged_at:
+        parsed_staged_at = _parse_stamp_datetime(staged_at)
+        if parsed_staged_at is not None:
+            return parsed_staged_at
+    return datetime.fromtimestamp(archive_path.stat().st_mtime, tz=timezone.utc)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _parse_stamp_datetime(value: str) -> datetime | None:
+    for format_string in ("%Y%m%dT%H%M%SZ", "%Y%m%dT%H%M%S%fZ"):
+        try:
+            return datetime.strptime(value, format_string).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _age_seconds(now: datetime, timestamp: datetime) -> int:
+    return max(0, int((now - timestamp).total_seconds()))
+
+
+def _retention_issue_sort_key(summary: SyncAppliedRetentionIssueSummary) -> tuple[int, int, int, int, str]:
+    priority = {
+        "repair-needed": 0,
+        "prunable": 1,
+        "stable": 2,
+    }.get(summary.status, 3)
+    age_rank = summary.oldest_prunable_group_age_seconds or summary.oldest_group_age_seconds or 0
+    issue_rank = summary.issue_id if summary.issue_id is not None else -1
+    return (
+        priority,
+        -(summary.prunable_bytes),
+        -(age_rank),
+        issue_rank,
+        summary.tracker,
+    )
+
+
+def _inspect_repaired_issue_manifest(
+    loaded: LoadedConfig,
+    issue_root: Path,
+    entries: list[dict[str, Any]],
+) -> AppliedSyncManifestReport:
+    manifest_path = issue_root / "manifest.json"
+    archive_files = sorted(
+        path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+        for path in issue_root.iterdir()
+        if path.is_file() and path.name != "manifest.json"
+    )
+    findings: list[AppliedSyncManifestFinding] = []
+    referenced_archives: set[str] = set()
+    for entry in entries:
+        archive_path = _resolve_applied_manifest_archive_path(loaded, entry)
+        archived_relative_path = _resolve_applied_manifest_relative_path(loaded, entry)
+        if archive_path is None or archived_relative_path is None or not archive_path.exists():
+            findings.append(
+                AppliedSyncManifestFinding(
+                    code="dangling_archive_reference",
+                    message="Manifest entry points to an archived artifact that does not exist.",
+                    entry_key=_coerce_text(entry.get("entry_key")),
+                    path=archived_relative_path,
+                )
+            )
+            continue
+        referenced_archives.add(archived_relative_path)
+    for orphan in sorted(set(archive_files) - referenced_archives):
+        findings.append(
+            AppliedSyncManifestFinding(
+                code="orphan_archive_file",
+                message="Archived artifact exists under sync-applied but is not referenced by manifest.json.",
+                path=orphan,
+            )
+        )
+    _append_group_integrity_findings(findings, entries)
+    return AppliedSyncManifestReport(
+        tracker=issue_root.parent.name,
+        issue_id=_parse_issue_root_id(issue_root.name),
+        issue_root=issue_root,
+        manifest_path=manifest_path,
+        manifest_exists=True,
+        archive_files=tuple(archive_files),
+        findings=tuple(findings),
+        manifest_entry_count=len(entries),
+        referenced_archive_count=len(referenced_archives),
+    )
+
+
+def _append_group_integrity_findings(
+    findings: list[AppliedSyncManifestFinding],
+    entries: list[dict[str, Any]],
+) -> None:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for index, entry in enumerate(entries):
+        group_key = _manifest_group_key(entry, index=index)
+        grouped.setdefault(group_key, []).append(entry)
+    for group_key, group_entries in grouped.items():
+        ordered_group = sorted(group_entries, key=lambda item: _manifest_entry_sort_key(item))
+        expected_entry_keys = [str(entry["entry_key"]) for entry in ordered_group if entry.get("entry_key")]
+        expected_source_paths = [
+            str(entry["source_relative_path"])
+            for entry in ordered_group
+            if entry.get("source_relative_path")
+        ]
+        expected_actions = [str(entry["action"]) for entry in ordered_group if entry.get("action")]
+        for expected_index, entry in enumerate(ordered_group):
+            handoff = entry.get("handoff")
+            if not isinstance(handoff, dict):
+                findings.append(
+                    AppliedSyncManifestFinding(
+                        code="missing_handoff_metadata",
+                        message="Manifest entry is missing handoff metadata.",
+                        entry_key=_coerce_text(entry.get("entry_key")),
+                        path=_coerce_text(entry.get("archived_relative_path")),
+                    )
+                )
+                continue
+            mismatch = (
+                handoff.get("group_key") != group_key
+                or handoff.get("group_size") != len(ordered_group)
+                or handoff.get("group_index") != expected_index
+                or handoff.get("group_actions") != expected_actions
+                or handoff.get("related_entry_keys") != expected_entry_keys
+                or handoff.get("related_source_paths") != expected_source_paths
+            )
+            if mismatch:
+                findings.append(
+                    AppliedSyncManifestFinding(
+                        code="handoff_group_mismatch",
+                        message="handoff linkage does not match the current manifest group membership.",
+                        entry_key=_coerce_text(entry.get("entry_key")),
+                        path=_coerce_text(entry.get("archived_relative_path")),
+                    )
+                )
+
+
+def _repair_issue_manifest_entries(
+    loaded: LoadedConfig,
+    issue_root: Path,
+    raw_entries: list[object],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    canonical_by_archive: dict[str, dict[str, Any]] = {}
+    stats = {
+        "dropped_entries": 0,
+        "adopted_archives": 0,
+        "normalized_entries": 0,
+    }
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            stats["dropped_entries"] += 1
+            continue
+        canonical_entry, changed = _canonicalize_applied_manifest_entry(loaded, issue_root, raw_entry)
+        if canonical_entry is None:
+            stats["dropped_entries"] += 1
+            continue
+        archive_key = str(canonical_entry["archived_relative_path"])
+        existing = canonical_by_archive.get(archive_key)
+        if existing is None:
+            canonical_by_archive[archive_key] = canonical_entry
+            if changed:
+                stats["normalized_entries"] += 1
+            continue
+        preferred = _pick_preferred_manifest_entry(existing, canonical_entry)
+        if preferred is canonical_entry and changed:
+            stats["normalized_entries"] += 1
+        if preferred is canonical_entry and preferred is not existing:
+            canonical_by_archive[archive_key] = canonical_entry
+        stats["dropped_entries"] += 1
+
+    issue_archive_files = sorted(
+        path for path in issue_root.iterdir() if path.is_file() and path.name != "manifest.json"
+    )
+    for archive_path in issue_archive_files:
+        archived_relative_path = archive_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+        if archived_relative_path in canonical_by_archive:
+            continue
+        canonical_by_archive[archived_relative_path] = _reconstruct_applied_manifest_entry(loaded, archive_path)
+        stats["adopted_archives"] += 1
+
+    repaired_entries = sorted(
+        canonical_by_archive.values(),
+        key=_manifest_entry_sort_key,
+    )
+    _ensure_unique_manifest_entry_keys(repaired_entries)
+    _rebuild_handoff_linkage(repaired_entries)
+    return repaired_entries, stats
+
+
+def _canonicalize_applied_manifest_entry(
+    loaded: LoadedConfig,
+    issue_root: Path,
+    entry: dict[str, Any],
+) -> tuple[dict[str, Any] | None, bool]:
+    archive_path = _resolve_applied_manifest_archive_path(loaded, entry)
+    if archive_path is None or not archive_path.exists():
+        return None, False
+    artifact = _safe_parse_applied_sync_artifact(loaded, archive_path)
+    if artifact is None:
+        return None, False
+    canonical = dict(entry)
+    changed = False
+
+    archived_relative_path = archive_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+    source_relative_path = _coerce_text(canonical.get("source_relative_path")) or archived_relative_path
+    applied_at = _coerce_text(canonical.get("applied_at")) or datetime.fromtimestamp(
+        archive_path.stat().st_mtime,
+        tz=timezone.utc,
+    ).isoformat()
+
+    replacements: dict[str, Any] = {
+        "tracker": issue_root.parent.name,
+        "issue_id": _parse_issue_root_id(issue_root.name),
+        "action": _coerce_text(canonical.get("action")) or artifact.action,
+        "format": _coerce_text(canonical.get("format")) or artifact.format,
+        "applied_at": applied_at,
+        "staged_at": _coerce_text(canonical.get("staged_at")) or artifact.staged_at,
+        "summary": _coerce_text(canonical.get("summary")) or artifact.summary,
+        "source_relative_path": source_relative_path,
+        "archived_relative_path": archived_relative_path,
+        "archived_path": str(archive_path),
+        "effect": _coerce_text(canonical.get("effect")) or "Recovered applied sync artifact during manifest repair.",
+    }
+    for key, value in replacements.items():
+        if canonical.get(key) != value:
+            canonical[key] = value
+            changed = True
+
+    normalized = canonical.get("normalized")
+    if not isinstance(normalized, dict):
+        normalized = {}
+        changed = True
+    merged_normalized = dict(artifact.normalized)
+    merged_normalized.update(normalized)
+    merged_normalized.setdefault("links", {})
+    if not isinstance(merged_normalized["links"], dict):
+        merged_normalized["links"] = {}
+    merged_normalized["links"].setdefault("self", source_relative_path)
+    if merged_normalized != canonical.get("normalized"):
+        canonical["normalized"] = merged_normalized
+        changed = True
+
+    entry_key = _coerce_text(canonical.get("entry_key")) or f"{issue_root.parent.name}:{source_relative_path}"
+    if canonical.get("entry_key") != entry_key:
+        canonical["entry_key"] = entry_key
+        changed = True
+
+    canonical_handoff = _normalize_manifest_handoff(canonical)
+    if canonical_handoff != canonical.get("handoff"):
+        canonical["handoff"] = canonical_handoff
+        changed = True
+
+    return canonical, changed
+
+
+def _reconstruct_applied_manifest_entry(loaded: LoadedConfig, archive_path: Path) -> dict[str, Any]:
+    artifact = _safe_parse_applied_sync_artifact(loaded, archive_path)
+    if artifact is None:
+        tracker = archive_path.parent.parent.name
+        issue_id = _parse_issue_root_id(archive_path.parent.name)
+        staged_at, action = _parse_staged_name(archive_path)
+        relative_path = archive_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+        issue_key = f"issue:{issue_id}" if issue_id is not None else None
+        entry_key = f"{tracker}:{relative_path}"
+        group_key = entry_key
+        return {
+            "entry_key": entry_key,
+            "tracker": tracker,
+            "issue_id": issue_id,
+            "action": action,
+            "format": _infer_format(archive_path),
+            "applied_at": datetime.fromtimestamp(archive_path.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "staged_at": staged_at,
+            "summary": action,
+            "normalized": {
+                "schema_version": NORMALIZED_SYNC_SCHEMA_VERSION,
+                "artifact_role": _artifact_role(action),
+                "issue_key": issue_key,
+                "bundle_key": group_key,
+                "links": {"self": relative_path},
+                "refs": {},
+            },
+            "source_relative_path": relative_path,
+            "archived_relative_path": relative_path,
+            "archived_path": str(archive_path.resolve()),
+            "effect": "Recovered applied sync artifact during manifest repair.",
+            "handoff": {
+                "group_key": group_key,
+                "group_size": 1,
+                "group_index": 0,
+                "group_actions": [action],
+                "related_entry_keys": [entry_key],
+                "related_source_paths": [relative_path],
+            },
+        }
+    applied_at = datetime.fromtimestamp(archive_path.stat().st_mtime, tz=timezone.utc).isoformat()
+    source_relative_path = artifact.relative_path
+    entry_key = f"{artifact.tracker}:{source_relative_path}"
+    group_key = _coerce_text(artifact.normalized.get("bundle_key")) or entry_key
+    return {
+        "entry_key": entry_key,
+        "tracker": artifact.tracker,
+        "issue_id": artifact.issue_id,
+        "action": artifact.action,
+        "format": artifact.format,
+        "applied_at": applied_at,
+        "staged_at": artifact.staged_at,
+        "summary": artifact.summary,
+        "normalized": artifact.normalized,
+        "source_relative_path": source_relative_path,
+        "archived_relative_path": source_relative_path,
+        "archived_path": str(archive_path.resolve()),
+        "effect": "Recovered applied sync artifact during manifest repair.",
+        "handoff": {
+            "group_key": group_key,
+            "group_size": 1,
+            "group_index": 0,
+            "group_actions": [artifact.action],
+            "related_entry_keys": [entry_key],
+            "related_source_paths": [source_relative_path],
+        },
+    }
+
+
+def _safe_parse_applied_sync_artifact(loaded: LoadedConfig, archive_path: Path) -> SyncArtifact | None:
+    try:
+        return parse_sync_artifact(loaded, archive_path, state="applied")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _normalize_manifest_handoff(entry: dict[str, Any]) -> dict[str, Any]:
+    handoff = entry.get("handoff")
+    if not isinstance(handoff, dict):
+        handoff = {}
+    entry_key = _coerce_text(entry.get("entry_key")) or "entry-unknown"
+    source_relative_path = _coerce_text(entry.get("source_relative_path")) or _coerce_text(entry.get("archived_relative_path")) or entry_key
+    group_key = _coerce_text(handoff.get("group_key")) or _coerce_text(entry.get("entry_key")) or source_relative_path
+    group_actions = handoff.get("group_actions")
+    if not isinstance(group_actions, list) or not group_actions:
+        group_actions = [entry.get("action")]
+    related_entry_keys = handoff.get("related_entry_keys")
+    if not isinstance(related_entry_keys, list) or not related_entry_keys:
+        related_entry_keys = [entry_key]
+    related_source_paths = handoff.get("related_source_paths")
+    if not isinstance(related_source_paths, list) or not related_source_paths:
+        related_source_paths = [source_relative_path]
+    return {
+        "group_key": group_key,
+        "group_size": int(handoff.get("group_size") or 1),
+        "group_index": int(handoff.get("group_index") or 0),
+        "group_actions": [str(action) for action in group_actions if action is not None],
+        "related_entry_keys": [str(value) for value in related_entry_keys if value is not None],
+        "related_source_paths": [str(value) for value in related_source_paths if value is not None],
+    }
+
+
+def _pick_preferred_manifest_entry(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    return max([left, right], key=_manifest_entry_quality_key)
+
+
+def _manifest_entry_quality_key(entry: dict[str, Any]) -> tuple[int, str]:
+    quality = 0
+    for key in ("summary", "effect", "entry_key", "source_relative_path", "archived_relative_path"):
+        if _coerce_text(entry.get(key)):
+            quality += 1
+    normalized = entry.get("normalized")
+    if isinstance(normalized, dict) and normalized:
+        quality += 1
+    handoff = entry.get("handoff")
+    if isinstance(handoff, dict) and handoff:
+        quality += 1
+    return (quality, _coerce_text(entry.get("applied_at")) or "")
+
+
+def _ensure_unique_manifest_entry_keys(entries: list[dict[str, Any]]) -> None:
+    seen: dict[str, int] = {}
+    for entry in entries:
+        raw_key = _coerce_text(entry.get("entry_key")) or "entry-unknown"
+        count = seen.get(raw_key, 0)
+        if count == 0:
+            seen[raw_key] = 1
+            entry["entry_key"] = raw_key
+            continue
+        seen[raw_key] = count + 1
+        entry["entry_key"] = f"{raw_key}#repair-{count + 1}"
+
+
+def _rebuild_handoff_linkage(entries: list[dict[str, Any]]) -> None:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for index, entry in enumerate(entries):
+        grouped.setdefault(_manifest_group_key(entry, index=index), []).append(entry)
+    for group_entries in grouped.values():
+        ordered_group = sorted(group_entries, key=_manifest_entry_sort_key)
+        group_actions = [str(entry["action"]) for entry in ordered_group if entry.get("action")]
+        entry_keys = [str(entry["entry_key"]) for entry in ordered_group if entry.get("entry_key")]
+        source_paths = [
+            str(entry["source_relative_path"])
+            for entry in ordered_group
+            if entry.get("source_relative_path")
+        ]
+        group_key = _manifest_group_key(ordered_group[0], index=0)
+        for index, entry in enumerate(ordered_group):
+            entry["handoff"] = {
+                "group_key": group_key,
+                "group_size": len(ordered_group),
+                "group_index": index,
+                "group_actions": group_actions,
+                "related_entry_keys": entry_keys,
+                "related_source_paths": source_paths,
+            }
+
+
+def _manifest_entry_sort_key(entry: dict[str, Any]) -> tuple[str, int, str]:
+    handoff = entry.get("handoff")
+    if isinstance(handoff, dict):
+        group_index = int(handoff.get("group_index") or 0)
+    else:
+        group_index = 0
+    return (
+        _coerce_text(entry.get("applied_at")) or "",
+        group_index,
+        _coerce_text(entry.get("archived_relative_path")) or "",
+    )
+
+
+def _manifest_group_key(entry: dict[str, Any], *, index: int) -> str:
+    handoff = entry.get("handoff")
+    if isinstance(handoff, dict):
+        group_key = _coerce_text(handoff.get("group_key"))
+        if group_key:
+            return group_key
+    normalized = entry.get("normalized")
+    if isinstance(normalized, dict):
+        group_key = _coerce_text(normalized.get("bundle_key"))
+        if group_key:
+            return group_key
+    return _coerce_text(entry.get("entry_key")) or f"entry-{index}"
+
+
+def _resolve_applied_manifest_relative_path(
+    loaded: LoadedConfig,
+    entry: dict[str, Any],
+) -> str | None:
+    archive_path = _resolve_applied_manifest_archive_path(loaded, entry)
+    if archive_path is None:
+        return None
+    return archive_path.resolve().relative_to(loaded.sync_applied_dir.resolve()).as_posix()
+
+
+def _resolve_applied_manifest_archive_path(
+    loaded: LoadedConfig,
+    entry: dict[str, Any],
+) -> Path | None:
+    archived_relative_path = _coerce_text(entry.get("archived_relative_path"))
+    if archived_relative_path:
+        return (loaded.sync_applied_dir / archived_relative_path).resolve()
+    archived_path = _coerce_text(entry.get("archived_path"))
+    if not archived_path:
+        return None
+    candidate = Path(archived_path)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (loaded.sync_applied_dir / candidate).resolve()
+
+
+def _load_manifest_payload(manifest_path: Path) -> tuple[list[object], str | None]:
+    if not manifest_path.exists():
+        return [], None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return [], "invalid_json"
+    if not isinstance(payload, list):
+        return [], "invalid_format"
+    return payload, None
 
 
 def _detect_sync_state(loaded: LoadedConfig, path: Path) -> str:

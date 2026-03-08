@@ -173,6 +173,19 @@ class CleanupSettings(BaseModel):
     sync_applied_keep_groups_per_issue: int = Field(default=20, ge=1, le=500)
 
 
+class ReportFreshnessPolicySettings(BaseModel):
+    unknown_issues_threshold: int = Field(default=1, ge=1, le=1000)
+    stale_issues_threshold: int = Field(default=1, ge=1, le=1000)
+    future_attention_threshold: int = Field(default=1, ge=1, le=1000)
+    aging_attention_threshold: int = Field(default=1, ge=1, le=1000)
+
+
+class DashboardSettings(BaseModel):
+    report_freshness_policy: ReportFreshnessPolicySettings = Field(
+        default_factory=ReportFreshnessPolicySettings
+    )
+
+
 class RepoRepublicConfig(BaseModel):
     tracker: TrackerSettings
     workspace: WorkspaceSettings = Field(default_factory=WorkspaceSettings)
@@ -185,6 +198,7 @@ class RepoRepublicConfig(BaseModel):
     codex: CodexSettings = Field(default_factory=CodexSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     cleanup: CleanupSettings = Field(default_factory=CleanupSettings)
+    dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
 
     @model_validator(mode="after")
     def validate_cross_section(self) -> "RepoRepublicConfig":

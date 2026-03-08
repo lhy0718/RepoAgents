@@ -39,6 +39,10 @@ class LoadedConfig:
         return self.ai_root / "artifacts"
 
     @property
+    def reports_dir(self) -> Path:
+        return self.ai_root / "reports"
+
+    @property
     def sync_dir(self) -> Path:
         return self.ai_root / "sync"
 

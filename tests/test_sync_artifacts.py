@@ -5,12 +5,15 @@ from pathlib import Path
 
 from reporepublic.config import load_config
 from reporepublic.sync_artifacts import (
+    inspect_applied_sync_manifests,
     SyncActionRegistry,
     apply_sync_artifact,
     apply_sync_bundle,
     list_sync_artifacts,
+    summarize_sync_applied_retention,
     resolve_sync_artifact,
     resolve_sync_bundle,
+    repair_applied_sync_manifests,
 )
 
 
@@ -361,3 +364,348 @@ def test_sync_registry_supports_custom_bundle_resolver(demo_repo: Path) -> None:
     assert [artifact.action for artifact in bundle] == ["branch", "pr-body"]
     assert [result.action for result in results] == ["branch", "pr-body"]
     assert all(result.archived_path.exists() for result in results)
+
+
+def test_inspect_applied_sync_manifest_detects_integrity_issues(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    issue_root = loaded.sync_applied_dir / "local-file" / "issue-1"
+    issue_root.mkdir(parents=True, exist_ok=True)
+    comment_path = issue_root / "20260308T010101000001Z-comment.md"
+    branch_path = issue_root / "20260308T010102000001Z-branch.json"
+    orphan_path = issue_root / "20260308T010103000001Z-pr-body.md"
+    comment_path.write_text("---\nissue_id: 1\n---\n\nComment handoff.\n", encoding="utf-8")
+    branch_path.write_text('{"action":"branch","issue_id":1}\n', encoding="utf-8")
+    orphan_path.write_text("---\nissue_id: 1\n---\n\nOrphan handoff.\n", encoding="utf-8")
+    (issue_root / "manifest.json").write_text(
+        json.dumps(
+            [
+                {
+                    "entry_key": "local-file:local-file/issue-1/20260308T010101000001Z-comment.md",
+                    "tracker": "local-file",
+                    "issue_id": 1,
+                    "action": "comment",
+                    "format": "markdown",
+                    "applied_at": "2026-03-08T01:01:01+00:00",
+                    "staged_at": "20260308T010101000001Z",
+                    "summary": "comment handoff",
+                    "normalized": {
+                        "artifact_role": "comment-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|comment",
+                        "refs": {},
+                        "links": {"self": "local-file/issue-1/20260308T010101000001Z-comment.md"},
+                    },
+                    "source_relative_path": "local-file/issue-1/20260308T010101000001Z-comment.md",
+                    "archived_relative_path": "local-file/issue-1/20260308T010101000001Z-comment.md",
+                    "archived_path": "/tmp/incorrect-comment.md",
+                    "effect": "Archived comment handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|comment",
+                        "group_size": 9,
+                        "group_index": 5,
+                        "group_actions": ["comment", "branch"],
+                        "related_entry_keys": ["mismatch"],
+                        "related_source_paths": ["mismatch"],
+                    },
+                },
+                {
+                    "entry_key": "duplicate-entry",
+                    "tracker": "local-file",
+                    "issue_id": 1,
+                    "action": "branch",
+                    "format": "json",
+                    "applied_at": "2026-03-08T01:01:02+00:00",
+                    "staged_at": "20260308T010102000001Z",
+                    "summary": "branch handoff",
+                    "normalized": {
+                        "artifact_role": "branch-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "refs": {"head": "reporepublic/issue-1-fix"},
+                        "links": {"self": "local-file/issue-1/20260308T010102000001Z-branch.json"},
+                    },
+                    "source_relative_path": "local-file/issue-1/20260308T010102000001Z-branch.json",
+                    "archived_relative_path": "local-file/issue-1/20260308T010102000001Z-branch.json",
+                    "archived_path": str(branch_path),
+                    "effect": "Archived branch handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "group_size": 1,
+                        "group_index": 0,
+                        "group_actions": ["branch"],
+                        "related_entry_keys": ["duplicate-entry"],
+                        "related_source_paths": ["local-file/issue-1/20260308T010102000001Z-branch.json"],
+                    },
+                },
+                {
+                    "entry_key": "duplicate-entry",
+                    "tracker": "local-file",
+                    "issue_id": 1,
+                    "action": "pr-body",
+                    "format": "markdown",
+                    "applied_at": "2026-03-08T01:01:03+00:00",
+                    "staged_at": "20260308T010103000001Z",
+                    "summary": "missing archive",
+                    "normalized": {
+                        "artifact_role": "pr-body-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "refs": {"head": "reporepublic/issue-1-fix"},
+                        "links": {"self": "local-file/issue-1/20260308T010104000001Z-missing.md"},
+                    },
+                    "source_relative_path": "local-file/issue-1/20260308T010104000001Z-missing.md",
+                    "archived_relative_path": "local-file/issue-1/20260308T010104000001Z-missing.md",
+                    "archived_path": str(issue_root / "20260308T010104000001Z-missing.md"),
+                    "effect": "Archived missing handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "group_size": 2,
+                        "group_index": 1,
+                        "group_actions": ["branch", "pr-body"],
+                        "related_entry_keys": ["duplicate-entry", "duplicate-entry"],
+                        "related_source_paths": [
+                            "local-file/issue-1/20260308T010102000001Z-branch.json",
+                            "local-file/issue-1/20260308T010104000001Z-missing.md",
+                        ],
+                    },
+                },
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    reports = inspect_applied_sync_manifests(loaded, issue_id=1, tracker="local-file")
+
+    assert len(reports) == 1
+    codes = {finding.code for finding in reports[0].findings}
+    assert "mismatched_archived_path" in codes
+    assert "duplicate_entry_key" in codes
+    assert "dangling_archive_reference" in codes
+    assert "orphan_archive_file" in codes
+    assert "handoff_group_mismatch" in codes
+
+
+def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkage(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    issue_root = loaded.sync_applied_dir / "local-markdown" / "issue-1"
+    issue_root.mkdir(parents=True, exist_ok=True)
+    branch_path = issue_root / "20260308T010201000001Z-branch.json"
+    pr_path = issue_root / "20260308T010202000001Z-pr.json"
+    pr_body_path = issue_root / "20260308T010203000001Z-pr-body.md"
+    branch_path.write_text(
+        json.dumps(
+            {
+                "action": "branch",
+                "issue_id": 1,
+                "branch_name": "reporepublic/issue-1-fix-empty-input",
+                "base_branch": "main",
+                "staged_at": "20260308T010201000001Z",
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    pr_path.write_text(
+        json.dumps(
+            {
+                "action": "pr",
+                "issue_id": 1,
+                "title": "RepoRepublic: Fix empty input crash (#1)",
+                "head_branch": "reporepublic/issue-1-fix-empty-input",
+                "base_branch": "main",
+                "draft": True,
+                "staged_at": "20260308T010202000001Z",
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    pr_body_path.write_text(
+        "---\n"
+        "issue_id: 1\n"
+        'title: "RepoRepublic: Fix empty input crash (#1)"\n'
+        "head_branch: reporepublic/issue-1-fix-empty-input\n"
+        "base_branch: main\n"
+        "staged_at: 20260308T010203000001Z\n"
+        "---\n\n"
+        "Draft PR proposal staged locally.\n",
+        encoding="utf-8",
+    )
+    (issue_root / "manifest.json").write_text(
+        json.dumps(
+            [
+                {
+                    "entry_key": "broken-branch",
+                    "tracker": "local-markdown",
+                    "issue_id": 1,
+                    "action": "branch",
+                    "format": "json",
+                    "applied_at": "2026-03-08T01:02:01+00:00",
+                    "staged_at": "20260308T010201000001Z",
+                    "summary": "branch handoff",
+                    "normalized": {
+                        "artifact_role": "branch-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "refs": {"head": "reporepublic/issue-1-fix-empty-input"},
+                        "links": {"self": "local-markdown/issue-1/20260308T010201000001Z-branch.json"},
+                    },
+                    "source_relative_path": "local-markdown/issue-1/20260308T010201000001Z-branch.json",
+                    "archived_relative_path": "local-markdown/issue-1/20260308T010201000001Z-branch.json",
+                    "archived_path": "/tmp/broken-branch.json",
+                    "effect": "Archived branch handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "group_size": 1,
+                        "group_index": 0,
+                        "group_actions": ["branch"],
+                        "related_entry_keys": ["broken-branch"],
+                        "related_source_paths": ["local-markdown/issue-1/20260308T010201000001Z-branch.json"],
+                    },
+                }
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    preview = repair_applied_sync_manifests(loaded, issue_id=1, tracker="local-markdown", dry_run=True)
+    applied = repair_applied_sync_manifests(loaded, issue_id=1, tracker="local-markdown", dry_run=False)
+    repaired_payload = json.loads((issue_root / "manifest.json").read_text(encoding="utf-8"))
+
+    assert len(preview) == 1
+    assert preview[0].changed is True
+    assert preview[0].adopted_archives == 2
+    assert preview[0].findings_after == 0
+    assert len(applied) == 1
+    assert applied[0].changed is True
+    assert applied[0].manifest_entry_count_after == 3
+    assert applied[0].findings_after == 0
+    assert [entry["action"] for entry in repaired_payload] == ["branch", "pr", "pr-body"]
+    assert repaired_payload[0]["archived_path"] == str(branch_path.resolve())
+    assert repaired_payload[0]["handoff"]["group_size"] == 3
+    assert repaired_payload[0]["handoff"]["group_actions"] == ["branch", "pr", "pr-body"]
+    assert repaired_payload[1]["handoff"]["group_index"] == 1
+    assert repaired_payload[2]["handoff"]["group_index"] == 2
+    assert repaired_payload[2]["normalized"]["links"]["self"] == "local-markdown/issue-1/20260308T010203000001Z-pr-body.md"
+
+
+def test_summarize_sync_applied_retention_reports_prunable_groups(demo_repo: Path) -> None:
+    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "sync_applied_keep_groups_per_issue: 20",
+            "sync_applied_keep_groups_per_issue: 1",
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_config(demo_repo)
+    issue_root = loaded.sync_applied_dir / "local-markdown" / "issue-1"
+    issue_root.mkdir(parents=True, exist_ok=True)
+    older_branch = issue_root / "20260308T010001000001Z-branch.json"
+    newer_comment = issue_root / "20260308T010101000001Z-comment.md"
+    older_branch.write_text(
+        json.dumps(
+            {
+                "action": "branch",
+                "issue_id": 1,
+                "branch_name": "reporepublic/issue-1-older",
+                "staged_at": "20260308T010001000001Z",
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    newer_comment.write_text("---\nissue_id: 1\n---\n\nRecent comment.\n", encoding="utf-8")
+    (issue_root / "manifest.json").write_text(
+        json.dumps(
+            [
+                {
+                    "entry_key": "local-markdown:local-markdown/issue-1/20260308T010001000001Z-branch.json",
+                    "tracker": "local-markdown",
+                    "issue_id": 1,
+                    "action": "branch",
+                    "format": "json",
+                    "applied_at": "2026-03-08T01:00:01+00:00",
+                    "staged_at": "20260308T010001000001Z",
+                    "summary": "Older branch handoff.",
+                    "normalized": {
+                        "artifact_role": "branch-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|head:reporepublic/issue-1-older",
+                        "refs": {"head": "reporepublic/issue-1-older"},
+                        "links": {"self": "local-markdown/issue-1/20260308T010001000001Z-branch.json"},
+                    },
+                    "source_relative_path": "local-markdown/issue-1/20260308T010001000001Z-branch.json",
+                    "archived_relative_path": "local-markdown/issue-1/20260308T010001000001Z-branch.json",
+                    "archived_path": str(older_branch),
+                    "effect": "Archived branch handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|head:reporepublic/issue-1-older",
+                        "group_size": 1,
+                        "group_index": 0,
+                        "group_actions": ["branch"],
+                        "related_entry_keys": [
+                            "local-markdown:local-markdown/issue-1/20260308T010001000001Z-branch.json"
+                        ],
+                        "related_source_paths": [
+                            "local-markdown/issue-1/20260308T010001000001Z-branch.json"
+                        ],
+                    },
+                },
+                {
+                    "entry_key": "local-markdown:local-markdown/issue-1/20260308T010101000001Z-comment.md",
+                    "tracker": "local-markdown",
+                    "issue_id": 1,
+                    "action": "comment",
+                    "format": "markdown",
+                    "applied_at": "2026-03-08T01:01:01+00:00",
+                    "staged_at": "20260308T010101000001Z",
+                    "summary": "Recent comment handoff.",
+                    "normalized": {
+                        "artifact_role": "comment-proposal",
+                        "issue_key": "issue:1",
+                        "bundle_key": "issue:1|comment",
+                        "refs": {},
+                        "links": {"self": "local-markdown/issue-1/20260308T010101000001Z-comment.md"},
+                    },
+                    "source_relative_path": "local-markdown/issue-1/20260308T010101000001Z-comment.md",
+                    "archived_relative_path": "local-markdown/issue-1/20260308T010101000001Z-comment.md",
+                    "archived_path": str(newer_comment),
+                    "effect": "Archived comment handoff.",
+                    "handoff": {
+                        "group_key": "issue:1|comment",
+                        "group_size": 1,
+                        "group_index": 0,
+                        "group_actions": ["comment"],
+                        "related_entry_keys": [
+                            "local-markdown:local-markdown/issue-1/20260308T010101000001Z-comment.md"
+                        ],
+                        "related_source_paths": [
+                            "local-markdown/issue-1/20260308T010101000001Z-comment.md"
+                        ],
+                    },
+                },
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = summarize_sync_applied_retention(loaded, limit=10)
+
+    assert snapshot.keep_groups_per_issue == 1
+    assert snapshot.total_issues == 1
+    assert snapshot.prunable_issues == 1
+    assert snapshot.prunable_groups == 1
+    assert snapshot.entries[0].status == "prunable"
+    assert snapshot.entries[0].groups[0].status == "kept"
+    assert snapshot.entries[0].groups[1].status == "prunable"
+    assert snapshot.entries[0].prunable_bytes > 0

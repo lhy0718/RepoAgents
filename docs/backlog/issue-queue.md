@@ -718,6 +718,688 @@
   - [x] dangling manifest entry와 orphan archive 파일이 함께 정리됨
   - [x] dry-run preview와 테스트가 추가됨
 
+### RR-051. applied sync manifest integrity 검사와 repair helper 추가
+
+- Status: done
+- Priority: P3
+- Area: Sync operations / CLI / Integrity
+- Problem: applied sync archive는 보관되지만, manifest drift나 orphan 파일이 생기면 운영자가 retention 전에 무결성 상태를 따로 진단하고 복구할 경로가 없었다.
+- Scope:
+  - `republic sync check` read-only integrity command 추가
+  - `republic sync repair` canonicalize/adopt helper 추가
+  - duplicate key, dangling archive, orphan file, handoff linkage mismatch 검사
+- Acceptance criteria:
+  - [x] `sync check`가 applied manifest integrity finding을 보고하고 비정상이면 non-zero로 종료함
+  - [x] `sync repair`가 orphan archive를 manifest에 편입하고 handoff linkage를 재구성함
+  - [x] CLI 테스트와 unit 테스트가 추가됨
+
+### RR-052. sync-applied retention 결과를 dashboard에 age/size 기준으로 시각화
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Sync operations / Retention
+- Problem: applied sync archive retention은 `clean --sync-applied --dry-run`에서만 보였고, 운영자가 dashboard에서 어느 issue archive가 정리 대상인지와 정리 영향 크기를 빠르게 파악하기 어려웠다.
+- Scope:
+  - dashboard snapshot에 `sync_retention` 추가
+  - HTML/JSON/Markdown export에 age/size 기반 retention 요약 추가
+  - `stable`, `prunable`, `repair-needed` 분류와 prunable bytes/group count 노출
+- Acceptance criteria:
+  - [x] dashboard가 `cleanup.sync_applied_keep_groups_per_issue`를 반영한 retention snapshot을 계산함
+  - [x] HTML/JSON/Markdown export에 prunable group, bytes, oldest prunable age가 노출됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-053. sync audit report export 추가
+
+- Status: done
+- Priority: P3
+- Area: Sync operations / Reporting / CLI
+- Problem: 운영자가 pending staged artifact, applied manifest integrity, retention 상태를 각각 따로 봐야 해서 incident handoff나 자동화 입력으로 쓰기 어려웠다.
+- Scope:
+  - `republic sync audit` command 추가
+  - JSON/Markdown export 추가
+  - pending inventory, integrity finding, retention summary를 하나의 report로 묶기
+- Acceptance criteria:
+  - [x] `.ai-republic/reports/sync-audit.json`과 `.md` export 경로가 동작함
+  - [x] report가 pending inventory, integrity finding, retention summary를 포함함
+  - [x] integrity issue가 있으면 command가 non-zero로 종료함
+
+### RR-054. sync-applied cleanup 결과를 machine-readable report로 남기기
+
+- Status: done
+- Priority: P3
+- Area: Cleanup / Reporting / CLI
+- Problem: `clean --sync-applied --dry-run` 결과는 터미널 출력에만 남아서, review나 incident handoff용으로 보관 가능한 cleanup snapshot이 부족했다.
+- Scope:
+  - `clean --report` option 추가
+  - cleanup preview/result JSON/Markdown export 추가
+  - action list, affected issue, manifest rewrite count를 report로 남기기
+- Acceptance criteria:
+  - [x] `republic clean --sync-applied --dry-run --report`가 `.ai-republic/reports/cleanup-preview.json|md`를 생성함
+  - [x] 실제 cleanup도 `.ai-republic/reports/cleanup-result.json|md`를 생성할 수 있음
+  - [x] 테스트와 문서가 추가됨
+
+### RR-055. sync audit / cleanup report를 dashboard에서 바로 열 수 있게 연결
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: sync audit와 cleanup report는 export되지만 운영자는 dashboard에서 해당 report의 존재 여부와 상태를 한 번에 확인하기 어려웠다.
+- Scope:
+  - dashboard snapshot에 available report summary 추가
+  - HTML/JSON/Markdown export에 `Reports` 섹션 추가
+  - `.ai-republic/reports/` 아래 sync audit/cleanup export 링크와 status/metric summary 노출
+- Acceptance criteria:
+  - [x] dashboard가 `.ai-republic/reports/`를 읽어 `sync-audit`, `cleanup-preview`, `cleanup-result` export를 탐지함
+  - [x] HTML/JSON/Markdown export에 report label, status, summary, metrics가 노출됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-056. cleanup report를 sync audit에 cross-link
+
+- Status: done
+- Priority: P3
+- Area: Sync operations / Reporting / Ops UX
+- Problem: sync audit report는 pending/integrity/retention을 잘 묶지만, 직전 cleanup preview/result와 연결되지 않아 operator가 audit과 cleanup history를 따로 열어야 했다.
+- Scope:
+  - sync audit snapshot에 related cleanup report summary 추가
+  - JSON/Markdown export에 cleanup preview/result path, status, metric summary 노출
+  - CLI summary에 linked cleanup report count 노출
+- Acceptance criteria:
+  - [x] `republic sync audit`가 matching cleanup preview/result export를 감지함
+  - [x] JSON/Markdown export에 related cleanup report summary가 포함됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-057. applied sync manifest integrity 요약을 dashboard report card에서 더 자세히 표시
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Integrity
+- Problem: dashboard의 `Sync audit` report card는 status와 summary만 보여줘서, operator가 어떤 integrity finding이 얼마나 발생했는지와 어떤 issue가 영향을 받는지 다시 report 본문을 열어야 했다.
+- Scope:
+  - dashboard report entry에 integrity breakdown 추가
+  - HTML card에 finding count, clean/issues split, affected issue sample 노출
+  - JSON/Markdown export에도 같은 detail 포함
+- Acceptance criteria:
+  - [x] `Sync audit` report card가 integrity report 수, issues with findings, clean issues, finding count를 노출함
+  - [x] dashboard JSON/Markdown export가 integrity detail을 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-058. sync audit linked cleanup report를 dashboard report card와 교차 참조
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: sync audit export가 cleanup report를 알고 있어도 dashboard에서는 각 report card가 서로 분리되어 보여서 operator가 card 사이를 바로 이동하기 어려웠다.
+- Scope:
+  - dashboard report entry에 card-level cross-reference 추가
+  - `Sync audit`에서 related cleanup card로 이동 가능한 링크 추가
+  - cleanup card에서 `Sync audit` 참조 관계 노출
+- Acceptance criteria:
+  - [x] `Sync audit` card가 linked cleanup report card로 이동 가능한 링크를 가짐
+  - [x] cleanup report card가 `Sync audit` 참조를 노출함
+  - [x] dashboard JSON/Markdown export와 테스트가 갱신됨
+
+### RR-059. report card에서 integrity finding code를 action-oriented hint로 요약
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Integrity
+- Problem: `Sync audit` card는 finding code와 count는 보여줘도, operator가 다음에 무엇을 해야 하는지 바로 읽기 어려웠다.
+- Scope:
+  - 주요 integrity finding code를 운영 힌트로 매핑
+  - `Sync audit` card detail에 action-oriented hint 추가
+  - dashboard JSON/Markdown export에 같은 hint 포함
+- Acceptance criteria:
+  - [x] `missing_manifest`, `duplicate_entry_key` 등 주요 finding code가 hint로 번역됨
+  - [x] HTML/JSON/Markdown export가 동일한 hint를 노출함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-060. sync audit related cleanup report에 issue filter mismatch 경고 추가
+
+- Status: done
+- Priority: P3
+- Area: Sync operations / Reporting / Safety UX
+- Problem: `sync audit --issue <id>`가 cleanup report를 연결할 때, 다른 `issue_filter`로 생성된 cleanup export를 조용히 제외해서 operator가 왜 연결되지 않았는지 알기 어려웠다.
+- Scope:
+  - related cleanup report loader에서 mismatch report 분리
+  - JSON/Markdown export에 mismatch warning 섹션 추가
+  - CLI summary에 mismatch count 출력
+- Acceptance criteria:
+  - [x] mismatch cleanup report가 warning으로 따로 노출됨
+  - [x] matched report count와 mismatch count가 모두 보임
+  - [x] 테스트와 문서가 추가됨
+
+### RR-061. dashboard report card에 cleanup report freshness/age 표시 추가
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup preview/result card는 report가 오래되었는지 바로 보이지 않아, operator가 stale export를 최신 상태로 오해할 수 있었다.
+- Scope:
+  - cleanup report entry에 freshness/age 계산 추가
+  - HTML card와 JSON/Markdown export에 freshness metadata 노출
+  - stale cleanup report를 테스트 fixture로 고정
+- Acceptance criteria:
+  - [x] cleanup report card가 freshness 상태와 age를 노출함
+  - [x] dashboard JSON/Markdown export가 freshness/age 필드를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-062. sync audit mismatch warning을 dashboard `Sync audit` card에도 반영
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Safety UX
+- Problem: `sync audit` export는 cleanup report issue filter mismatch를 기록하지만, dashboard `Sync audit` card에는 그 경고가 직접 드러나지 않아 operator가 JSON/Markdown report를 다시 열어야 했다.
+- Scope:
+  - dashboard report detail에 cleanup mismatch warning과 count 추가
+  - HTML/JSON/Markdown export에 같은 mismatch detail 노출
+  - summary metric에 mismatch count fallback 연결
+- Acceptance criteria:
+  - [x] `Sync audit` card가 cleanup mismatch warning을 바로 보여줌
+  - [x] dashboard JSON/Markdown export가 mismatch count와 warning 문자열을 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-063. cleanup report freshness를 dashboard summary metric으로 집계
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup preview/result card마다 freshness는 보이지만, operator가 dashboard 상단의 report summary만 보고 전체 cleanup export의 freshness 상태를 한눈에 파악하기는 어려웠다.
+- Scope:
+  - dashboard report snapshot에 cleanup freshness aggregate 추가
+  - `Reports` summary metric에 cleanup report freshness 집계 노출
+  - JSON/Markdown export에도 같은 aggregate 포함
+- Acceptance criteria:
+  - [x] dashboard가 cleanup report의 `fresh/aging/stale` 집계를 계산함
+  - [x] HTML `Reports` summary metric에 aggregate freshness가 노출됨
+  - [x] JSON/Markdown export와 테스트, 문서가 갱신됨
+
+### RR-064. stale report 집계를 dashboard summary card로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup freshness aggregate가 있어도, operator가 stale cleanup export 수만 빠르게 읽으려면 metric 문자열을 다시 해석해야 했다.
+- Scope:
+  - `Reports` metric row에 stale cleanup 전용 card 추가
+  - dashboard snapshot과 Markdown export에 stale cleanup count 노출
+  - 기존 cleanup freshness aggregate는 유지
+- Acceptance criteria:
+  - [x] dashboard가 `Stale cleanup reports` summary card를 렌더링함
+  - [x] JSON/Markdown export가 stale cleanup report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-065. report freshness를 전체 report 기준으로도 집계
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup export 기준 freshness aggregate는 있었지만, sync audit를 포함한 전체 report set의 freshness 상태는 operator가 직접 card별로 읽어야 했다.
+- Scope:
+  - dashboard report snapshot에 전체 report freshness aggregate 추가
+  - `Reports` metric row에 `Report freshness` card 추가
+  - JSON/Markdown export에도 같은 aggregate 포함
+- Acceptance criteria:
+  - [x] dashboard가 전체 report의 `fresh/aging/stale/future` 집계를 계산함
+  - [x] HTML `Reports` metric row에 전체 report freshness aggregate가 노출됨
+  - [x] JSON/Markdown export와 테스트, 문서가 갱신됨
+
+### RR-066. aging report 집계를 dashboard summary card로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: 전체 report freshness aggregate가 있어도, operator가 aging report 수만 빠르게 확인하려면 metric 문자열을 해석해야 했다.
+- Scope:
+  - `Reports` metric row에 `Aging reports` card 추가
+  - dashboard snapshot과 Markdown export에 aging report count 노출
+  - 기존 overall/cleanup freshness aggregate는 유지
+- Acceptance criteria:
+  - [x] dashboard가 `Aging reports` summary card를 렌더링함
+  - [x] JSON/Markdown export가 aging report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-067. future report 집계를 dashboard summary card로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: 전체 report freshness aggregate가 있어도, operator가 future-dated report 수만 빠르게 확인하려면 metric 문자열을 해석해야 했다.
+- Scope:
+  - `Reports` metric row에 `Future reports` card 추가
+  - dashboard snapshot과 Markdown export에 future report count 노출
+  - 기존 overall/cleanup freshness aggregate는 유지
+- Acceptance criteria:
+  - [x] dashboard가 `Future reports` summary card를 렌더링함
+  - [x] JSON/Markdown export가 future report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-068. unknown report freshness를 dashboard warning metric으로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: report freshness aggregate에 `unknown` 값이 포함돼도, operator가 metadata 누락이나 parse failure로 freshness를 계산하지 못한 report 수를 즉시 알아보기 어려웠다.
+- Scope:
+  - `Reports` metric row에 `Unknown freshness reports` warning card 추가
+  - dashboard snapshot과 Markdown export에 unknown report count 노출
+  - unknown count가 0일 때는 card를 숨기고 aggregate는 유지
+- Acceptance criteria:
+  - [x] unknown freshness report가 있을 때 dashboard가 warning card를 렌더링함
+  - [x] JSON/Markdown export가 unknown report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-069. cleanup aging report 집계를 dashboard summary card로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup freshness aggregate가 있어도, operator가 cleanup export 중 aging 상태인 report 수만 빠르게 읽으려면 metric 문자열을 해석해야 했다.
+- Scope:
+  - `Reports` metric row에 `Cleanup aging reports` card 추가
+  - dashboard snapshot과 Markdown export에 cleanup aging report count 노출
+  - 기존 cleanup freshness aggregate와 stale cleanup card는 유지
+- Acceptance criteria:
+  - [x] dashboard가 `Cleanup aging reports` summary card를 렌더링함
+  - [x] JSON/Markdown export가 cleanup aging report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-070. cleanup future report 집계를 dashboard summary card로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup freshness aggregate가 있어도, operator가 cleanup export 중 future-dated report 수만 빠르게 읽으려면 metric 문자열을 해석해야 했다.
+- Scope:
+  - `Reports` metric row에 `Cleanup future reports` card 추가
+  - dashboard snapshot과 Markdown export에 cleanup future report count 노출
+  - 기존 cleanup freshness aggregate와 cleanup aging/stale cards는 유지
+- Acceptance criteria:
+  - [x] dashboard가 `Cleanup future reports` summary card를 렌더링함
+  - [x] JSON/Markdown export가 cleanup future report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-071. cleanup unknown freshness를 dashboard warning metric으로 분리
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: cleanup freshness aggregate에 `unknown` 값이 포함돼도, operator가 cleanup export 중 freshness를 계산할 수 없는 report 수를 즉시 알아보기 어려웠다.
+- Scope:
+  - `Reports` metric row에 `Cleanup unknown freshness reports` warning card 추가
+  - dashboard snapshot과 Markdown export에 cleanup unknown report count 노출
+  - cleanup unknown count가 0일 때는 card를 숨기고 aggregate는 유지
+- Acceptance criteria:
+  - [x] cleanup unknown freshness report가 있을 때 dashboard가 warning card를 렌더링함
+  - [x] JSON/Markdown export가 cleanup unknown report count를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-072. report freshness aggregate를 alert severity와 연결
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: report freshness aggregate가 숫자만 보여줘서, operator가 지금 당장 대응이 필요한지 아니면 단순 참고 수준인지 빠르게 판단하기 어려웠다.
+- Scope:
+  - `Report freshness`, `Cleanup freshness` aggregate에 severity 계산 추가
+  - HTML summary card tone과 설명 문구에 severity 반영
+  - JSON/Markdown export에도 severity와 reason 포함
+- Acceptance criteria:
+  - [x] overall/cleanup freshness aggregate가 `issues`, `attention`, `clean` 중 하나의 severity를 가짐
+  - [x] HTML summary card와 JSON/Markdown export에 severity metadata가 노출됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-073. report freshness aggregate에 repo policy threshold를 연결
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Config
+- Problem: freshness severity가 고정 규칙이라 저장소별 운영 기준에 맞게 stale/unknown/aging/future count의 민감도를 조정할 수 없었다.
+- Scope:
+  - `dashboard.report_freshness_policy` config 추가
+  - overall/cleanup freshness severity 계산이 repo policy threshold를 읽도록 연결
+  - 기본 threshold는 현재 동작과 호환되게 유지
+- Acceptance criteria:
+  - [x] config로 stale/unknown/future/aging threshold를 override할 수 있음
+  - [x] override가 overall/cleanup freshness severity에 반영됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-074. report freshness severity를 dashboard hero summary와 연결
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: report freshness severity가 `Reports` 섹션 안에만 있어서, operator가 dashboard에 들어오자마자 현재 report health posture를 읽기 어려웠다.
+- Scope:
+  - hero banner가 overall/cleanup freshness severity 중 더 높은 수준을 반영하도록 연결
+  - hero summary에 severity title, reason, reporting chip 추가
+  - dashboard JSON/Markdown snapshot에도 같은 hero reporting summary 노출
+- Acceptance criteria:
+  - [x] dashboard hero가 report freshness severity를 tone과 문구로 반영함
+  - [x] JSON/Markdown snapshot이 hero reporting summary를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-075. doctor에 report freshness policy 진단을 추가
+
+- Status: done
+- Priority: P3
+- Area: Doctor / Dashboard / Ops UX
+- Problem: `dashboard.report_freshness_policy`가 repo별로 조정 가능해졌지만, operator가 현재 threshold가 기본값인지 완화된 값인지 `doctor`만으로는 빠르게 판단할 수 없었다.
+- Scope:
+  - `republic doctor`에 report freshness policy diagnostic check 추가
+  - 현재 threshold를 요약하고, 지나치게 느슨한 escalation은 WARN으로 표시
+  - CLI 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic doctor`가 current report freshness threshold를 출력함
+  - [x] 느슨한 threshold는 WARN과 hint로 surfaced 됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-076. report freshness severity를 `republic status` export와 연결
+
+- Status: done
+- Priority: P3
+- Area: Status / Dashboard / Ops UX
+- Problem: report freshness severity가 dashboard에만 집중되어 있어서, operator가 `republic status`만 볼 때는 현재 report health posture를 같이 읽을 수 없었다.
+- Scope:
+  - `republic status`가 dashboard와 같은 report-health snapshot을 재사용하도록 연결
+  - overall/cleanup freshness severity, summary, reason을 CLI status output에 노출
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic status`가 report health severity/title을 함께 출력함
+  - [x] overall/cleanup freshness summary와 reason이 status output에 포함됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-077. report freshness policy를 dashboard/export metadata에 명시적으로 남기기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Metadata
+- Problem: report freshness severity를 계산한 threshold는 config에만 있어서, exported dashboard snapshot만 공유하면 어떤 policy 기준으로 severity가 나왔는지 바로 확인하기 어려웠다.
+- Scope:
+  - dashboard snapshot에 `policy.report_freshness_policy` metadata 추가
+  - HTML dashboard meta row와 Markdown snapshot에 policy summary 노출
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] dashboard JSON export가 report freshness policy metadata를 포함함
+  - [x] HTML/Markdown export도 같은 policy summary를 노출함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-078. report freshness policy를 report card detail에도 직접 노출하기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Metadata
+- Problem: 전역 dashboard metadata에 policy threshold가 들어가도, operator가 특정 report card를 읽는 동안에는 그 카드에 어떤 threshold context가 적용됐는지 바로 확인하기 어려웠다.
+- Scope:
+  - 각 report entry에 policy summary와 threshold metadata 추가
+  - HTML report card와 Markdown export에 per-report policy context 노출
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] report entry JSON이 policy summary와 threshold를 포함함
+  - [x] HTML/Markdown report card가 per-report policy context를 보여줌
+  - [x] 테스트와 문서가 추가됨
+
+### RR-079. status 출력에도 policy threshold summary를 함께 붙이기
+
+- Status: done
+- Priority: P3
+- Area: Status / Reporting / Metadata
+- Problem: `republic status`가 report health severity와 reason은 보여줘도, 그 severity가 어떤 threshold baseline 위에서 계산됐는지 한 화면에서 바로 확인할 수 없었다.
+- Scope:
+  - `republic status` output에 active report freshness policy summary 추가
+  - status 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic status`가 policy threshold summary를 출력함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-080. sync audit/cleanup raw export에도 policy metadata를 직접 심기
+
+- Status: done
+- Priority: P3
+- Area: Reports / Metadata / Ops UX
+- Problem: dashboard snapshot에는 policy metadata가 들어가도, raw `sync-audit.json` / `cleanup-*.json`만 따로 공유하거나 자동화에 넘길 때는 어떤 threshold로 severity를 계산했는지 다시 config를 열어야 했다.
+- Scope:
+  - sync audit snapshot에 policy metadata 추가
+  - cleanup report snapshot에 policy metadata 추가
+  - Markdown export에도 policy section 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] raw sync audit / cleanup JSON export가 policy metadata를 포함함
+  - [x] raw sync audit / cleanup Markdown export가 policy summary를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-081. report freshness policy mismatch를 doctor/status에서 stronger warning으로 연결하기
+
+- Status: done
+- Priority: P3
+- Area: Doctor / Status / Reporting / Drift Detection
+- Problem: raw `sync-audit.json` / `cleanup-*.json` export가 예전 `report_freshness_policy` threshold로 생성된 뒤 config만 바뀌면, operator는 CLI에서 현재 severity baseline과 raw report embedded policy가 엇갈린 사실을 바로 보지 못했다.
+- Scope:
+  - raw report export의 embedded `policy.summary`를 읽는 helper 추가
+  - `republic doctor`에 embedded policy mismatch 경고 추가
+  - `republic status`에 `policy_warning` block 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] raw report export가 현재 config와 다른 embedded policy를 가지면 `doctor`가 WARN을 출력함
+  - [x] `republic status`가 mismatch file name과 summary를 함께 출력함
+  - [x] embedded policy metadata가 없는 오래된 export는 mismatch로 취급하지 않음
+  - [x] 테스트와 문서가 추가됨
+
+### RR-082. dashboard가 raw report의 embedded policy metadata drift를 감지하도록 하기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Drift Detection
+- Problem: `doctor`와 `status`에서는 raw report embedded policy mismatch를 볼 수 있어도, dashboard 자체에서는 각 report card가 현재 threshold와 embedded threshold 중 무엇을 따르는지 한눈에 보이지 않았다.
+- Scope:
+  - dashboard report entry에 embedded policy summary/threshold metadata 추가
+  - live policy 대비 drift/match/missing alignment status 계산
+  - `Policy drift reports` summary card와 JSON/Markdown count 추가
+  - HTML/JSON/Markdown report card detail에 alignment 정보 노출
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] dashboard HTML이 `Policy drift reports` metric과 per-report drift note를 보여줌
+  - [x] dashboard JSON/Markdown snapshot이 drift/missing/embedded count와 alignment status를 포함함
+  - [x] embedded policy metadata가 없는 오래된 export는 `missing`으로 표시됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-083. raw report embedded policy mismatch를 sync audit/cleanup export metadata와 cross-link하기
+
+- Status: done
+- Priority: P3
+- Area: Reports / Metadata / Cross-linking
+- Problem: dashboard에서는 raw report embedded policy drift를 볼 수 있어도, raw `sync-audit.json`과 `cleanup-*.json` 자체에는 linked report의 policy drift 상태가 직접 실리지 않아 downstream automation이나 공유 시 다시 계산이 필요했다.
+- Scope:
+  - raw sync audit `related_reports.entries`에 linked cleanup export `policy_alignment` metadata 추가
+  - raw cleanup report에 latest sync audit export cross-link 추가
+  - 양쪽 report의 Markdown export에 policy drift section 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] raw sync audit JSON/Markdown이 linked cleanup export의 `policy_alignment`를 포함함
+  - [x] raw cleanup JSON/Markdown이 linked sync audit export와 `policy_alignment`를 포함함
+  - [x] current config와 다른 embedded policy는 `drift`로 표시됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-084. dashboard drift signal을 sync audit/cleanup related report section과 연결하기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Cross References
+- Problem: raw report export에는 linked report `policy_alignment`가 들어가도, dashboard에서는 그 drift signal이 각 card의 Cross references 구간으로 이어지지 않아 operator가 raw JSON 없이 관련 report drift를 바로 읽기 어려웠다.
+- Scope:
+  - dashboard relation parsing이 `related_reports.entries[*].policy_alignment`를 읽도록 확장
+  - sync audit / cleanup report card detail에 related report drift warning 추가
+  - Cross references panel에 related report drift note 표시
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] sync audit / cleanup report card가 related report policy drift warning을 detail에 노출함
+  - [x] Cross references panel에서 related report drift note를 직접 볼 수 있음
+  - [x] 테스트와 문서가 추가됨
+
+### RR-085. sync audit/cleanup related report policy drift를 CLI summary로 노출하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Reporting / Ops UX
+- Problem: raw report와 dashboard에는 linked report policy drift가 들어가도, CLI에서 `republic sync audit`나 `republic clean --report`를 실행한 직후에는 drift count를 바로 읽기 어려웠다.
+- Scope:
+  - `SyncAuditBuildResult`와 `CleanupReportBuildResult`에 related policy drift count 추가
+  - `republic sync audit` CLI summary에 linked cleanup policy drift count 출력
+  - `republic clean --report` CLI summary에 linked sync-audit policy drift count 출력
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic sync audit`가 linked cleanup policy drift count를 출력함
+  - [x] `republic clean --report`가 linked sync-audit policy drift count를 출력함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-086. report policy drift를 dashboard hero/report summary severity와 연결하기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Reporting / Ops UX
+- Problem: `Policy drift reports` 카드와 report detail에는 drift가 보여도, dashboard hero와 report summary metric은 freshness severity만 따라가서 drift-only 상황이 상단 요약에 반영되지 않았다.
+- Scope:
+  - dashboard report snapshot에 `policy_drift_severity`와 `report_summary_severity` 추가
+  - dashboard hero가 drift-only attention을 별도 제목으로 보여주도록 조정
+  - `Report freshness` summary metric이 dashboard 전용 summary severity를 사용하도록 연결
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] freshness count는 clean이어도 policy drift가 있으면 dashboard hero가 `attention`으로 올라감
+  - [x] dashboard snapshot/Markdown이 `report_summary_severity`와 `policy_drift_severity`를 포함함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-087. report policy drift를 doctor/status policy health summary와 통합하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Reporting / Ops UX
+- Problem: dashboard에는 drift가 summary severity로 반영돼도, `doctor`와 `status`에서는 threshold posture와 embedded-policy drift가 별도 줄로만 보여서 운영자가 CLI에서 policy health를 한 번에 판단하기 어려웠다.
+- Scope:
+  - `Report policy health` aggregate helper 추가
+  - `republic doctor`에 threshold relaxation + embedded-policy drift를 합친 summary check 추가
+  - `republic status`에 `policy_health` summary line 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic doctor`가 threshold posture와 embedded-policy drift를 합친 `Report policy health` check를 출력함
+  - [x] `republic status`가 `policy_health` line으로 같은 summary를 출력함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-088. report policy drift remediation guidance를 doctor/status/dashboard에서 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Ops UX / Shared Helpers
+- Problem: drift를 감지하는 surface가 늘면서 `dashboard`, `doctor`, `status`가 각기 다른 remediation 문구를 쓰기 시작했고, 권장 re-export 명령도 한곳에서 관리되지 않았다.
+- Scope:
+  - `report_policy`에 remediation summary/detail helper 추가
+  - dashboard metric/card가 같은 helper를 사용하도록 정리
+  - `doctor` hint와 `status` remediation line이 같은 helper를 사용하도록 정리
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] dashboard, `doctor`, `status`가 같은 remediation guidance를 출력함
+  - [x] drift guidance가 한 helper에서 관리됨
+  - [x] 테스트와 문서가 추가됨
+
+### RR-089. report policy drift remediation guidance를 raw `sync-audit`/`cleanup` export 본문에도 직접 삽입하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Raw Exports / Ops UX
+- Problem: `dashboard`, `doctor`, `status`에서는 drift remediation guidance를 볼 수 있어도, raw `sync-audit` / `cleanup` export 본문만 전달받은 사람은 JSON/Markdown 안에서 바로 대응 명령을 읽기 어려웠다.
+- Scope:
+  - raw related report `policy_alignment` payload에 `remediation` 추가
+  - raw drift summary entry에 `remediation` 추가
+  - raw Markdown export에 `policy_remediation` / `remediation` 줄 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] raw JSON export가 drift remediation guidance를 포함함
+  - [x] raw Markdown export가 remediation guidance를 직접 출력함
+  - [x] 테스트와 문서가 추가됨
+
+### RR-090. sync audit/cleanup CLI summary에도 remediation guidance를 opt-in으로 직접 출력하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Reporting / Ops UX
+- Problem: raw export와 dashboard에는 remediation guidance가 들어가도, `republic sync audit`와 `republic clean --report` 실행 직후에는 count만 보이고 guidance는 파일을 열어야 확인할 수 있었다.
+- Scope:
+  - `republic sync audit --show-remediation` 추가
+  - `republic clean --report --show-remediation` 추가
+  - drift count가 있을 때만 guidance를 inline 출력
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic sync audit --show-remediation`이 policy drift guidance를 출력함
+- [x] `republic clean --report --show-remediation`이 policy drift guidance를 출력함
+- [x] 기본 출력은 기존 verbosity를 유지함
+- [x] 테스트와 문서가 추가됨
+
+### RR-091. sync audit/cleanup CLI summary에 mismatch detail도 opt-in으로 직접 출력하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Reporting / Ops UX
+- Problem: `republic sync audit`와 `republic clean --report`가 mismatch count는 보여줘도, 어떤 linked report가 왜 mismatch인지 확인하려면 raw export를 다시 열어야 했다.
+- Scope:
+  - `republic sync audit --show-mismatches` 추가
+  - `republic clean --report --show-mismatches` 추가
+  - linked report mismatch warning을 build result에서 직접 노출
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic sync audit --show-mismatches`가 linked cleanup mismatch warning을 출력함
+- [x] `republic clean --report --show-mismatches`가 linked sync audit mismatch warning을 출력함
+- [x] 기본 출력은 기존 verbosity를 유지함
+- [x] 테스트와 문서가 추가됨
+
+### RR-092. report policy drift를 sync audit/cleanup CLI summary에서 mismatch detail과 함께 한 블록으로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Reporting / Ops UX
+- Problem: mismatch detail과 remediation guidance를 각각 따로 출력하면 linked report 상황을 읽을 때 시선이 분산되고, drift detail 자체도 count 외에는 CLI에서 한눈에 보이지 않았다.
+- Scope:
+  - linked report policy drift detail을 build result까지 올리기
+  - `sync audit`와 `clean --report`에 공통 related-report detail block helper 추가
+  - `--show-mismatches`와 `--show-remediation`를 함께 켰을 때 mismatch/drift/remediation을 한 블록으로 출력
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `republic sync audit`가 related cleanup mismatch/drift/remediation을 한 블록으로 출력함
+- [x] `republic clean --report`가 related sync-audit mismatch/drift/remediation을 한 블록으로 출력함
+- [x] 단일 플래그만 켠 경우에도 같은 block 구조에서 해당 섹션만 출력함
+- [x] 테스트와 문서가 추가됨
+
+### RR-093. related-report detail block을 `doctor`/`status` 경고 출력에도 재사용하기
+
+- Status: done
+- Priority: P3
+- Area: CLI / Diagnostics / Ops UX
+- Problem: `sync audit` / `clean --report`는 related-report detail block으로 drift/remediation을 잘 보여주는데, `doctor`와 `status`는 여전히 별도 hint 문자열과 ad-hoc warning list를 사용해 출력 스타일이 달랐다.
+- Scope:
+  - `doctor`의 `Report policy export alignment` 체크에 related-report detail block 연결
+  - `status`의 `policy_warning` 출력에 같은 related-report detail block 연결
+  - `policy_health`는 요약 역할만 유지하도록 중복 정리
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] `doctor`가 policy drift mismatch와 remediation을 related-report detail block으로 출력함
+- [x] `status`가 같은 block 구조로 drift detail을 출력함
+- [x] 요약 summary와 상세 block이 중복되지 않음
+- [x] 테스트와 문서가 추가됨
+
+### RR-094. related-report detail block을 dashboard report export Markdown 요약과도 직접 맞추기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / Markdown Export / Ops UX
+- Problem: CLI, `doctor`, `status`는 related-report detail block으로 mismatch/drift/remediation을 읽게 됐지만, dashboard Markdown snapshot은 여전히 `details=` key-value 요약에만 의존해서 shared export만 보면 읽기 방식이 다시 달라졌다.
+- Scope:
+  - dashboard Markdown report entry에 `related_report_details` block 추가
+  - linked mismatch warning과 related-report policy drift warning을 같은 block semantics로 렌더링
+  - drift가 있을 때 remediation guidance도 block 안에 함께 출력
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] dashboard Markdown snapshot이 `related_report_details` block을 출력함
+  - [x] mismatch warning과 policy drift warning이 CLI와 유사한 구조로 렌더링됨
+  - [x] remediation guidance가 block에 포함됨
+  - [x] 테스트와 문서가 추가됨
+
 ## 권장 다음 순서
 
-1. applied sync manifest integrity 검사와 repair helper 추가
+1. dashboard HTML card의 Cross references 영역도 같은 block semantics를 더 직접적으로 드러낼지 결정하기

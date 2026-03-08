@@ -16,18 +16,36 @@ import typer
 import yaml
 
 from reporepublic import __version__
+from reporepublic.cleanup_report import (
+    CleanupReportBuildResult,
+    build_cleanup_report,
+    normalize_cleanup_report_formats,
+)
 from reporepublic.config import ConfigLoadError, LoadedConfig, load_config, resolve_repo_root
-from reporepublic.dashboard import build_dashboard, normalize_dashboard_formats
+from reporepublic.dashboard import (
+    build_dashboard,
+    build_report_health_snapshot,
+    normalize_dashboard_formats,
+)
 from reporepublic.logging import configure_logging
 from reporepublic.models import RunLifecycle, RunRecord
 from reporepublic.models.domain import utc_now
 from reporepublic.orchestrator import DryRunPreview, Orchestrator, RunStateStore, load_webhook_payload
+from reporepublic.report_policy import build_report_policy_drift_guidance
+from reporepublic.sync_audit import (
+    build_sync_audit_report,
+    normalize_sync_audit_formats,
+)
 from reporepublic.sync_artifacts import (
+    AppliedSyncManifestRepairResult,
+    AppliedSyncManifestReport,
     SyncArtifact,
     SyncArtifactLookupError,
     apply_sync_artifact,
     apply_sync_bundle,
+    inspect_applied_sync_manifests,
     list_sync_artifacts,
+    repair_applied_sync_manifests,
     resolve_sync_artifact,
 )
 from reporepublic.templates import (
@@ -40,7 +58,12 @@ from reporepublic.templates import (
     render_managed_file_map,
     scaffold_repository,
 )
-from reporepublic.utils import ensure_dir, is_git_repository, list_dirty_working_tree_entries, write_json_file
+from reporepublic.utils import (
+    ensure_dir,
+    is_git_repository,
+    list_dirty_working_tree_entries,
+    write_json_file,
+)
 from reporepublic.workspace import CopyWorkspaceManager, WorktreeWorkspaceManager
 
 
@@ -50,6 +73,11 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 sync_app = typer.Typer(help="Inspect staged tracker sync artifacts.")
+RAW_POLICY_REPORT_EXPORTS = (
+    "sync-audit.json",
+    "cleanup-preview.json",
+    "cleanup-result.json",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +89,29 @@ class WorkingTreeStatus:
 @dataclass(frozen=True, slots=True)
 class DiagnosticCheck:
     name: str
+    status: str
+    message: str
+    hint: str | None = None
+    detail_lines: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ReportPolicyMismatch:
+    file_name: str
+    embedded_summary: str
+    current_summary: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReportPolicyExportAlignment:
+    current_summary: str
+    comparable_reports: int
+    mismatches: tuple[ReportPolicyMismatch, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportPolicyHealth:
+    severity: str
     status: str
     message: str
     hint: str | None = None
@@ -442,6 +493,15 @@ def status_command(
         counts = Counter(record.status.value for record in records)
         summary = ", ".join(f"{status}={count}" for status, count in sorted(counts.items()))
         typer.echo(f"Run summary: {summary}")
+    policy_alignment = _collect_report_policy_export_alignment(loaded)
+    _print_status_report_health(
+        build_report_health_snapshot(loaded=loaded),
+        policy_alignment=policy_alignment,
+        policy_health=_collect_report_policy_health(
+            loaded,
+            policy_alignment=policy_alignment,
+        ),
+    )
     for record in records:
         _print_run_record(record)
 
@@ -485,6 +545,31 @@ def clean_command(
         max=500,
         help="Override cleanup.sync_applied_keep_groups_per_issue for this invocation.",
     ),
+    report: bool = typer.Option(
+        False,
+        "--report",
+        help="Write a cleanup report under .ai-republic/reports/.",
+    ),
+    report_format: str = typer.Option(
+        "json",
+        "--report-format",
+        help="Cleanup report format: json, markdown, or all.",
+    ),
+    report_output: Path | None = typer.Option(
+        None,
+        "--report-output",
+        help="Optional cleanup report output path.",
+    ),
+    show_remediation: bool = typer.Option(
+        False,
+        "--show-remediation",
+        help="Print policy drift remediation guidance when linked sync audit exports were rendered under older thresholds.",
+    ),
+    show_mismatches: bool = typer.Option(
+        False,
+        "--show-mismatches",
+        help="Print issue-filter mismatch warnings for linked sync audit exports.",
+    ),
 ) -> None:
     loaded = _load_or_exit()
     store = RunStateStore(loaded.state_dir / "runs.json")
@@ -495,16 +580,38 @@ def clean_command(
             typer.echo(f"No run state recorded for issue #{issue}.", err=True)
             raise typer.Exit(code=1)
 
+    resolved_sync_keep_groups = sync_keep_groups or loaded.data.cleanup.sync_applied_keep_groups_per_issue
     actions = _collect_clean_actions(
         loaded,
         records,
         issue_filter=issue,
         include_sync_applied=sync_applied,
-        sync_keep_groups_per_issue=(
-            sync_keep_groups or loaded.data.cleanup.sync_applied_keep_groups_per_issue
-        ),
+        sync_keep_groups_per_issue=resolved_sync_keep_groups,
     )
+    normalized_report_formats: tuple[str, ...] | None = None
+    resolved_report_output = loaded.resolve(report_output) if report_output is not None else None
+    if report:
+        try:
+            normalized_report_formats = normalize_cleanup_report_formats((report_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--report-format") from exc
     if not actions:
+        if report:
+            report_result = build_cleanup_report(
+                loaded,
+                actions=[],
+                dry_run=dry_run,
+                include_sync_applied=sync_applied,
+                issue_id=issue,
+                sync_keep_groups_per_issue=resolved_sync_keep_groups if sync_applied else None,
+                output_path=resolved_report_output,
+                formats=normalized_report_formats or ("json",),
+            )
+            _print_cleanup_report_build_result_with_options(
+                report_result,
+                show_remediation=show_remediation,
+                show_mismatches=show_mismatches,
+            )
         typer.echo(
             "No stale local run data or applied sync archives to clean."
             if sync_applied
@@ -519,12 +626,44 @@ def clean_command(
             if action.detail:
                 line += f" ({action.detail})"
             typer.echo(line)
+        if report:
+            report_result = build_cleanup_report(
+                loaded,
+                actions=actions,
+                dry_run=True,
+                include_sync_applied=sync_applied,
+                issue_id=issue,
+                sync_keep_groups_per_issue=resolved_sync_keep_groups if sync_applied else None,
+                output_path=resolved_report_output,
+                formats=normalized_report_formats or ("json",),
+            )
+            _print_cleanup_report_build_result_with_options(
+                report_result,
+                show_remediation=show_remediation,
+                show_mismatches=show_mismatches,
+            )
         return
 
     _execute_clean_actions(loaded, actions, store)
     typer.echo(f"Cleaned {len(actions)} stale local paths.")
     for action in actions:
         typer.echo(f"- {action.kind}: {action.path}")
+    if report:
+        report_result = build_cleanup_report(
+            loaded,
+            actions=actions,
+            dry_run=False,
+            include_sync_applied=sync_applied,
+            issue_id=issue,
+            sync_keep_groups_per_issue=resolved_sync_keep_groups if sync_applied else None,
+            output_path=resolved_report_output,
+            formats=normalized_report_formats or ("json",),
+        )
+        _print_cleanup_report_build_result_with_options(
+            report_result,
+            show_remediation=show_remediation,
+            show_mismatches=show_mismatches,
+        )
 
 
 @app.command("dashboard")
@@ -726,6 +865,140 @@ def sync_apply_command(
         typer.echo(f"- source_path: {result.source_path} (retained)")
     else:
         typer.echo(f"- source_path: {result.source_path} (moved)")
+
+
+@sync_app.command("check")
+def sync_check_command(
+    issue: int | None = typer.Option(None, "--issue", help="Inspect one applied sync issue id."),
+    tracker: str | None = typer.Option(None, "--tracker", help="Filter by tracker, for example local-file."),
+    format: str = typer.Option("text", "--format", help="Output format: text or json."),
+) -> None:
+    loaded = _load_or_exit()
+    output_format = format.strip().lower()
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("Unsupported sync format. Expected one of: text, json", param_hint="--format")
+    reports = inspect_applied_sync_manifests(loaded, issue_id=issue, tracker=tracker)
+    if output_format == "json":
+        typer.echo(json.dumps([_serialize_sync_manifest_report(report) for report in reports], indent=2, sort_keys=True))
+        if any(report.findings for report in reports):
+            raise typer.Exit(code=1)
+        return
+    if not reports:
+        typer.echo("No applied sync manifests found.")
+        return
+    typer.echo("Applied sync manifest check:")
+    for report in reports:
+        status = "issues" if report.findings else "ok"
+        typer.echo(
+            f"- tracker={report.tracker} issue={report.issue_id or '-'} status={status} "
+            f"entries={report.manifest_entry_count} archives={len(report.archive_files)} findings={len(report.findings)}"
+        )
+        if report.findings:
+            for finding in report.findings:
+                suffix = f" path={finding.path}" if finding.path else ""
+                entry_key = f" entry_key={finding.entry_key}" if finding.entry_key else ""
+                typer.echo(f"  - {finding.code}:{entry_key}{suffix} {finding.message}")
+    if any(report.findings for report in reports):
+        raise typer.Exit(code=1)
+
+
+@sync_app.command("repair")
+def sync_repair_command(
+    issue: int | None = typer.Option(None, "--issue", help="Repair one applied sync issue id."),
+    tracker: str | None = typer.Option(None, "--tracker", help="Filter by tracker, for example local-file."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview manifest repairs without writing files."),
+    format: str = typer.Option("text", "--format", help="Output format: text or json."),
+) -> None:
+    loaded = _load_or_exit()
+    output_format = format.strip().lower()
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("Unsupported sync format. Expected one of: text, json", param_hint="--format")
+    results = repair_applied_sync_manifests(loaded, issue_id=issue, tracker=tracker, dry_run=dry_run)
+    if output_format == "json":
+        typer.echo(json.dumps([_serialize_sync_manifest_repair_result(result) for result in results], indent=2, sort_keys=True))
+    else:
+        if not results:
+            typer.echo("No applied sync manifests found.")
+            return
+        typer.echo("Applied sync manifest repair preview:" if dry_run else "Applied sync manifest repair:")
+        for result in results:
+            status = "changed" if result.changed else "unchanged"
+            typer.echo(
+                f"- tracker={result.tracker} issue={result.issue_id or '-'} status={status} "
+                f"entries={result.manifest_entry_count_before}->{result.manifest_entry_count_after} "
+                f"findings={result.findings_before}->{result.findings_after}"
+            )
+            typer.echo(
+                f"  dropped_entries={result.dropped_entries} adopted_archives={result.adopted_archives} "
+                f"normalized_entries={result.normalized_entries} manifest={result.manifest_path}"
+            )
+    if any(result.findings_after for result in results):
+        raise typer.Exit(code=1)
+
+
+@sync_app.command("audit")
+def sync_audit_command(
+    issue: int | None = typer.Option(None, "--issue", help="Audit one issue id across pending and applied sync state."),
+    tracker: str | None = typer.Option(None, "--tracker", help="Filter by tracker, for example local-markdown."),
+    format: str = typer.Option(
+        "all",
+        "--format",
+        help="Export format: json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional export path. Defaults to .ai-republic/reports/sync-audit.<ext>.",
+    ),
+    limit: int = typer.Option(50, "--limit", min=1, max=500, help="Limit included pending entries and retention entries."),
+    show_remediation: bool = typer.Option(
+        False,
+        "--show-remediation",
+        help="Print policy drift remediation guidance when linked cleanup reports were rendered under older thresholds.",
+    ),
+    show_mismatches: bool = typer.Option(
+        False,
+        "--show-mismatches",
+        help="Print issue-filter mismatch warnings for linked cleanup reports.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    try:
+        normalized_formats = normalize_sync_audit_formats((format,))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    result = build_sync_audit_report(
+        loaded,
+        output_path=output,
+        formats=normalized_formats,
+        issue_id=issue,
+        tracker=tracker,
+        limit=limit,
+    )
+    typer.echo("Sync audit exports:")
+    for export_format, export_path in result.output_paths.items():
+        typer.echo(f"- {export_format}: {export_path}")
+    typer.echo(
+        f"Overall status: {result.overall_status} "
+        f"(pending={result.pending_artifacts}, integrity_issues={result.integrity_issue_count}, prunable_groups={result.prunable_groups})"
+    )
+    if result.related_cleanup_reports:
+        typer.echo(f"Linked cleanup reports: {result.related_cleanup_reports}")
+    if result.cleanup_report_mismatches:
+        typer.echo(f"Cleanup report mismatches: {result.cleanup_report_mismatches}")
+    if result.related_cleanup_policy_drifts:
+        typer.echo(f"Cleanup report policy drifts: {result.related_cleanup_policy_drifts}")
+    _print_related_report_details_block(
+        title="Related cleanup report details:",
+        mismatch_warnings=result.cleanup_mismatch_warnings,
+        policy_drift_warnings=result.cleanup_policy_drift_warnings,
+        remediation=result.policy_drift_guidance,
+        show_mismatches=show_mismatches,
+        show_remediation=show_remediation,
+    )
+    if result.overall_status == "issues":
+        raise typer.Exit(code=1)
 
 
 @app.command("version")
@@ -1391,6 +1664,7 @@ def _print_logging_status(loaded: LoadedConfig) -> None:
 
 
 def _collect_doctor_checks(loaded: LoadedConfig) -> list[DiagnosticCheck]:
+    policy_alignment = _collect_report_policy_export_alignment(loaded)
     checks: list[DiagnosticCheck]
     if loaded.data.tracker.kind.value == "github":
         checks = [
@@ -1403,6 +1677,9 @@ def _collect_doctor_checks(loaded: LoadedConfig) -> list[DiagnosticCheck]:
         ]
     checks.extend(
         [
+            _probe_report_freshness_policy(loaded),
+            _probe_report_policy_export_alignment(loaded, policy_alignment=policy_alignment),
+            _probe_report_policy_health(loaded, policy_alignment=policy_alignment),
             _probe_write_permissions(loaded),
             _probe_template_drift(loaded),
         ]
@@ -1414,6 +1691,8 @@ def _print_diagnostic_check(check: DiagnosticCheck) -> None:
     typer.echo(f"{check.name}: {check.status} ({check.message})")
     if check.hint:
         typer.echo(f"  hint: {check.hint}")
+    for line in check.detail_lines:
+        typer.echo(line)
 
 
 def _probe_github_auth(loaded: LoadedConfig) -> DiagnosticCheck:
@@ -1489,6 +1768,88 @@ def _probe_github_network(loaded: LoadedConfig) -> DiagnosticCheck:
         name="GitHub network",
         status="OK",
         message=f"{url} reachable (status {response.status_code})",
+    )
+
+
+def _probe_report_freshness_policy(loaded: LoadedConfig) -> DiagnosticCheck:
+    summary = _format_report_freshness_policy_summary(loaded)
+    if _is_default_report_freshness_policy(loaded):
+        return DiagnosticCheck(
+            name="Report freshness policy",
+            status="OK",
+            message=f"default thresholds ({summary})",
+        )
+    warning = _report_freshness_policy_warning(loaded)
+    if warning is not None:
+        message, hint = warning
+        return DiagnosticCheck(
+            name="Report freshness policy",
+            status="WARN",
+            message=message,
+            hint=hint,
+        )
+    return DiagnosticCheck(
+        name="Report freshness policy",
+        status="OK",
+        message=f"custom thresholds ({summary})",
+    )
+
+
+def _probe_report_policy_export_alignment(
+    loaded: LoadedConfig,
+    *,
+    policy_alignment: ReportPolicyExportAlignment | None = None,
+) -> DiagnosticCheck:
+    alignment = policy_alignment or _collect_report_policy_export_alignment(loaded)
+    if alignment.comparable_reports == 0:
+        return DiagnosticCheck(
+            name="Report policy export alignment",
+            status="NOT_APPLICABLE",
+            message="no raw report exports with embedded policy metadata found",
+        )
+    if alignment.mismatches:
+        return DiagnosticCheck(
+            name="Report policy export alignment",
+            status="WARN",
+            message=(
+                f"{len(alignment.mismatches)} raw report exports use a different embedded policy"
+            ),
+            detail_lines=_build_related_report_details_lines(
+                title="related report details:",
+                mismatch_warnings=(),
+                policy_drift_warnings=tuple(
+                    _format_report_policy_mismatch(item) for item in alignment.mismatches
+                ),
+                remediation=_report_policy_drift_guidance_detail(),
+                show_mismatches=False,
+                show_remediation=True,
+                prefix="  ",
+            ),
+        )
+    return DiagnosticCheck(
+        name="Report policy export alignment",
+        status="OK",
+        message=(
+            f"{alignment.comparable_reports} raw report exports match current thresholds "
+            f"({alignment.current_summary})"
+        ),
+    )
+
+
+def _probe_report_policy_health(
+    loaded: LoadedConfig,
+    *,
+    policy_alignment: ReportPolicyExportAlignment | None = None,
+) -> DiagnosticCheck:
+    health = _collect_report_policy_health(
+        loaded,
+        policy_alignment=policy_alignment,
+    )
+    return DiagnosticCheck(
+        name="Report policy health",
+        status=health.status,
+        message=health.message,
+        hint=health.hint,
     )
 
 
@@ -1688,6 +2049,224 @@ def _print_run_record(record: RunRecord) -> None:
             )
 
 
+def _print_status_report_health(
+    snapshot: dict[str, object],
+    *,
+    policy_alignment: ReportPolicyExportAlignment | None = None,
+    policy_health: ReportPolicyHealth | None = None,
+) -> None:
+    hero = snapshot.get("hero")
+    policy = snapshot.get("policy")
+    reports = snapshot.get("reports")
+    if not isinstance(hero, dict) or not isinstance(reports, dict):
+        return
+    typer.echo(
+        "Report health: "
+        f"severity={hero.get('severity', 'unknown')} "
+        f"title={hero.get('title', 'n/a')} "
+        f"reports={reports.get('total', 0)}"
+    )
+    if isinstance(policy, dict):
+        typer.echo(f"  policy: {policy.get('summary', 'n/a')}")
+    if policy_health is not None:
+        typer.echo(f"  policy_health: {policy_health.severity} | {policy_health.message}")
+    if policy_alignment is not None and policy_alignment.mismatches:
+        typer.echo(
+            "  policy_warning: "
+            f"{len(policy_alignment.mismatches)} raw report exports use a different embedded policy"
+        )
+        for line in _build_related_report_details_lines(
+            title="related report details:",
+            mismatch_warnings=(),
+            policy_drift_warnings=tuple(
+                _format_report_policy_mismatch(mismatch) for mismatch in policy_alignment.mismatches
+            ),
+            remediation=_report_policy_drift_guidance_detail(),
+            show_mismatches=False,
+            show_remediation=True,
+            prefix="  ",
+        ):
+            typer.echo(line)
+    typer.echo(
+        "  overall: "
+        f"{reports.get('freshness_severity', 'unknown')} | "
+        f"{_format_status_report_freshness(reports.get('freshness'))} | "
+        f"{reports.get('freshness_severity_reason', 'n/a')}"
+    )
+    if int(reports.get("cleanup_total", 0) or 0) > 0:
+        typer.echo(
+            "  cleanup: "
+            f"{reports.get('cleanup_freshness_severity', 'unknown')} | "
+            f"{_format_status_report_freshness(reports.get('cleanup_freshness'))} | "
+            f"{reports.get('cleanup_freshness_severity_reason', 'n/a')}"
+        )
+
+
+def _format_status_report_freshness(value: object) -> str:
+    if not isinstance(value, dict):
+        return "none"
+    fresh = int(value.get("fresh", 0) or 0)
+    aging = int(value.get("aging", 0) or 0)
+    stale = int(value.get("stale", 0) or 0)
+    future = int(value.get("future", 0) or 0)
+    unknown = int(value.get("unknown", 0) or 0)
+    total = fresh + aging + stale + future + unknown
+    if total == 0:
+        return "none"
+    parts = [
+        f"fresh {fresh}",
+        f"aging {aging}",
+        f"stale {stale}",
+    ]
+    if future:
+        parts.append(f"future {future}")
+    if unknown:
+        parts.append(f"unknown {unknown}")
+    return " · ".join(parts) + f" / {total} total"
+
+
+def _is_default_report_freshness_policy(loaded: LoadedConfig) -> bool:
+    policy = loaded.data.dashboard.report_freshness_policy
+    return (
+        policy.unknown_issues_threshold,
+        policy.stale_issues_threshold,
+        policy.future_attention_threshold,
+        policy.aging_attention_threshold,
+    ) == (1, 1, 1, 1)
+
+
+def _report_freshness_policy_warning(loaded: LoadedConfig) -> tuple[str, str] | None:
+    policy = loaded.data.dashboard.report_freshness_policy
+    summary = _format_report_freshness_policy_summary(loaded)
+    if policy.unknown_issues_threshold > 5 or policy.stale_issues_threshold > 5:
+        return (
+            f"issue escalation is heavily relaxed ({summary})",
+            "Dashboard report health may stay below `issues` until several stale or "
+            "unknown reports accumulate.",
+        )
+    if policy.future_attention_threshold > 10 or policy.aging_attention_threshold > 10:
+        return (
+            f"attention escalation is heavily relaxed ({summary})",
+            "Aging or future-dated reports may stay quiet longer than operators expect. "
+            "Consider lower dashboard.report_freshness_policy thresholds.",
+        )
+    return None
+
+
+def _collect_report_policy_health(
+    loaded: LoadedConfig,
+    *,
+    policy_alignment: ReportPolicyExportAlignment | None = None,
+) -> ReportPolicyHealth:
+    alignment = policy_alignment or _collect_report_policy_export_alignment(loaded)
+    summary = _format_report_freshness_policy_summary(loaded)
+    warning = _report_freshness_policy_warning(loaded)
+    message_parts: list[str] = []
+    hint_parts: list[str] = []
+
+    if warning is not None:
+        warning_message, warning_hint = warning
+        message_parts.append(warning_message)
+        hint_parts.append(warning_hint)
+    else:
+        message_parts.append(f"thresholds {summary}")
+
+    mismatch_count = len(alignment.mismatches)
+    if mismatch_count:
+        export_label = "export uses" if mismatch_count == 1 else "exports use"
+        message_parts.append(
+            f"{mismatch_count} raw report {export_label} a different embedded policy"
+        )
+        return ReportPolicyHealth(
+            severity="attention",
+            status="WARN",
+            message="; ".join(message_parts),
+            hint="; ".join(hint_parts) if hint_parts else None,
+        )
+
+    if warning is not None:
+        return ReportPolicyHealth(
+            severity="attention",
+            status="WARN",
+            message="; ".join(message_parts),
+            hint="; ".join(hint_parts) if hint_parts else None,
+        )
+
+    if alignment.comparable_reports > 0:
+        message_parts.append(
+            f"{alignment.comparable_reports} raw report exports match current policy"
+        )
+    return ReportPolicyHealth(
+        severity="clean",
+        status="OK",
+        message="; ".join(message_parts),
+        hint=None,
+    )
+
+
+def _collect_report_policy_export_alignment(loaded: LoadedConfig) -> ReportPolicyExportAlignment:
+    current_summary = _format_report_freshness_policy_summary(loaded)
+    comparable_reports = 0
+    mismatches: list[ReportPolicyMismatch] = []
+    for file_name in RAW_POLICY_REPORT_EXPORTS:
+        embedded_summary = _load_report_policy_summary(loaded.reports_dir / file_name)
+        if embedded_summary is None:
+            continue
+        comparable_reports += 1
+        if embedded_summary != current_summary:
+            mismatches.append(
+                ReportPolicyMismatch(
+                    file_name=file_name,
+                    embedded_summary=embedded_summary,
+                    current_summary=current_summary,
+                )
+            )
+    return ReportPolicyExportAlignment(
+        current_summary=current_summary,
+        comparable_reports=comparable_reports,
+        mismatches=tuple(mismatches),
+    )
+
+
+def _load_report_policy_summary(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    policy = payload.get("policy")
+    if not isinstance(policy, dict):
+        return None
+    summary = policy.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    return None
+
+
+def _format_report_policy_mismatch(mismatch: ReportPolicyMismatch) -> str:
+    return (
+        f"{mismatch.file_name} embedded={mismatch.embedded_summary} "
+        f"current={mismatch.current_summary}"
+    )
+
+
+def _report_policy_drift_guidance_detail() -> str:
+    return build_report_policy_drift_guidance()["detail"]
+
+
+def _format_report_freshness_policy_summary(loaded: LoadedConfig) -> str:
+    policy = loaded.data.dashboard.report_freshness_policy
+    return (
+        f"unknown>={policy.unknown_issues_threshold} "
+        f"stale>={policy.stale_issues_threshold} "
+        f"future>={policy.future_attention_threshold} "
+        f"aging>={policy.aging_attention_threshold}"
+    )
+
+
 def _print_dry_run_preview(preview: DryRunPreview) -> None:
     typer.echo(f"Issue #{preview.issue_id}: {preview.title}")
     typer.echo(f"  selected: {preview.selected}")
@@ -1703,6 +2282,92 @@ def _print_dry_run_preview(preview: DryRunPreview) -> None:
     typer.echo("  pr_body_preview:")
     typer.echo(_indent_block(preview.pr_body_preview, prefix="    "))
     typer.echo("")
+
+
+def _print_cleanup_report_build_result(report_result: CleanupReportBuildResult) -> None:
+    typer.echo("Cleanup report exports:")
+    for export_format, path in report_result.output_paths.items():
+        typer.echo(f"- {export_format}: {path}")
+    typer.echo(
+        f"Cleanup report summary: mode={report_result.mode} actions={report_result.action_count}"
+    )
+    if report_result.related_sync_audit_reports:
+        typer.echo(f"Related sync audit reports: {report_result.related_sync_audit_reports}")
+    if report_result.sync_audit_issue_filter_mismatches:
+        typer.echo(
+            "Sync audit issue filter mismatches: "
+            f"{report_result.sync_audit_issue_filter_mismatches}"
+        )
+    if report_result.sync_audit_policy_drifts:
+        typer.echo(f"Sync audit policy drifts: {report_result.sync_audit_policy_drifts}")
+
+
+def _print_cleanup_report_build_result_with_options(
+    report_result: CleanupReportBuildResult,
+    *,
+    show_remediation: bool,
+    show_mismatches: bool,
+) -> None:
+    _print_cleanup_report_build_result(report_result)
+    _print_related_report_details_block(
+        title="Related sync audit details:",
+        mismatch_warnings=report_result.sync_audit_mismatch_warnings,
+        policy_drift_warnings=report_result.sync_audit_policy_drift_warnings,
+        remediation=report_result.policy_drift_guidance,
+        show_mismatches=show_mismatches,
+        show_remediation=show_remediation,
+    )
+
+
+def _print_related_report_details_block(
+    *,
+    title: str,
+    mismatch_warnings: tuple[str, ...],
+    policy_drift_warnings: tuple[str, ...],
+    remediation: str | None,
+    show_mismatches: bool,
+    show_remediation: bool,
+) -> None:
+    for line in _build_related_report_details_lines(
+        title=title,
+        mismatch_warnings=mismatch_warnings,
+        policy_drift_warnings=policy_drift_warnings,
+        remediation=remediation,
+        show_mismatches=show_mismatches,
+        show_remediation=show_remediation,
+    ):
+        typer.echo(line)
+
+
+def _build_related_report_details_lines(
+    *,
+    title: str,
+    mismatch_warnings: tuple[str, ...],
+    policy_drift_warnings: tuple[str, ...],
+    remediation: str | None,
+    show_mismatches: bool,
+    show_remediation: bool,
+    prefix: str = "",
+) -> tuple[str, ...]:
+    visible_mismatches = mismatch_warnings if show_mismatches else ()
+    visible_policy_drifts = policy_drift_warnings if show_remediation else ()
+    show_guidance = bool(show_remediation and remediation and policy_drift_warnings)
+    if not visible_mismatches and not visible_policy_drifts and not show_guidance:
+        return ()
+    lines: list[str] = [f"{prefix}{title}"]
+    section_prefix = f"{prefix}  "
+    item_prefix = f"{prefix}    "
+    if visible_mismatches:
+        lines.append(f"{section_prefix}mismatches:")
+        for warning in visible_mismatches:
+            lines.append(f"{item_prefix}- {warning}")
+    if visible_policy_drifts:
+        lines.append(f"{section_prefix}policy_drifts:")
+        for warning in visible_policy_drifts:
+            lines.append(f"{item_prefix}- {warning}")
+    if show_guidance:
+        lines.append(f"{section_prefix}remediation: {remediation}")
+    return tuple(lines)
 
 
 def _print_skipped_single_issue(store: RunStateStore, issue_id: int) -> None:
@@ -1744,3 +2409,43 @@ def _resolve_sync_selection(
             f"Multiple pending sync artifacts matched the requested filters. Pass an explicit artifact path or use --latest. Matches: {joined}"
         )
     return artifacts[0]
+
+
+def _serialize_sync_manifest_report(report: AppliedSyncManifestReport) -> dict[str, object]:
+    return {
+        "tracker": report.tracker,
+        "issue_id": report.issue_id,
+        "issue_root": str(report.issue_root),
+        "manifest_path": str(report.manifest_path),
+        "manifest_exists": report.manifest_exists,
+        "manifest_entry_count": report.manifest_entry_count,
+        "referenced_archive_count": report.referenced_archive_count,
+        "archive_files": list(report.archive_files),
+        "findings": [
+            {
+                "code": finding.code,
+                "message": finding.message,
+                "entry_key": finding.entry_key,
+                "path": finding.path,
+            }
+            for finding in report.findings
+        ],
+    }
+
+
+def _serialize_sync_manifest_repair_result(result: AppliedSyncManifestRepairResult) -> dict[str, object]:
+    return {
+        "tracker": result.tracker,
+        "issue_id": result.issue_id,
+        "issue_root": str(result.issue_root),
+        "manifest_path": str(result.manifest_path),
+        "changed": result.changed,
+        "dry_run": result.dry_run,
+        "manifest_entry_count_before": result.manifest_entry_count_before,
+        "manifest_entry_count_after": result.manifest_entry_count_after,
+        "findings_before": result.findings_before,
+        "findings_after": result.findings_after,
+        "dropped_entries": result.dropped_entries,
+        "adopted_archives": result.adopted_archives,
+        "normalized_entries": result.normalized_entries,
+    }

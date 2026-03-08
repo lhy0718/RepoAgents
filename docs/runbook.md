@@ -36,9 +36,13 @@ uv run republic status
 uv run republic status --issue 123
 uv run republic sync ls
 uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
+uv run republic sync check --issue 1
+uv run republic sync repair --issue 1 --dry-run
+uv run republic sync audit --format all
 uv run republic sync apply --issue 1 --tracker local-file --action comment --latest
 uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest
 uv run republic clean --sync-applied --dry-run
+uv run republic clean --sync-applied --dry-run --report --report-format all
 uv run republic retry 123
 uv run republic clean --dry-run
 uv run republic clean
@@ -55,19 +59,23 @@ uv run republic dashboard --format all
 - dashboard: `.ai-republic/dashboard/index.html`
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - logs when enabled: `.ai-republic/logs/reporepublic.jsonl`
 - sync staging: `.ai-republic/sync/<tracker>/issue-<id>/`
 - sync applied archive: `.ai-republic/sync-applied/<tracker>/issue-<id>/`
 
-## Dashboard sync handoffs
+## Dashboard sync handoffs and retention
 
-The dashboard now includes a `Sync handoffs` section sourced from `.ai-republic/sync-applied/**/manifest.json`.
+The dashboard now includes `Sync handoffs` and `Sync retention` sourced from `.ai-republic/sync-applied/**/manifest.json`, plus direct `Reports` links for sync audit and cleanup exports under `.ai-republic/reports/`.
 
 Use it when you need to:
 
 - inspect which staged publish proposals were already handled
 - open archived `branch` / `pr` / `pr-body` bundle members from one place
 - follow normalized links such as `metadata_artifact` after the original staged file has moved
+- review which applied issue archives are `stable`, `prunable`, or `repair-needed`
+- estimate cleanup impact with prunable group counts, prunable bytes, and oldest prunable age before running `clean`
 
 Refresh all exports with:
 
@@ -159,8 +167,11 @@ When a tracker stages publish proposals locally instead of applying them directl
 2. open one artifact with `uv run republic sync show ...`
 3. apply supported tracker helpers with `uv run republic sync apply ...` when appropriate, for example `local-file` or `local-markdown` comment and label proposals
 4. copy any remaining handoff proposal manually
-5. review the archive under `.ai-republic/sync-applied/` and the dashboard `Sync handoffs` section
+5. review the archive under `.ai-republic/sync-applied/` and the dashboard `Sync handoffs` / `Sync retention` sections
 6. use `uv run republic clean --sync-applied --dry-run` before pruning old applied handoff groups
+   Capture a shareable machine-readable cleanup preview with `--report --report-format all` when the cleanup needs review.
+7. if manifest drift is suspected, run `uv run republic sync check --issue <id>` before `sync repair`
+8. export `uv run republic sync audit --issue <id> --format all` when you need a shareable machine-readable snapshot
 
 ## Human approval boundary
 

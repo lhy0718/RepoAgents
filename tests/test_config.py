@@ -16,6 +16,7 @@ def test_load_config_success(demo_repo: Path) -> None:
     assert loaded.data.agent.debug_artifacts is False
     assert loaded.data.logging.file_enabled is False
     assert loaded.data.cleanup.sync_applied_keep_groups_per_issue == 20
+    assert loaded.data.dashboard.report_freshness_policy.stale_issues_threshold == 1
 
 
 def test_load_config_local_file_tracker_success(tmp_path: Path) -> None:
@@ -140,3 +141,28 @@ def test_load_config_accepts_cleanup_sync_retention_override(tmp_path: Path) -> 
     loaded = load_config(tmp_path)
 
     assert loaded.data.cleanup.sync_applied_keep_groups_per_issue == 7
+
+
+def test_load_config_accepts_dashboard_report_freshness_policy_override(tmp_path: Path) -> None:
+    ai_root = tmp_path / ".ai-republic"
+    ai_root.mkdir(parents=True)
+    (ai_root / "reporepublic.yaml").write_text(
+        "\n".join(
+            [
+                "tracker:",
+                "  kind: github",
+                "  repo: demo/repo",
+                "dashboard:",
+                "  report_freshness_policy:",
+                "    stale_issues_threshold: 2",
+                "    unknown_issues_threshold: 3",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(tmp_path)
+
+    assert loaded.data.dashboard.report_freshness_policy.stale_issues_threshold == 2
+    assert loaded.data.dashboard.report_freshness_policy.unknown_issues_threshold == 3

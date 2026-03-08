@@ -4,6 +4,7 @@ import json
 import os
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -12,6 +13,12 @@ from reporepublic.config import LoadedConfig
 from reporepublic.models import RunRecord
 from reporepublic.models.domain import utc_now
 from reporepublic.orchestrator import RunStateStore
+from reporepublic.report_policy import build_report_policy_drift_guidance
+from reporepublic.sync_artifacts import (
+    SyncAppliedRetentionGroup,
+    SyncAppliedRetentionIssueSummary,
+    summarize_sync_applied_retention,
+)
 from reporepublic.utils.files import write_text_file
 
 
@@ -24,6 +31,30 @@ class DashboardBuildResult:
 
 
 VALID_DASHBOARD_FORMATS = ("html", "json", "markdown")
+REPORT_EXPORTS = (
+    ("sync-audit", "Sync audit", "sync-audit.json", "sync-audit.md"),
+    ("cleanup-preview", "Cleanup preview", "cleanup-preview.json", "cleanup-preview.md"),
+    ("cleanup-result", "Cleanup result", "cleanup-result.json", "cleanup-result.md"),
+)
+SEVERITY_ORDER = {
+    "clean": 0,
+    "attention": 1,
+    "issues": 2,
+}
+INTEGRITY_FINDING_HINTS = {
+    "missing_manifest": "run `republic sync repair --dry-run` to rebuild manifest state from archived files",
+    "invalid_manifest_json": "inspect `manifest.json`, then run `republic sync repair --dry-run` to reconstruct it",
+    "invalid_manifest_format": "rewrite `manifest.json` as a JSON array or let `republic sync repair --dry-run` rebuild it",
+    "invalid_entry_type": "run `republic sync repair --dry-run` to drop malformed manifest entries",
+    "duplicate_entry_key": "run `republic sync repair --dry-run` to canonicalize duplicate manifest entries",
+    "dangling_archive_reference": "review deleted or moved archive files under `.ai-republic/sync-applied/` before repair",
+    "duplicate_archive_reference": "run `republic sync repair --dry-run` to deduplicate archive references",
+    "mismatched_archived_path": "run `republic sync repair --dry-run` to realign archived path metadata",
+    "missing_archived_relative_path": "run `republic sync repair --dry-run` to restore archived_relative_path metadata",
+    "orphan_archive_file": "review orphan archives and adopt them with `republic sync repair --dry-run`",
+    "missing_handoff_metadata": "run `republic sync repair --dry-run` to rebuild handoff metadata",
+    "handoff_group_mismatch": "run `republic sync repair --dry-run` to recalculate handoff linkage",
+}
 
 
 def build_dashboard(
@@ -121,6 +152,18 @@ def build_dashboard_snapshot(
         output_path=output_path,
         limit=sync_limit,
     )
+    sync_retention = _serialize_sync_retention_snapshot(
+        loaded=loaded,
+        output_path=output_path,
+        limit=sync_limit,
+    )
+    reports = _load_report_summaries(
+        loaded=loaded,
+        output_path=output_path,
+        rendered_at=rendered_at,
+    )
+    hero = _build_hero_snapshot(reports, include_policy_drift=True)
+    policy = _build_report_freshness_policy_snapshot(loaded)
     return {
         "meta": {
             "rendered_at": rendered_at,
@@ -135,6 +178,7 @@ def build_dashboard_snapshot(
             "state_path": str(loaded.state_dir / "runs.json"),
             "artifacts_dir": str(loaded.artifacts_dir),
             "workspace_root": str(loaded.workspace_root),
+            "reports_dir": str(loaded.reports_dir),
             "logs_path": str(log_file) if log_file.exists() else None,
         },
         "counts": {
@@ -142,10 +186,47 @@ def build_dashboard_snapshot(
             "visible_runs": len(visible_records),
             "total_sync_handoffs": sync_handoffs["total"],
             "visible_sync_handoffs": len(sync_handoffs["entries"]),
+            "total_sync_retention_issues": sync_retention["total_issues"],
+            "visible_sync_retention_issues": len(sync_retention["entries"]),
+            "prunable_sync_groups": sync_retention["prunable_groups"],
+            "prunable_sync_bytes": sync_retention["prunable_bytes"],
+            "repair_needed_sync_issues": sync_retention["repair_needed_issues"],
+            "available_reports": reports["total"],
+            "aging_reports": reports["aging_total"],
+            "future_reports": reports["future_total"],
+            "unknown_reports": reports["unknown_total"],
+            "stale_reports": reports["stale_total"],
+            "cleanup_reports": reports["cleanup_total"],
+            "cleanup_aging_reports": reports["cleanup_aging_total"],
+            "cleanup_future_reports": reports["cleanup_future_total"],
+            "cleanup_unknown_reports": reports["cleanup_unknown_total"],
+            "stale_cleanup_reports": reports["cleanup_freshness"].get("stale", 0),
+            "policy_drift_reports": reports["policy_drift_total"],
+            "policy_embedded_reports": reports["policy_embedded_total"],
+            "policy_metadata_missing_reports": reports["policy_missing_total"],
             "by_status": dict(sorted(counts.items())),
         },
+        "hero": hero,
+        "policy": policy,
         "runs": snapshot_runs,
         "sync_handoffs": sync_handoffs["entries"],
+        "sync_retention": sync_retention,
+        "reports": reports,
+    }
+
+
+def build_report_health_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
+    reports = _load_report_summaries(
+        loaded=loaded,
+        output_path=loaded.ai_root / "dashboard" / "index.html",
+        rendered_at=utc_now().isoformat(),
+    )
+    hero = _build_hero_snapshot(reports)
+    policy = _build_report_freshness_policy_snapshot(loaded)
+    return {
+        "hero": hero,
+        "policy": policy,
+        "reports": reports,
     }
 
 
@@ -155,6 +236,10 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     counts = _snapshot_section(snapshot, "counts")
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
+    sync_retention = _snapshot_sync_retention(snapshot)
+    reports = _snapshot_reports(snapshot)
+    hero = _snapshot_section(snapshot, "hero")
+    policy = _snapshot_section(snapshot, "policy")
     rendered_at = str(meta["rendered_at"])
     last_updated = str(meta["last_updated"])
     output_path = Path(str(meta["output_path"]))
@@ -168,6 +253,7 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         _render_link_chip("runs.json", _relative_href(output_path, Path(str(runtime["state_path"])))),
         _render_link_chip("artifacts", _relative_href(output_path, Path(str(runtime["artifacts_dir"])))),
         _render_link_chip("workspaces", _relative_href(output_path, Path(str(runtime["workspace_root"])))),
+        _render_link_chip("reports", _relative_href(output_path, Path(str(runtime["reports_dir"])))),
     ]
     logs_path = runtime.get("logs_path")
     if isinstance(logs_path, str) and logs_path:
@@ -188,6 +274,13 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     ]
     if status_counts.get("in_progress", 0):
         summary_cards.append(_render_metric_card("In progress", str(status_counts["in_progress"])))
+    hero_reporting_chips = "".join(
+        _render_hero_chip(chip)
+        for chip in _list_of_dicts(hero["reporting_chips"])
+    )
+    hero_alert_severity = _string_or_none(hero.get("severity")) or "clean"
+    hero_alert_title = _string_or_none(hero.get("title")) or "Dashboard summary"
+    hero_alert_summary = _string_or_none(hero.get("summary")) or ""
 
     runs_markup = "\n".join(_render_run_card(run) for run in runs)
     if not runs_markup:
@@ -203,6 +296,88 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         <article class="empty-state">
           <h2>No sync handoffs archived yet</h2>
           <p>Apply staged tracker handoffs with <code>republic sync apply</code> to populate this section.</p>
+        </article>
+        """
+    retention_summary_cards = [
+        _render_metric_card("Applied sync issues", str(sync_retention["total_issues"])),
+        _render_metric_card("Prunable groups", str(sync_retention["prunable_groups"])),
+        _render_metric_card("Prunable bytes", str(sync_retention["prunable_bytes_human"])),
+        _render_metric_card("Repair needed", str(sync_retention["repair_needed_issues"])),
+    ]
+    retention_markup = "\n".join(
+        _render_sync_retention_issue_card(entry)
+        for entry in _list_of_dicts(sync_retention["entries"])
+    )
+    if not retention_markup:
+        retention_markup = """
+        <article class="empty-state">
+          <h2>No applied sync archives yet</h2>
+          <p>Apply staged tracker handoffs with <code>republic sync apply</code> to populate retention analysis.</p>
+        </article>
+        """
+    report_link_chips = [
+        _render_link_chip(str(entry["label"]), _string_or_none(entry["json_href"]) or _string_or_none(entry["markdown_href"]))
+        for entry in _list_of_dicts(reports["entries"])
+    ]
+    runtime_links.extend(report_link_chips)
+    report_summary_cards = [
+        _render_metric_card("Reports", str(reports["total"])),
+        _render_metric_card(
+            "Report freshness",
+            _format_report_freshness_summary(_snapshot_mapping(reports, "freshness")),
+            tone=_string_or_none(reports.get("report_summary_severity")),
+            note=_string_or_none(reports.get("report_summary_severity_reason")),
+        ),
+        _render_metric_card("Aging reports", str(reports["aging_total"])),
+        _render_metric_card("Future reports", str(reports["future_total"])),
+    ]
+    if int(reports["unknown_total"]) > 0:
+        report_summary_cards.append(
+            _render_metric_card("Unknown freshness reports", str(reports["unknown_total"]))
+        )
+    if int(reports.get("policy_drift_total", 0)) > 0:
+        report_summary_cards.append(
+            _render_metric_card(
+                "Policy drift reports",
+                str(reports["policy_drift_total"]),
+                tone="attention",
+                note=_report_policy_drift_guidance_summary(),
+            )
+        )
+    if int(reports["cleanup_total"]) > 0:
+        report_summary_cards.append(
+            _render_metric_card(
+                "Cleanup freshness",
+                _format_report_freshness_summary(_snapshot_mapping(reports, "cleanup_freshness")),
+                tone=_string_or_none(reports.get("cleanup_freshness_severity")),
+                note=_string_or_none(reports.get("cleanup_freshness_severity_reason")),
+            )
+        )
+        report_summary_cards.append(
+            _render_metric_card("Cleanup aging reports", str(reports["cleanup_aging_total"]))
+        )
+        report_summary_cards.append(
+            _render_metric_card("Cleanup future reports", str(reports["cleanup_future_total"]))
+        )
+        if int(reports["cleanup_unknown_total"]) > 0:
+            report_summary_cards.append(
+                _render_metric_card(
+                    "Cleanup unknown freshness reports",
+                    str(reports["cleanup_unknown_total"]),
+                )
+            )
+        report_summary_cards.append(
+            _render_metric_card("Stale cleanup reports", str(reports["cleanup_stale_total"]))
+        )
+    report_markup = "\n".join(
+        _render_report_card(entry)
+        for entry in _list_of_dicts(reports["entries"])
+    )
+    if not report_markup:
+        report_markup = """
+        <article class="empty-state">
+          <h2>No report exports yet</h2>
+          <p>Generate <code>republic sync audit --format all</code> or <code>republic clean --report</code> to add report links here.</p>
         </article>
         """
 
@@ -259,6 +434,15 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
           rgba(255, 255, 255, 0.8);
         box-shadow: var(--shadow);
       }}
+      .hero-issues {{
+        border-color: rgba(146, 47, 58, 0.26);
+      }}
+      .hero-attention {{
+        border-color: rgba(153, 101, 21, 0.24);
+      }}
+      .hero-clean {{
+        border-color: rgba(47, 107, 79, 0.22);
+      }}
       .eyebrow {{
         margin: 0 0 0.35rem;
         color: var(--accent-2);
@@ -283,6 +467,54 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         flex-wrap: wrap;
         gap: 0.75rem;
         margin-top: 1rem;
+      }}
+      .hero-alert {{
+        margin-top: 1rem;
+        padding: 1rem 1.1rem;
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.55);
+      }}
+      .hero-alert-issues {{
+        border-color: rgba(146, 47, 58, 0.22);
+        background: rgba(255, 244, 244, 0.82);
+      }}
+      .hero-alert-attention {{
+        border-color: rgba(153, 101, 21, 0.22);
+        background: rgba(255, 249, 239, 0.82);
+      }}
+      .hero-alert-clean {{
+        border-color: rgba(47, 107, 79, 0.20);
+        background: rgba(244, 251, 246, 0.82);
+      }}
+      .hero-alert-title {{
+        margin: 0;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+      }}
+      .hero-alert-copy {{
+        margin: 0.5rem 0 0;
+        color: var(--ink);
+        line-height: 1.55;
+      }}
+      .hero-chip-row {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        margin-top: 0.85rem;
+      }}
+      .hero-chip {{
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.58rem 0.82rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.72);
+        font: 500 0.76rem/1.25 "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
       }}
       .meta-chip, .link-chip {{
         display: inline-flex;
@@ -347,6 +579,18 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         background: var(--card);
         box-shadow: 0 14px 35px rgba(19, 40, 63, 0.08);
       }}
+      .metric-card-issues {{
+        border-color: rgba(146, 47, 58, 0.25);
+        background: rgba(255, 244, 244, 0.9);
+      }}
+      .metric-card-attention {{
+        border-color: rgba(153, 101, 21, 0.24);
+        background: rgba(255, 249, 239, 0.9);
+      }}
+      .metric-card-clean {{
+        border-color: rgba(47, 107, 79, 0.24);
+        background: rgba(244, 251, 246, 0.9);
+      }}
       .metric-label {{
         display: block;
         color: var(--muted);
@@ -359,13 +603,23 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         margin-top: 0.45rem;
         font-size: 1.95rem;
       }}
+      .metric-note {{
+        display: block;
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font: 500 0.74rem/1.35 "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+      }}
       .runs,
-      .handoffs {{
+      .handoffs,
+      .retention,
+      .reports {{
         display: grid;
         gap: 1rem;
       }}
       .run-card,
-      .handoff-card {{
+      .handoff-card,
+      .retention-card,
+      .report-card {{
         padding: 1.25rem;
         border-radius: 24px;
         border: 1px solid var(--border);
@@ -405,6 +659,13 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
       .status-retry-pending {{ background: rgba(153, 101, 21, 0.16); color: var(--warn); }}
       .status-in-progress {{ background: rgba(31, 107, 116, 0.15); color: var(--accent-2); }}
       .status-sync {{ background: rgba(31, 107, 116, 0.15); color: var(--accent-2); }}
+      .status-prunable {{ background: rgba(153, 101, 21, 0.16); color: var(--warn); }}
+      .status-stable {{ background: rgba(47, 107, 79, 0.15); color: var(--ok); }}
+      .status-repair-needed {{ background: rgba(146, 47, 58, 0.15); color: var(--danger); }}
+      .status-ok, .status-cleaned {{ background: rgba(47, 107, 79, 0.15); color: var(--ok); }}
+      .status-attention, .status-preview {{ background: rgba(153, 101, 21, 0.16); color: var(--warn); }}
+      .status-issues, .status-invalid {{ background: rgba(146, 47, 58, 0.15); color: var(--danger); }}
+      .status-available, .status-clean {{ background: rgba(31, 107, 116, 0.15); color: var(--accent-2); }}
       .status-skipped, .status-pending {{ background: rgba(19, 40, 63, 0.08); color: var(--ink); }}
       .run-grid {{
         display: grid;
@@ -464,6 +725,13 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         border: 1px dashed rgba(19, 40, 63, 0.24);
         background: rgba(255, 255, 255, 0.45);
       }}
+      .group-list {{
+        margin: 0;
+        padding-left: 1rem;
+      }}
+      .group-list li + li {{
+        margin-top: 0.45rem;
+      }}
       code {{
         font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
       }}
@@ -482,14 +750,22 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
   </head>
   <body>
     <main class="shell">
-      <section class="hero" data-default-refresh-seconds="{refresh_seconds}">
+      <section class="hero hero-{escape(hero_alert_severity)}" data-default-refresh-seconds="{refresh_seconds}">
         <p class="eyebrow">RepoRepublic operations dashboard</p>
         <h1>Repository runs at a glance</h1>
         <p class="subtitle">This view is generated from local RepoRepublic state. It highlights the latest runs, persisted artifacts, retry posture, and failure reasons without needing a separate service.</p>
+        <section class="hero-alert hero-alert-{escape(hero_alert_severity)}">
+          <h2 class="hero-alert-title">{escape(hero_alert_title)}</h2>
+          <p class="hero-alert-copy">{escape(hero_alert_summary)}</p>
+          <div class="hero-chip-row">
+            {hero_reporting_chips}
+          </div>
+        </section>
         <div class="meta-row">
           <span class="meta-chip">rendered_at {escape(rendered_at)}</span>
           <span class="meta-chip">repo {escape(repo_name)}</span>
           <span class="meta-chip">last_updated {escape(last_updated)}</span>
+          <span class="meta-chip">freshness_policy {escape(str(policy['summary']))}</span>
         </div>
         <div class="link-row">
           {"".join(runtime_links)}
@@ -550,6 +826,26 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         <h2 class="section-title">Sync handoffs</h2>
         <div class="handoffs">
           {handoff_markup}
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Sync retention</h2>
+        <div class="metrics">
+          {"".join(retention_summary_cards)}
+        </div>
+        <div class="retention" style="margin-top: 1rem;">
+          {retention_markup}
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Reports</h2>
+        <div class="metrics">
+          {"".join(report_summary_cards)}
+        </div>
+        <div class="reports" style="margin-top: 1rem;">
+          {report_markup}
         </div>
       </section>
     </main>
@@ -640,8 +936,12 @@ def render_dashboard_json(snapshot: dict[str, object]) -> str:
 def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
     meta = _snapshot_section(snapshot, "meta")
     counts = _snapshot_section(snapshot, "counts")
+    hero = _snapshot_section(snapshot, "hero")
+    policy = _snapshot_section(snapshot, "policy")
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
+    sync_retention = _snapshot_sync_retention(snapshot)
+    reports = _snapshot_reports(snapshot)
     status_counts = _snapshot_mapping(counts, "by_status")
     lines = [
         "# RepoRepublic Dashboard Snapshot",
@@ -653,8 +953,28 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
         f"- total_sync_handoffs: {counts['total_sync_handoffs']}",
         f"- visible_sync_handoffs: {counts['visible_sync_handoffs']}",
         "",
+        "## Policy",
+        f"- report_freshness_policy: {policy['summary']}",
+        f"- unknown_issues_threshold: {policy['report_freshness_policy']['unknown_issues_threshold']}",
+        f"- stale_issues_threshold: {policy['report_freshness_policy']['stale_issues_threshold']}",
+        f"- future_attention_threshold: {policy['report_freshness_policy']['future_attention_threshold']}",
+        f"- aging_attention_threshold: {policy['report_freshness_policy']['aging_attention_threshold']}",
+        "",
+        "## Hero",
+        f"- severity: {hero['severity']}",
+        f"- title: {hero['title']}",
+        f"- summary: {hero['summary']}",
+        "",
         "## Status counts",
     ]
+    hero_chips = _list_of_dicts(hero["reporting_chips"])
+    if hero_chips:
+        lines.append("- reporting_chips:")
+        for chip in hero_chips:
+            lines.append(
+                f"  - {chip['label']}: severity={chip['severity']} value={chip['value']}"
+            )
+        lines.append("")
     if status_counts:
         for status, value in sorted(status_counts.items()):
             lines.append(f"- {status}: {value}")
@@ -697,55 +1017,184 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
     lines.extend(["", "## Sync handoffs"])
     if not sync_handoffs:
         lines.append("- No sync handoffs archived yet.")
-        return "\n".join(lines) + "\n"
-
-    for handoff in sync_handoffs:
-        issue_label = handoff["issue_id"] if handoff["issue_id"] is not None else "unknown"
-        lines.extend(
-            [
-                "",
-                f"### {handoff['artifact_role'] or handoff['action']} · issue #{issue_label}",
-                f"- tracker: {handoff['tracker']}",
-                f"- action: {handoff['action']}",
-                f"- applied_at: {handoff['applied_at']}",
-                f"- staged_at: {handoff['staged_at'] or 'n/a'}",
-                f"- summary: {handoff['summary'] or 'No summary recorded.'}",
-                f"- issue_key: {handoff['issue_key'] or 'n/a'}",
-                f"- bundle_key: {handoff['bundle_key'] or 'n/a'}",
-                f"- manifest: {handoff['manifest_path']}",
-                f"- archived: {handoff['archived_path'] or 'n/a'}",
+    else:
+        for handoff in sync_handoffs:
+            issue_label = handoff["issue_id"] if handoff["issue_id"] is not None else "unknown"
+            lines.extend(
+                [
+                    "",
+                    f"### {handoff['artifact_role'] or handoff['action']} · issue #{issue_label}",
+                    f"- tracker: {handoff['tracker']}",
+                    f"- action: {handoff['action']}",
+                    f"- applied_at: {handoff['applied_at']}",
+                    f"- staged_at: {handoff['staged_at'] or 'n/a'}",
+                    f"- summary: {handoff['summary'] or 'No summary recorded.'}",
+                    f"- issue_key: {handoff['issue_key'] or 'n/a'}",
+                    f"- bundle_key: {handoff['bundle_key'] or 'n/a'}",
+                    f"- manifest: {handoff['manifest_path']}",
+                    f"- archived: {handoff['archived_path'] or 'n/a'}",
+                ]
+            )
+            source_relative_path = handoff["source_relative_path"] or "n/a"
+            lines.append(f"- source_relative_path: {source_relative_path}")
+            ref_pairs = [
+                f"{key}={value}"
+                for key, value in _snapshot_mapping(handoff, "refs").items()
+                if value not in (None, "")
             ]
-        )
-        source_relative_path = handoff["source_relative_path"] or "n/a"
-        lines.append(f"- source_relative_path: {source_relative_path}")
-        ref_pairs = [
-            f"{key}={value}"
-            for key, value in _snapshot_mapping(handoff, "refs").items()
-            if value not in (None, "")
+            lines.append(f"- refs: {', '.join(ref_pairs) if ref_pairs else 'none'}")
+            normalized_links = _list_of_dicts(handoff["normalized_links"])
+            if normalized_links:
+                lines.append("- normalized_links:")
+                for link in normalized_links:
+                    lines.append(
+                        f"  - {link['label']}: {link['target']}"
+                    )
+            handoff_info = _snapshot_mapping(handoff, "handoff")
+            lines.append(
+                f"- handoff_group: key={handoff_info.get('group_key') or 'n/a'} size={handoff_info.get('group_size') or 0} index={handoff_info.get('group_index') or 0}"
+            )
+    lines.extend(
+        [
+            "",
+            "## Sync retention",
+            f"- keep_groups_per_issue: {sync_retention['keep_groups_per_issue']}",
+            f"- total_issues: {sync_retention['total_issues']}",
+            f"- eligible_issues: {sync_retention['eligible_issues']}",
+            f"- repair_needed_issues: {sync_retention['repair_needed_issues']}",
+            f"- total_groups: {sync_retention['total_groups']}",
+            f"- prunable_groups: {sync_retention['prunable_groups']}",
+            f"- prunable_bytes: {sync_retention['prunable_bytes_human']}",
         ]
-        lines.append(f"- refs: {', '.join(ref_pairs) if ref_pairs else 'none'}")
-        normalized_links = _list_of_dicts(handoff["normalized_links"])
-        if normalized_links:
-            lines.append("- normalized_links:")
-            for link in normalized_links:
-                lines.append(
-                    f"  - {link['label']}: {link['target']}"
-                )
-        handoff_info = _snapshot_mapping(handoff, "handoff")
-        lines.append(
-            f"- handoff_group: key={handoff_info.get('group_key') or 'n/a'} size={handoff_info.get('group_size') or 0} index={handoff_info.get('group_index') or 0}"
-        )
+    )
+    retention_entries = _list_of_dicts(sync_retention["entries"])
+    if not retention_entries:
+        lines.append("- No applied sync retention entries yet.")
+    else:
+        for entry in retention_entries:
+            issue_label = entry["issue_id"] if entry["issue_id"] is not None else "unknown"
+            lines.extend(
+                [
+                    "",
+                    f"### {entry['tracker']} · issue #{issue_label}",
+                    f"- status: {entry['status']}",
+                    f"- integrity_findings: {entry['integrity_findings']}",
+                    f"- keep_groups_limit: {entry['keep_groups_limit']}",
+                    f"- groups: total={entry['total_groups']} kept={entry['kept_groups']} prunable={entry['prunable_groups']}",
+                    f"- bytes: total={entry['total_bytes_human']} kept={entry['kept_bytes_human']} prunable={entry['prunable_bytes_human']}",
+                    f"- ages: newest={entry['newest_group_age_human']} oldest={entry['oldest_group_age_human']} oldest_prunable={entry['oldest_prunable_group_age_human']}",
+                ]
+            )
+            finding_codes = entry["finding_codes"]
+            if finding_codes:
+                lines.append(f"- finding_codes: {', '.join(str(code) for code in finding_codes)}")
+            groups = _list_of_dicts(entry["groups"])
+            if groups:
+                lines.append("- groups:")
+                for group in groups:
+                    lines.append(
+                        "  - "
+                        f"{group['status']} key={group['group_key']} actions={','.join(group['actions']) or 'none'} "
+                        f"size={group['total_bytes_human']} newest={group['newest_age_human']}"
+                    )
+    lines.extend(
+        [
+            "",
+            "## Reports",
+            f"- available_reports: {reports['total']}",
+            f"- report_freshness_severity: {reports['freshness_severity']}",
+            f"- report_summary_severity: {reports['report_summary_severity']}",
+            f"- report_summary_reason: {reports['report_summary_severity_reason']}",
+            f"- aging_reports: {reports['aging_total']}",
+            f"- future_reports: {reports['future_total']}",
+            f"- unknown_reports: {reports['unknown_total']}",
+            f"- stale_reports: {reports['stale_total']}",
+            f"- policy_drift_severity: {reports['policy_drift_severity']}",
+            f"- policy_drift_reason: {reports['policy_drift_severity_reason']}",
+            f"- policy_drift_reports: {reports['policy_drift_total']}",
+            f"- policy_drift_guidance: {reports['policy_drift_guidance'] or 'n/a'}",
+            f"- policy_embedded_reports: {reports['policy_embedded_total']}",
+            f"- reports_without_embedded_policy: {reports['policy_missing_total']}",
+            f"- reports_by_freshness: {_render_report_metrics(reports['freshness'])}",
+            f"- cleanup_reports: {reports['cleanup_total']}",
+            f"- cleanup_freshness_severity: {reports['cleanup_freshness_severity']}",
+            f"- cleanup_aging_reports: {reports['cleanup_aging_total']}",
+            f"- cleanup_future_reports: {reports['cleanup_future_total']}",
+            f"- cleanup_unknown_reports: {reports['cleanup_unknown_total']}",
+            f"- stale_cleanup_reports: {reports['cleanup_stale_total']}",
+            f"- cleanup_reports_by_freshness: {_render_report_metrics(reports['cleanup_freshness'])}",
+        ]
+    )
+    report_entries = _list_of_dicts(reports["entries"])
+    if not report_entries:
+        lines.append("- No report exports yet.")
+    else:
+        for entry in report_entries:
+            related_report_detail_lines = _render_related_report_detail_lines(
+                entry.get("details"),
+                remediation=(
+                    _string_or_none(reports.get("policy_drift_guidance"))
+                    or _report_policy_drift_guidance_detail()
+                ),
+            )
+            lines.extend(
+                [
+                    "",
+                    f"### {entry['label']}",
+                    f"- status: {entry['status']}",
+                    f"- generated_at: {entry['generated_at'] or 'n/a'}",
+                    f"- freshness: {entry['freshness_status']}",
+                    f"- age: {entry['age_human']}",
+                    f"- summary: {entry['summary']}",
+                    f"- json_path: {entry['json_path'] or 'n/a'}",
+                    f"- markdown_path: {entry['markdown_path'] or 'n/a'}",
+                    f"- policy: {entry['policy_summary'] or 'n/a'}",
+                    f"- policy_thresholds: {_render_report_metrics(entry['policy'])}",
+                    f"- embedded_policy: {entry['embedded_policy_summary'] or 'n/a'}",
+                    f"- embedded_policy_thresholds: {_render_report_metrics(entry['embedded_policy'])}",
+                    f"- policy_alignment: {entry['policy_alignment_status']}",
+                    f"- policy_alignment_note: {entry['policy_alignment_note']}",
+                    f"- policy_alignment_remediation: {entry.get('policy_alignment_remediation') or 'n/a'}",
+                    f"- metrics: {_render_report_metrics(entry['metrics'])}",
+                    f"- details: {_render_report_details(entry['details'])}",
+                    f"- related_cards: {_render_report_relations(entry['related_cards'])}",
+                    f"- referenced_by: {_render_report_relations(entry['referenced_by'])}",
+                ]
+            )
+            lines.extend(related_report_detail_lines)
     return "\n".join(lines) + "\n"
 
 
-def _render_metric_card(label: str, value: str) -> str:
+def _render_metric_card(
+    label: str,
+    value: str,
+    *,
+    tone: str | None = None,
+    note: str | None = None,
+) -> str:
     metric_id = "visible-runs-count" if label == "Visible runs" else ""
     id_attr = f' id="{metric_id}"' if metric_id else ""
+    classes = ["metric-card"]
+    if tone:
+        classes.append(f"metric-card-{tone}")
+    note_markup = f'<span class="metric-note">{escape(note)}</span>' if note else ""
     return (
-        '<article class="metric-card">'
+        f'<article class="{" ".join(classes)}">'
         f'<span class="metric-label">{escape(label)}</span>'
         f'<span class="metric-value"{id_attr}>{escape(value)}</span>'
+        f"{note_markup}"
         "</article>"
+    )
+
+
+def _render_hero_chip(chip: dict[str, object]) -> str:
+    label = str(chip["label"])
+    severity = str(chip["severity"])
+    value = str(chip["value"])
+    return (
+        f'<span class="hero-chip status status-{escape(severity)}">'
+        f"{escape(label)} · {escape(value)}"
+        "</span>"
     )
 
 
@@ -872,6 +1321,176 @@ def _render_sync_handoff_card(handoff: dict[str, object]) -> str:
           {f'<ul class="list">{"".join(ref_items)}</ul>' if ref_items else '<p class="copy">No refs recorded.</p>'}
         </section>
       </div>
+    </article>
+    """
+
+
+def _render_sync_retention_issue_card(entry: dict[str, object]) -> str:
+    issue_label = entry["issue_id"] if entry["issue_id"] is not None else "unknown"
+    status_value = str(entry["status"])
+    groups = _list_of_dicts(entry["groups"])
+    group_items = []
+    for group in groups[:4]:
+        group_items.append(
+            "<li>"
+            f"<strong>{escape(str(group['status']))}</strong> · "
+            f"{escape(str(group['group_key']))} · "
+            f"size {escape(str(group['total_bytes_human']))} · "
+            f"newest {escape(str(group['newest_age_human']))} · "
+            f"actions {escape(', '.join(str(action) for action in group['actions']) or 'none')}"
+            "</li>"
+        )
+    links = [
+        _render_token_link("manifest", _string_or_none(entry["manifest_href"])),
+        _render_token_link("issue archive", _string_or_none(entry["issue_root_href"])),
+    ]
+    finding_codes = entry["finding_codes"]
+    return f"""
+    <article class="retention-card">
+      <div class="run-head">
+        <div>
+          <p class="run-subtitle">{escape(str(entry['tracker']))} · issue #{escape(str(issue_label))}</p>
+          <h2 class="run-title">Retention posture</h2>
+        </div>
+        <span class="status status-{escape(status_value)}">{escape(status_value)}</span>
+      </div>
+      <div class="run-grid">
+        <section class="panel">
+          <h3>Summary</h3>
+          <ul class="list">
+            <li><strong>groups:</strong> {entry['kept_groups']}/{entry['total_groups']} kept, {entry['prunable_groups']} prunable</li>
+            <li><strong>bytes:</strong> {escape(str(entry['kept_bytes_human']))} kept, {escape(str(entry['prunable_bytes_human']))} prunable</li>
+            <li><strong>ages:</strong> newest {escape(str(entry['newest_group_age_human']))}, oldest {escape(str(entry['oldest_group_age_human']))}</li>
+            <li><strong>oldest prunable:</strong> {escape(str(entry['oldest_prunable_group_age_human']))}</li>
+          </ul>
+        </section>
+        <section class="panel">
+          <h3>Integrity</h3>
+          <p class="copy">{escape(str(entry['integrity_findings']))} finding(s)</p>
+          {f'<p class="copy error">{escape(", ".join(str(code) for code in finding_codes))}</p>' if finding_codes else '<p class="copy">No integrity findings recorded.</p>'}
+          <div class="token-row" style="margin-top: 0.7rem;">
+            {"".join(links)}
+          </div>
+        </section>
+      </div>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Group samples</h3>
+        {f'<ul class="group-list">{"".join(group_items)}</ul>' if group_items else '<p class="copy">No eligible groups recorded.</p>'}
+      </section>
+    </article>
+    """
+
+
+def _render_report_card(entry: dict[str, object]) -> str:
+    status_value = str(entry["status"])
+    card_anchor = str(entry["card_anchor"])
+    links = [
+        _render_token_link("json", _string_or_none(entry["json_href"])),
+        _render_token_link("markdown", _string_or_none(entry["markdown_href"])),
+    ]
+    metrics = _snapshot_mapping(entry, "metrics")
+    details = _snapshot_mapping(entry, "details")
+    related_cards = _list_of_dicts(entry["related_cards"])
+    referenced_by = _list_of_dicts(entry["referenced_by"])
+    policy_summary = _string_or_none(entry.get("policy_summary")) or "n/a"
+    embedded_policy_summary = _string_or_none(entry.get("embedded_policy_summary")) or "n/a"
+    policy_alignment_status = _string_or_none(entry.get("policy_alignment_status")) or "missing"
+    policy_alignment_note = _string_or_none(entry.get("policy_alignment_note")) or "n/a"
+    policy_alignment_remediation = _string_or_none(entry.get("policy_alignment_remediation"))
+    policy = entry.get("policy")
+    if not isinstance(policy, dict):
+        policy = {}
+    embedded_policy = entry.get("embedded_policy")
+    if not isinstance(embedded_policy, dict):
+        embedded_policy = {}
+    metric_items = [
+        f"<li><strong>{escape(str(key))}:</strong> {escape(str(value))}</li>"
+        for key, value in sorted(metrics.items())
+        if value not in (None, "", [])
+    ]
+    detail_items = _render_report_detail_items(details)
+    policy_items = [
+        f"<li><strong>{escape(str(key))}:</strong> {escape(str(value))}</li>"
+        for key, value in sorted(policy.items())
+        if value not in (None, "", [])
+    ]
+    embedded_policy_items = [
+        f"<li><strong>{escape(str(key))}:</strong> {escape(str(value))}</li>"
+        for key, value in sorted(embedded_policy.items())
+        if value not in (None, "", [])
+    ]
+    related_links = [
+        _render_token_link(str(item["label"]), _string_or_none(item["card_href"]))
+        for item in related_cards
+    ]
+    related_notes = [
+        f"{item['label']}: {item['policy_alignment_warning']}"
+        for item in related_cards
+        if _string_or_none(item.get("policy_alignment_status")) == "drift"
+        and _string_or_none(item.get("policy_alignment_warning"))
+    ]
+    referenced_links = [
+        _render_token_link(str(item["label"]), _string_or_none(item["card_href"]))
+        for item in referenced_by
+    ]
+    freshness_line = (
+        f'<p class="run-subtitle" style="margin-top: 0.35rem;">freshness {escape(str(entry["freshness_status"]))} · age {escape(str(entry["age_human"]))}</p>'
+        if entry["freshness_status"] != "unknown"
+        else ""
+    )
+    return f"""
+    <article id="{escape(card_anchor)}" class="report-card">
+      <div class="run-head">
+        <div>
+          <p class="run-subtitle">report export</p>
+          <h2 class="run-title">{escape(str(entry['label']))}</h2>
+        </div>
+        <span class="status status-{escape(status_value)}">{escape(status_value)}</span>
+      </div>
+      <div class="run-grid">
+        <section class="panel">
+          <h3>Summary</h3>
+          <p class="copy">{escape(str(entry['summary']))}</p>
+          <p class="run-subtitle" style="margin-top: 0.7rem;">generated_at {escape(str(entry['generated_at'] or "n/a"))}</p>
+          {freshness_line}
+        </section>
+        <section class="panel">
+          <h3>Links</h3>
+          <div class="token-row">
+            {"".join(links)}
+          </div>
+        </section>
+      </div>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Metrics</h3>
+        {f'<ul class="list">{"".join(metric_items)}</ul>' if metric_items else '<p class="copy">No metrics recorded.</p>'}
+      </section>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Details</h3>
+        {f'<ul class="list">{"".join(detail_items)}</ul>' if detail_items else '<p class="copy">No extra details recorded.</p>'}
+      </section>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Policy context</h3>
+        <p class="copy">{escape(policy_summary)}</p>
+        {f'<ul class="list" style="margin-top: 0.7rem;">{"".join(policy_items)}</ul>' if policy_items else '<p class="copy">No policy thresholds recorded.</p>'}
+        <p class="run-subtitle" style="margin-top: 0.8rem;">embedded policy {escape(policy_alignment_status)}</p>
+        <p class="copy{' error' if policy_alignment_status == 'drift' else ''}">{escape(embedded_policy_summary)}</p>
+        <p class="copy{' error' if policy_alignment_status == 'drift' else ''}">{escape(policy_alignment_note)}</p>
+        {f'<p class="copy">{escape(policy_alignment_remediation)}</p>' if policy_alignment_remediation else ''}
+        {f'<ul class="list" style="margin-top: 0.7rem;">{"".join(embedded_policy_items)}</ul>' if embedded_policy_items else '<p class="copy">No embedded policy thresholds recorded.</p>'}
+      </section>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Cross references</h3>
+        <p class="run-subtitle">related reports</p>
+        <div class="token-row">
+          {"".join(related_links) if related_links else '<span class="token">none</span>'}
+        </div>
+        {f'<ul class="list" style="margin-top: 0.8rem;">{"".join(f"<li>{escape(note)}</li>" for note in related_notes)}</ul>' if related_notes else ""}
+        <p class="run-subtitle" style="margin-top: 0.8rem;">referenced by</p>
+        <div class="token-row">
+          {"".join(referenced_links) if referenced_links else '<span class="token">none</span>'}
+        </div>
+      </section>
     </article>
     """
 
@@ -1044,6 +1663,526 @@ def _load_sync_handoffs(
     return {"total": len(entries), "entries": entries[:limit]}
 
 
+def _load_report_summaries(
+    *,
+    loaded: LoadedConfig,
+    output_path: Path,
+    rendered_at: str,
+) -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    for key, label, json_name, markdown_name in REPORT_EXPORTS:
+        json_path = loaded.reports_dir / json_name
+        markdown_path = loaded.reports_dir / markdown_name
+        if not json_path.exists() and not markdown_path.exists():
+            continue
+        payload = _load_report_payload(json_path) if json_path.exists() else None
+        entries.append(
+            _serialize_report_entry(
+                output_path=output_path,
+                key=key,
+                label=label,
+                json_path=json_path if json_path.exists() else None,
+                markdown_path=markdown_path if markdown_path.exists() else None,
+                payload=payload,
+                rendered_at=rendered_at,
+            )
+        )
+    _attach_report_cross_references(entries)
+    policy_snapshot = _build_report_freshness_policy_snapshot(loaded)
+    _attach_report_policy_context(entries, policy_snapshot)
+    report_freshness = _count_report_freshness(entries)
+    cleanup_freshness = _count_report_freshness(entries, key_prefix="cleanup-")
+    policy = loaded.data.dashboard.report_freshness_policy
+    freshness_severity, freshness_severity_reason = _report_freshness_severity(
+        report_freshness,
+        unknown_issues_threshold=policy.unknown_issues_threshold,
+        stale_issues_threshold=policy.stale_issues_threshold,
+        future_attention_threshold=policy.future_attention_threshold,
+        aging_attention_threshold=policy.aging_attention_threshold,
+    )
+    cleanup_freshness_severity, cleanup_freshness_severity_reason = _report_freshness_severity(
+        cleanup_freshness,
+        unknown_issues_threshold=policy.unknown_issues_threshold,
+        stale_issues_threshold=policy.stale_issues_threshold,
+        future_attention_threshold=policy.future_attention_threshold,
+        aging_attention_threshold=policy.aging_attention_threshold,
+    )
+    policy_alignment_counts = _count_report_policy_alignment(entries)
+    policy_drift_severity, policy_drift_severity_reason = _report_policy_drift_severity(
+        policy_alignment_counts["drift"]
+    )
+    report_summary_severity, report_summary_severity_reason = _combine_report_summary_severity(
+        freshness_severity=freshness_severity,
+        freshness_reason=freshness_severity_reason,
+        policy_drift_severity=policy_drift_severity,
+        policy_drift_reason=policy_drift_severity_reason,
+    )
+    return {
+        "total": len(entries),
+        "aging_total": report_freshness.get("aging", 0),
+        "future_total": report_freshness.get("future", 0),
+        "unknown_total": report_freshness.get("unknown", 0),
+        "stale_total": report_freshness.get("stale", 0),
+        "freshness": report_freshness,
+        "freshness_severity": freshness_severity,
+        "freshness_severity_reason": freshness_severity_reason,
+        "report_summary_severity": report_summary_severity,
+        "report_summary_severity_reason": report_summary_severity_reason,
+        "cleanup_total": sum(cleanup_freshness.values()),
+        "cleanup_aging_total": cleanup_freshness.get("aging", 0),
+        "cleanup_future_total": cleanup_freshness.get("future", 0),
+        "cleanup_unknown_total": cleanup_freshness.get("unknown", 0),
+        "cleanup_stale_total": cleanup_freshness.get("stale", 0),
+        "cleanup_freshness": cleanup_freshness,
+        "cleanup_freshness_severity": cleanup_freshness_severity,
+        "cleanup_freshness_severity_reason": cleanup_freshness_severity_reason,
+        "policy_drift_severity": policy_drift_severity,
+        "policy_drift_severity_reason": policy_drift_severity_reason,
+        "policy_drift_guidance": (
+            _report_policy_drift_guidance_detail()
+            if policy_alignment_counts["drift"] > 0
+            else None
+        ),
+        "policy_drift_total": policy_alignment_counts["drift"],
+        "policy_embedded_total": policy_alignment_counts["embedded"],
+        "policy_missing_total": policy_alignment_counts["missing"],
+        "entries": entries,
+    }
+
+
+def _load_report_payload(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _serialize_report_entry(
+    *,
+    output_path: Path,
+    key: str,
+    label: str,
+    json_path: Path | None,
+    markdown_path: Path | None,
+    payload: dict[str, object] | None,
+    rendered_at: str,
+) -> dict[str, object]:
+    status = "available"
+    generated_at: str | None = None
+    age_seconds: int | None = None
+    age_human = "n/a"
+    freshness_status = "unknown"
+    summary = "Report export available."
+    metrics: dict[str, object] = {}
+    details: dict[str, object] = {}
+    relation_specs: list[dict[str, object]] = []
+    if payload is None and json_path is not None:
+        status = "invalid"
+        summary = "Report JSON could not be parsed."
+    elif payload is not None:
+        meta = payload.get("meta")
+        if isinstance(meta, dict):
+            generated_at = _string_or_none(meta.get("rendered_at"))
+        report_summary = payload.get("summary")
+        if isinstance(report_summary, dict):
+            status, summary, metrics = _report_summary_details(key, report_summary)
+        details = _report_details(key, payload)
+        if key == "sync-audit":
+            mismatch_count = details.get("cleanup_report_mismatches")
+            if isinstance(mismatch_count, int):
+                existing_mismatch_count = metrics.get("cleanup_report_mismatches")
+                if not isinstance(existing_mismatch_count, int) or existing_mismatch_count < mismatch_count:
+                    metrics["cleanup_report_mismatches"] = mismatch_count
+        relation_specs = _report_relation_specs(key, payload)
+    age_seconds, age_human, freshness_status = _report_age_snapshot(
+        rendered_at=rendered_at,
+        generated_at=generated_at,
+    )
+    card_anchor = f"report-{key}"
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "generated_at": generated_at,
+        "age_seconds": age_seconds,
+        "age_human": age_human,
+        "freshness_status": freshness_status,
+        "summary": summary,
+        "metrics": metrics,
+        "details": details,
+        "card_anchor": card_anchor,
+        "card_href": f"#{card_anchor}",
+        "relation_specs": relation_specs,
+        "related_cards": [],
+        "referenced_by": [],
+        "policy_summary": None,
+        "policy": {},
+        "embedded_policy_summary": _extract_report_policy_summary(payload),
+        "embedded_policy": _extract_report_policy_thresholds(payload),
+        "policy_alignment_status": "missing",
+        "policy_alignment_note": "raw report export did not embed policy metadata",
+        "policy_alignment_remediation": None,
+        "json_path": str(json_path) if json_path else None,
+        "json_href": _relative_href(output_path, json_path) if json_path else None,
+        "markdown_path": str(markdown_path) if markdown_path else None,
+        "markdown_href": _relative_href(output_path, markdown_path) if markdown_path else None,
+    }
+
+
+def _attach_report_policy_context(
+    entries: list[dict[str, object]],
+    policy_snapshot: dict[str, object],
+) -> None:
+    summary = _string_or_none(policy_snapshot.get("summary"))
+    thresholds = policy_snapshot.get("report_freshness_policy")
+    if not isinstance(thresholds, dict):
+        thresholds = {}
+    remediation_detail = _report_policy_drift_guidance_detail()
+    for entry in entries:
+        entry["policy_summary"] = summary
+        entry["policy"] = dict(thresholds)
+        embedded_summary = _string_or_none(entry.get("embedded_policy_summary"))
+        if embedded_summary is None:
+            entry["policy_alignment_status"] = "missing"
+            entry["policy_alignment_note"] = "raw report export did not embed policy metadata"
+            entry["policy_alignment_remediation"] = None
+        elif embedded_summary == summary:
+            entry["policy_alignment_status"] = "match"
+            entry["policy_alignment_note"] = "embedded policy matches current config"
+            entry["policy_alignment_remediation"] = None
+        else:
+            entry["policy_alignment_status"] = "drift"
+            entry["policy_alignment_note"] = (
+                f"embedded policy differs from current config ({embedded_summary})"
+            )
+            entry["policy_alignment_remediation"] = remediation_detail
+
+
+def _report_summary_details(
+    key: str,
+    report_summary: dict[str, object],
+) -> tuple[str, str, dict[str, object]]:
+    if key == "sync-audit":
+        status = _string_or_none(report_summary.get("overall_status")) or "available"
+        pending = report_summary.get("pending_artifacts", 0)
+        integrity = report_summary.get("integrity_issue_count", 0)
+        prunable = report_summary.get("prunable_groups", 0)
+        summary = f"pending={pending} integrity_issues={integrity} prunable_groups={prunable}"
+        metrics = {
+            "pending_artifacts": pending,
+            "integrity_issue_count": integrity,
+            "prunable_groups": prunable,
+            "repair_needed_issues": report_summary.get("repair_needed_issues", 0),
+            "cleanup_report_mismatches": report_summary.get("cleanup_report_mismatches", 0),
+        }
+        return status, summary, metrics
+    status = _string_or_none(report_summary.get("overall_status")) or "available"
+    action_count = report_summary.get("action_count", 0)
+    affected = report_summary.get("affected_issue_count", 0)
+    summary = f"actions={action_count} affected_issues={affected}"
+    metrics = {
+        "action_count": action_count,
+        "affected_issue_count": affected,
+        "sync_applied_action_count": report_summary.get("sync_applied_action_count", 0),
+        "replacement_entry_count": report_summary.get("replacement_entry_count", 0),
+    }
+    return status, summary, metrics
+
+
+def _report_details(key: str, payload: dict[str, object]) -> dict[str, object]:
+    related_reports = payload.get("related_reports")
+    related_mismatch_warnings: list[str] = []
+    related_mismatch_reports = 0
+    related_policy_drift_warnings: list[str] = []
+    related_policy_drift_reports = 0
+    if isinstance(related_reports, dict):
+        raw_mismatch_reports = related_reports.get("mismatch_reports")
+        if isinstance(raw_mismatch_reports, int):
+            related_mismatch_reports = raw_mismatch_reports
+        mismatches = related_reports.get("mismatches")
+        if isinstance(mismatches, list):
+            for entry in mismatches:
+                if not isinstance(entry, dict):
+                    continue
+                label = _string_or_none(entry.get("label")) or "related-report"
+                warning = _string_or_none(entry.get("warning")) or "issue filter mismatch"
+                related_mismatch_warnings.append(f"{label}: {warning}")
+        raw_policy_drift_reports = related_reports.get("policy_drift_reports")
+        if isinstance(raw_policy_drift_reports, int):
+            related_policy_drift_reports = raw_policy_drift_reports
+        policy_drifts = related_reports.get("policy_drifts")
+        if isinstance(policy_drifts, list):
+            for entry in policy_drifts:
+                if not isinstance(entry, dict):
+                    continue
+                label = _string_or_none(entry.get("label")) or "related-report"
+                warning = _string_or_none(entry.get("warning")) or "policy drift"
+                related_policy_drift_warnings.append(f"{label}: {warning}")
+    if key != "sync-audit":
+        details: dict[str, object] = {}
+        if related_mismatch_warnings:
+            details["related_report_mismatch_warnings"] = related_mismatch_warnings
+            details["related_report_mismatches"] = related_mismatch_reports
+        if related_policy_drift_warnings:
+            details["related_report_policy_drift_warnings"] = related_policy_drift_warnings
+            details["related_report_policy_drifts"] = related_policy_drift_reports
+        return details
+    integrity = payload.get("integrity")
+    if not isinstance(integrity, dict):
+        return {}
+    finding_counts = integrity.get("finding_counts")
+    if not isinstance(finding_counts, dict):
+        finding_counts = {}
+    reports = integrity.get("reports")
+    sample_issue_ids: list[int] = []
+    if isinstance(reports, list):
+        for report in reports:
+            if not isinstance(report, dict):
+                continue
+            issue_id = report.get("issue_id")
+            status = report.get("status")
+            if isinstance(issue_id, int) and status == "issues" and issue_id not in sample_issue_ids:
+                sample_issue_ids.append(issue_id)
+            if len(sample_issue_ids) >= 3:
+                break
+    return {
+        "action_hints": _integrity_action_hints(finding_counts),
+        "cleanup_mismatch_warnings": related_mismatch_warnings,
+        "cleanup_report_mismatches": related_mismatch_reports,
+        "related_report_policy_drift_warnings": related_policy_drift_warnings,
+        "related_report_policy_drifts": related_policy_drift_reports,
+        "integrity_reports": integrity.get("total_reports", 0),
+        "issues_with_findings": integrity.get("issues_with_findings", 0),
+        "clean_issues": integrity.get("clean_issues", 0),
+        "finding_counts": dict(sorted(finding_counts.items())),
+        "sample_issue_ids": sample_issue_ids,
+    }
+
+
+def _extract_report_policy_summary(payload: dict[str, object] | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    policy = payload.get("policy")
+    if not isinstance(policy, dict):
+        return None
+    return _string_or_none(policy.get("summary"))
+
+
+def _extract_report_policy_thresholds(payload: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    policy = payload.get("policy")
+    if not isinstance(policy, dict):
+        return {}
+    thresholds = policy.get("report_freshness_policy")
+    if not isinstance(thresholds, dict):
+        return {}
+    return dict(thresholds)
+
+
+def _count_report_policy_alignment(entries: list[dict[str, object]]) -> dict[str, int]:
+    counts = {"drift": 0, "embedded": 0, "missing": 0}
+    for entry in entries:
+        alignment_status = _string_or_none(entry.get("policy_alignment_status")) or "missing"
+        if alignment_status == "drift":
+            counts["drift"] += 1
+            counts["embedded"] += 1
+        elif alignment_status == "match":
+            counts["embedded"] += 1
+        else:
+            counts["missing"] += 1
+    return counts
+
+
+def _integrity_action_hints(finding_counts: dict[str, object]) -> list[str]:
+    ordered: list[tuple[str, int]] = []
+    for code, raw_count in finding_counts.items():
+        if not isinstance(code, str):
+            continue
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            count = 0
+        if count <= 0:
+            continue
+        ordered.append((code, count))
+    ordered.sort(key=lambda item: (-item[1], item[0]))
+    hints: list[str] = []
+    for code, count in ordered:
+        hint = INTEGRITY_FINDING_HINTS.get(code)
+        if not hint:
+            hint = "review the affected manifest entries and rerun `republic sync check` after repair"
+        hints.append(f"{code} ({count}): {hint}")
+    return hints
+
+
+def _report_relation_specs(key: str, payload: dict[str, object]) -> list[dict[str, object]]:
+    related_reports = payload.get("related_reports")
+    if not isinstance(related_reports, dict):
+        return []
+    entries = related_reports.get("entries")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _attach_report_cross_references(entries: list[dict[str, object]]) -> None:
+    by_key = {
+        str(entry["key"]): entry
+        for entry in entries
+        if isinstance(entry.get("key"), str)
+    }
+    for entry in entries:
+        related_cards: list[dict[str, object]] = []
+        relation_specs = _list_of_dicts(entry.get("relation_specs"))
+        for spec in relation_specs:
+            target_key = _string_or_none(spec.get("key"))
+            target = by_key.get(target_key) if target_key else None
+            related = {
+                "key": target_key,
+                "label": spec.get("label") or target_key or "related",
+                "status": spec.get("status"),
+                "card_href": target.get("card_href") if isinstance(target, dict) else None,
+                "json_href": target.get("json_href") if isinstance(target, dict) else None,
+                "markdown_href": target.get("markdown_href") if isinstance(target, dict) else None,
+                "warning": spec.get("warning"),
+            }
+            policy_alignment = spec.get("policy_alignment")
+            if isinstance(policy_alignment, dict):
+                related["policy_alignment_status"] = policy_alignment.get("status")
+                related["policy_alignment_warning"] = policy_alignment.get("warning")
+                related["embedded_policy_summary"] = policy_alignment.get("embedded_summary")
+                related["current_policy_summary"] = policy_alignment.get("current_summary")
+            related_cards.append(related)
+            if isinstance(target, dict):
+                referenced_by = target.get("referenced_by")
+                if not isinstance(referenced_by, list):
+                    referenced_by = []
+                    target["referenced_by"] = referenced_by
+                referenced_by.append(
+                    {
+                        "key": entry.get("key"),
+                        "label": entry.get("label"),
+                        "status": entry.get("status"),
+                        "card_href": entry.get("card_href"),
+                        "json_href": entry.get("json_href"),
+                        "markdown_href": entry.get("markdown_href"),
+                    }
+                )
+        entry["related_cards"] = related_cards
+
+
+def _serialize_sync_retention_snapshot(
+    *,
+    loaded: LoadedConfig,
+    output_path: Path,
+    limit: int,
+) -> dict[str, object]:
+    snapshot = summarize_sync_applied_retention(
+        loaded,
+        keep_groups_per_issue=loaded.data.cleanup.sync_applied_keep_groups_per_issue,
+        limit=limit,
+    )
+    return {
+        "keep_groups_per_issue": snapshot.keep_groups_per_issue,
+        "total_issues": snapshot.total_issues,
+        "eligible_issues": snapshot.eligible_issues,
+        "stable_issues": snapshot.stable_issues,
+        "prunable_issues": snapshot.prunable_issues,
+        "repair_needed_issues": snapshot.repair_needed_issues,
+        "total_groups": snapshot.total_groups,
+        "kept_groups": snapshot.kept_groups,
+        "prunable_groups": snapshot.prunable_groups,
+        "total_bytes": snapshot.total_bytes,
+        "kept_bytes": snapshot.kept_bytes,
+        "prunable_bytes": snapshot.prunable_bytes,
+        "total_bytes_human": _format_bytes(snapshot.total_bytes),
+        "kept_bytes_human": _format_bytes(snapshot.kept_bytes),
+        "prunable_bytes_human": _format_bytes(snapshot.prunable_bytes),
+        "entries": [
+            _serialize_sync_retention_entry(loaded=loaded, output_path=output_path, entry=entry)
+            for entry in snapshot.entries
+        ],
+    }
+
+
+def _serialize_sync_retention_entry(
+    *,
+    loaded: LoadedConfig,
+    output_path: Path,
+    entry: object,
+) -> dict[str, object]:
+    if not isinstance(entry, SyncAppliedRetentionIssueSummary):
+        raise TypeError("Retention entry must be a SyncAppliedRetentionIssueSummary.")
+    return {
+        "tracker": entry.tracker,
+        "issue_id": entry.issue_id,
+        "status": entry.status,
+        "keep_groups_limit": entry.keep_groups_limit,
+        "integrity_findings": entry.integrity_findings,
+        "finding_codes": list(entry.finding_codes),
+        "total_groups": entry.total_groups,
+        "kept_groups": entry.kept_groups,
+        "prunable_groups": entry.prunable_groups,
+        "total_bytes": entry.total_bytes,
+        "kept_bytes": entry.kept_bytes,
+        "prunable_bytes": entry.prunable_bytes,
+        "total_bytes_human": _format_bytes(entry.total_bytes),
+        "kept_bytes_human": _format_bytes(entry.kept_bytes),
+        "prunable_bytes_human": _format_bytes(entry.prunable_bytes),
+        "newest_group_age_seconds": entry.newest_group_age_seconds,
+        "oldest_group_age_seconds": entry.oldest_group_age_seconds,
+        "oldest_prunable_group_age_seconds": entry.oldest_prunable_group_age_seconds,
+        "newest_group_age_human": _format_age_seconds(entry.newest_group_age_seconds),
+        "oldest_group_age_human": _format_age_seconds(entry.oldest_group_age_seconds),
+        "oldest_prunable_group_age_human": _format_age_seconds(entry.oldest_prunable_group_age_seconds),
+        "issue_root_path": str(entry.issue_root),
+        "issue_root_href": _relative_href(output_path, entry.issue_root),
+        "manifest_path": str(entry.manifest_path),
+        "manifest_href": _relative_href(output_path, entry.manifest_path) if entry.manifest_path.exists() else None,
+        "groups": [
+            _serialize_sync_retention_group(loaded=loaded, output_path=output_path, group=group)
+            for group in entry.groups
+        ],
+    }
+
+
+def _serialize_sync_retention_group(
+    *,
+    loaded: LoadedConfig,
+    output_path: Path,
+    group: object,
+) -> dict[str, object]:
+    if not isinstance(group, SyncAppliedRetentionGroup):
+        raise TypeError("Retention group must be a SyncAppliedRetentionGroup.")
+    archive_links = [
+        {
+            "path": relative_path,
+            "href": _relative_href(output_path, loaded.sync_applied_dir / relative_path),
+        }
+        for relative_path in group.archive_paths
+    ]
+    return {
+        "group_key": group.group_key,
+        "status": group.status,
+        "actions": list(group.actions),
+        "archive_paths": list(group.archive_paths),
+        "archive_links": archive_links,
+        "archive_file_count": group.archive_file_count,
+        "total_bytes": group.total_bytes,
+        "total_bytes_human": _format_bytes(group.total_bytes),
+        "newest_at": group.newest_at,
+        "oldest_at": group.oldest_at,
+        "newest_age_seconds": group.newest_age_seconds,
+        "oldest_age_seconds": group.oldest_age_seconds,
+        "newest_age_human": _format_age_seconds(group.newest_age_seconds),
+        "oldest_age_human": _format_age_seconds(group.oldest_age_seconds),
+    }
+
+
 def _serialize_sync_handoff_entry(
     *,
     loaded: LoadedConfig,
@@ -1128,6 +2267,61 @@ def _serialize_sync_handoff_entry(
         "refs": refs,
         "search_index": search_index,
     }
+
+
+def _format_bytes(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    size = float(value)
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{int(value)} B"
+
+
+def _format_age_seconds(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    remaining = int(value)
+    days, remainder = divmod(remaining, 86_400)
+    hours, remainder = divmod(remainder, 3_600)
+    minutes, seconds = divmod(remainder, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _report_age_snapshot(*, rendered_at: str, generated_at: str | None) -> tuple[int | None, str, str]:
+    rendered_dt = _parse_iso_datetime(rendered_at)
+    generated_dt = _parse_iso_datetime(generated_at)
+    if rendered_dt is None or generated_dt is None:
+        return None, "n/a", "unknown"
+    age_seconds = int((rendered_dt - generated_dt).total_seconds())
+    if age_seconds < -60:
+        return age_seconds, f"in {_format_age_seconds(abs(age_seconds))}", "future"
+    normalized_age = max(age_seconds, 0)
+    if normalized_age <= 3_600:
+        return normalized_age, _format_age_seconds(normalized_age), "fresh"
+    if normalized_age <= 86_400:
+        return normalized_age, _format_age_seconds(normalized_age), "aging"
+    return normalized_age, _format_age_seconds(normalized_age), "stale"
 
 
 def _serialize_normalized_links(
@@ -1233,6 +2427,354 @@ def _snapshot_sync_handoffs(snapshot: dict[str, object]) -> list[dict[str, objec
     if not isinstance(sync_handoffs, list):
         raise TypeError("Dashboard snapshot field 'sync_handoffs' must be a list.")
     return _list_of_dicts(sync_handoffs)
+
+
+def _snapshot_sync_retention(snapshot: dict[str, object]) -> dict[str, object]:
+    sync_retention = snapshot["sync_retention"]
+    if not isinstance(sync_retention, dict):
+        raise TypeError("Dashboard snapshot field 'sync_retention' must be a mapping.")
+    return sync_retention
+
+
+def _snapshot_reports(snapshot: dict[str, object]) -> dict[str, object]:
+    reports = snapshot["reports"]
+    if not isinstance(reports, dict):
+        raise TypeError("Dashboard snapshot field 'reports' must be a mapping.")
+    return reports
+
+
+def _build_report_freshness_policy_snapshot(loaded: LoadedConfig) -> dict[str, object]:
+    policy = loaded.data.dashboard.report_freshness_policy
+    return {
+        "summary": _format_report_freshness_policy_summary(
+            unknown_issues_threshold=policy.unknown_issues_threshold,
+            stale_issues_threshold=policy.stale_issues_threshold,
+            future_attention_threshold=policy.future_attention_threshold,
+            aging_attention_threshold=policy.aging_attention_threshold,
+        ),
+        "report_freshness_policy": {
+            "unknown_issues_threshold": policy.unknown_issues_threshold,
+            "stale_issues_threshold": policy.stale_issues_threshold,
+            "future_attention_threshold": policy.future_attention_threshold,
+            "aging_attention_threshold": policy.aging_attention_threshold,
+        },
+    }
+
+
+def _combine_severities(values: list[str]) -> str:
+    winner = "clean"
+    winner_rank = SEVERITY_ORDER[winner]
+    for value in values:
+        rank = SEVERITY_ORDER.get(value, SEVERITY_ORDER["attention"])
+        if rank > winner_rank:
+            winner = value
+            winner_rank = rank
+    return winner
+
+
+def _count_report_freshness(
+    entries: list[dict[str, object]],
+    *,
+    key_prefix: str | None = None,
+) -> dict[str, int]:
+    counts = {
+        "fresh": 0,
+        "aging": 0,
+        "stale": 0,
+        "future": 0,
+        "unknown": 0,
+    }
+    for entry in entries:
+        key = _string_or_none(entry.get("key"))
+        if not key:
+            continue
+        if key_prefix and not key.startswith(key_prefix):
+            continue
+        freshness = _string_or_none(entry.get("freshness_status")) or "unknown"
+        if freshness not in counts:
+            freshness = "unknown"
+        counts[freshness] += 1
+    return counts
+
+
+def _report_freshness_severity(
+    value: dict[str, object],
+    *,
+    unknown_issues_threshold: int,
+    stale_issues_threshold: int,
+    future_attention_threshold: int,
+    aging_attention_threshold: int,
+) -> tuple[str, str]:
+    unknown = int(value.get("unknown", 0) or 0)
+    stale = int(value.get("stale", 0) or 0)
+    future = int(value.get("future", 0) or 0)
+    aging = int(value.get("aging", 0) or 0)
+    total = sum(int(item or 0) for item in value.values())
+    if unknown >= unknown_issues_threshold:
+        return "issues", "unknown freshness reports need metadata or parsing repair"
+    if stale >= stale_issues_threshold:
+        return "issues", "stale reports need regeneration or operator review"
+    if unknown > 0:
+        return "attention", "unknown freshness reports should be inspected for metadata gaps"
+    if stale > 0:
+        return "attention", "stale reports are below the issue threshold but should be refreshed"
+    if future >= future_attention_threshold:
+        return "attention", "future-dated reports may indicate clock skew or staged exports"
+    if aging >= aging_attention_threshold:
+        return "attention", "aging reports should be refreshed soon"
+    if total == 0:
+        return "clean", "no reports exported yet"
+    return "clean", "all report freshness snapshots are current"
+
+
+def _report_policy_drift_severity(policy_drift_total: int) -> tuple[str, str]:
+    if policy_drift_total > 0:
+        return (
+            "attention",
+            f"embedded policy drift was detected in raw report exports; {_report_policy_drift_guidance_summary()}",
+        )
+    return "clean", "embedded policy metadata matches current config or is absent"
+
+
+def _combine_report_summary_severity(
+    *,
+    freshness_severity: str,
+    freshness_reason: str,
+    policy_drift_severity: str,
+    policy_drift_reason: str,
+) -> tuple[str, str]:
+    severity = _combine_severities([freshness_severity, policy_drift_severity])
+    if policy_drift_severity == "clean":
+        return freshness_severity, freshness_reason
+    if freshness_severity == "clean":
+        return policy_drift_severity, policy_drift_reason
+    return severity, f"{freshness_reason}; {policy_drift_reason}"
+
+
+def _build_hero_snapshot(
+    reports: dict[str, object],
+    *,
+    include_policy_drift: bool = False,
+) -> dict[str, object]:
+    if include_policy_drift:
+        report_severity = _string_or_none(reports.get("report_summary_severity")) or "clean"
+        report_reason = (
+            _string_or_none(reports.get("report_summary_severity_reason")) or "n/a"
+        )
+    else:
+        report_severity = _string_or_none(reports.get("freshness_severity")) or "clean"
+        report_reason = _string_or_none(reports.get("freshness_severity_reason")) or "n/a"
+    freshness_severity = _string_or_none(reports.get("freshness_severity")) or "clean"
+    cleanup_severity = _string_or_none(reports.get("cleanup_freshness_severity")) or "clean"
+    cleanup_reason = _string_or_none(reports.get("cleanup_freshness_severity_reason")) or "n/a"
+    cleanup_total = int(reports.get("cleanup_total", 0) or 0)
+    policy_drift_total = int(reports.get("policy_drift_total", 0) or 0)
+    policy_drift_severity = _string_or_none(reports.get("policy_drift_severity")) or "clean"
+    chips = [
+        {
+            "label": "Report freshness",
+            "severity": report_severity,
+            "value": _format_report_freshness_summary(_snapshot_mapping(reports, "freshness")),
+        }
+    ]
+    if include_policy_drift and policy_drift_total > 0:
+        drift_value = "1 report" if policy_drift_total == 1 else f"{policy_drift_total} reports"
+        chips.append(
+            {
+                "label": "Policy drift",
+                "severity": policy_drift_severity,
+                "value": drift_value,
+            }
+        )
+    severities = [report_severity]
+    if cleanup_total > 0:
+        chips.append(
+            {
+                "label": "Cleanup freshness",
+                "severity": cleanup_severity,
+                "value": _format_report_freshness_summary(
+                    _snapshot_mapping(reports, "cleanup_freshness")
+                ),
+            }
+        )
+        severities.append(cleanup_severity)
+    severity = _combine_severities(severities)
+    drift_only_attention = (
+        include_policy_drift
+        and policy_drift_total > 0
+        and report_severity == "attention"
+        and freshness_severity == "clean"
+        and cleanup_severity == "clean"
+    )
+    if severity == "issues":
+        title = "Report freshness needs action"
+    elif drift_only_attention:
+        title = "Report policy drift needs follow-up"
+    elif severity == "attention":
+        title = "Report freshness needs follow-up"
+    else:
+        title = "Report freshness is clean"
+    summary_parts = [f"Overall reports are {report_severity}: {report_reason}."]
+    if cleanup_total > 0:
+        summary_parts.append(f"Cleanup reports are {cleanup_severity}: {cleanup_reason}.")
+    return {
+        "severity": severity,
+        "title": title,
+        "summary": " ".join(summary_parts),
+        "reporting_chips": chips,
+    }
+
+
+def _render_report_metrics(value: object) -> str:
+    if not isinstance(value, dict) or not value:
+        return "none"
+    return ", ".join(
+        f"{key}={item}"
+        for key, item in sorted(value.items())
+        if item not in (None, "", [])
+    ) or "none"
+
+
+def _format_report_freshness_summary(value: dict[str, object]) -> str:
+    fresh = int(value.get("fresh", 0) or 0)
+    aging = int(value.get("aging", 0) or 0)
+    stale = int(value.get("stale", 0) or 0)
+    future = int(value.get("future", 0) or 0)
+    unknown = int(value.get("unknown", 0) or 0)
+    total = fresh + aging + stale + future + unknown
+    if total == 0:
+        return "none"
+    segments = [
+        f"fresh {fresh}",
+        f"aging {aging}",
+        f"stale {stale}",
+    ]
+    if future:
+        segments.append(f"future {future}")
+    if unknown:
+        segments.append(f"unknown {unknown}")
+    return " · ".join(segments) + f" / {total} total"
+
+
+def _format_report_freshness_policy_summary(
+    *,
+    unknown_issues_threshold: int,
+    stale_issues_threshold: int,
+    future_attention_threshold: int,
+    aging_attention_threshold: int,
+) -> str:
+    return (
+        f"unknown>={unknown_issues_threshold} "
+        f"stale>={stale_issues_threshold} "
+        f"future>={future_attention_threshold} "
+        f"aging>={aging_attention_threshold}"
+    )
+
+
+def _report_policy_drift_guidance_summary() -> str:
+    return build_report_policy_drift_guidance()["summary"]
+
+
+def _report_policy_drift_guidance_detail() -> str:
+    return build_report_policy_drift_guidance()["detail"]
+
+
+def _render_report_details(value: object) -> str:
+    if not isinstance(value, dict) or not value:
+        return "none"
+    rendered: list[str] = []
+    for key, item in sorted(value.items()):
+        if item in (None, "", [], {}):
+            continue
+        if isinstance(item, dict):
+            nested = ", ".join(
+                f"{nested_key}={nested_value}"
+                for nested_key, nested_value in sorted(item.items())
+            )
+            rendered.append(f"{key}=[{nested}]")
+            continue
+        if isinstance(item, list):
+            rendered.append(f"{key}={','.join(str(entry) for entry in item)}")
+            continue
+        rendered.append(f"{key}={item}")
+    return ", ".join(rendered) or "none"
+
+
+def _render_report_detail_items(details: dict[str, object]) -> list[str]:
+    items: list[str] = []
+    for key, value in sorted(details.items()):
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, dict):
+            rendered = ", ".join(
+                f"{nested_key}={nested_value}"
+                for nested_key, nested_value in sorted(value.items())
+            )
+            items.append(f"<li><strong>{escape(str(key))}:</strong> {escape(rendered or 'none')}</li>")
+            continue
+        if isinstance(value, list):
+            rendered = ", ".join(str(entry) for entry in value) or "none"
+            items.append(f"<li><strong>{escape(str(key))}:</strong> {escape(rendered)}</li>")
+            continue
+        items.append(f"<li><strong>{escape(str(key))}:</strong> {escape(str(value))}</li>")
+    return items
+
+
+def _render_report_relations(value: object) -> str:
+    entries = _list_of_dicts(value)
+    if not entries:
+        return "none"
+    labels = [
+        str(entry["label"])
+        for entry in entries
+        if entry.get("label")
+    ]
+    return ", ".join(labels) if labels else "none"
+
+
+def _render_related_report_detail_lines(
+    details_value: object,
+    *,
+    remediation: str | None,
+) -> list[str]:
+    if not isinstance(details_value, dict):
+        return []
+    mismatch_warnings = _related_report_warning_list(details_value, kind="mismatch")
+    policy_drift_warnings = _related_report_warning_list(details_value, kind="policy_drift")
+    if not mismatch_warnings and not policy_drift_warnings:
+        return []
+    lines = [
+        "- related_report_details:",
+    ]
+    if mismatch_warnings:
+        lines.append("  - mismatches:")
+        lines.extend(f"    - {warning}" for warning in mismatch_warnings)
+    if policy_drift_warnings:
+        lines.append("  - policy_drifts:")
+        lines.extend(f"    - {warning}" for warning in policy_drift_warnings)
+    if remediation and policy_drift_warnings:
+        lines.append(f"  - remediation: {remediation}")
+    return lines
+
+
+def _related_report_warning_list(details_value: dict[str, object], *, kind: str) -> list[str]:
+    if kind == "mismatch":
+        candidates = (
+            details_value.get("cleanup_mismatch_warnings"),
+            details_value.get("related_report_mismatch_warnings"),
+        )
+    else:
+        candidates = (
+            details_value.get("related_report_policy_drift_warnings"),
+        )
+    warnings: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, list):
+            continue
+        for entry in candidate:
+            if isinstance(entry, str) and entry:
+                warnings.append(entry)
+    return warnings
 
 
 def _list_of_dicts(items: object) -> list[dict[str, object]]:

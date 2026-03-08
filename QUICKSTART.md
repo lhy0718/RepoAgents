@@ -127,7 +127,9 @@ Use `uv run republic sync ls --issue 1` to inspect the staged inventory and `uv 
 Use `uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest` to append the newest comment proposal to the source Markdown issue and move the handled artifact into `.ai-republic/sync-applied/`.
 Use `uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle` to archive the related branch/PR handoff set in one step.
 The equivalent JSON-inbox flow is `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`.
+Use `uv run republic sync check --issue 1` to inspect applied manifest integrity, and `uv run republic sync repair --issue 1 --dry-run` to preview canonicalization and orphan adoption.
 Use `uv run republic clean --sync-applied --dry-run` to preview manifest-aware retention before pruning old applied handoff groups.
+Use `uv run republic dashboard --format all` to review both `Sync handoffs` and `Sync retention`, including prunable groups, prunable bytes, and oldest prunable age.
 
 If you want to see an optional role pack in action, use:
 
@@ -190,6 +192,8 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard: `.ai-republic/dashboard/index.html`
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - optional JSONL logs: `.ai-republic/logs/reporepublic.jsonl`
 - single issue status: `uv run republic status --issue 123`
 - run one issue immediately: `uv run republic trigger 123`
@@ -197,6 +201,10 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - force an immediate retry: `uv run republic retry 123`
 - preview stale local cleanup: `uv run republic clean --dry-run`
 - preview manifest-aware sync archive cleanup: `uv run republic clean --sync-applied --dry-run`
+- export cleanup preview/report: `uv run republic clean --sync-applied --dry-run --report --report-format all`
+- inspect applied manifest integrity: `uv run republic sync check --issue 123`
+- preview manifest repair: `uv run republic sync repair --issue 123 --dry-run`
+- export a sync audit bundle: `uv run republic sync audit --format all`
 - regenerate the local dashboard: `uv run republic dashboard`
 - generate a dashboard with timed reload: `uv run republic dashboard --refresh-seconds 30`
 - export HTML, JSON, and Markdown together: `uv run republic dashboard --format all`

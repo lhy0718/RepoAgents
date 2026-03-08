@@ -36,9 +36,13 @@ uv run republic status
 uv run republic status --issue 123
 uv run republic sync ls
 uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
+uv run republic sync check --issue 1
+uv run republic sync repair --issue 1 --dry-run
+uv run republic sync audit --format all
 uv run republic sync apply --issue 1 --tracker local-file --action comment --latest
 uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest
 uv run republic clean --sync-applied --dry-run
+uv run republic clean --sync-applied --dry-run --report --report-format all
 uv run republic retry 123
 uv run republic clean --dry-run
 uv run republic clean
@@ -55,19 +59,23 @@ uv run republic dashboard --format all
 - dashboard: `.ai-republic/dashboard/index.html`
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - 로그 활성화 시: `.ai-republic/logs/reporepublic.jsonl`
 - sync staging: `.ai-republic/sync/<tracker>/issue-<id>/`
 - sync applied archive: `.ai-republic/sync-applied/<tracker>/issue-<id>/`
 
-## Dashboard의 sync handoff
+## Dashboard의 sync handoff와 retention
 
-이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs` 섹션도 함께 보여줍니다.
+이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/` 아래 sync audit/cleanup export를 여는 `Reports` 링크도 제공합니다.
 
 다음 상황에서 이 섹션을 사용합니다.
 
 - 어떤 staged publish proposal이 이미 처리됐는지 확인할 때
 - archive된 `branch` / `pr` / `pr-body` bundle을 한 화면에서 열어볼 때
 - 원본 staged 파일이 이동된 뒤에도 `metadata_artifact` 같은 normalized link를 따라갈 때
+- 어떤 applied issue archive가 `stable`, `prunable`, `repair-needed`인지 확인할 때
+- `clean` 전에 prunable group 수, prunable bytes, oldest prunable age로 정리 영향 범위를 볼 때
 
 모든 export를 다시 만들려면:
 
@@ -159,8 +167,11 @@ tracker가 publish proposal을 바로 적용하지 않고 로컬에 stage하는 
 2. `uv run republic sync show ...`로 artifact 하나를 연다
 3. 지원되는 tracker helper가 있으면 `uv run republic sync apply ...`로 먼저 반영한다. 예: `local-file`, `local-markdown`의 comment/label proposal
 4. 남은 handoff proposal만 사람이 수동으로 반영한다
-5. `.ai-republic/sync-applied/` 아래 archive와 dashboard의 `Sync handoffs` 섹션을 함께 확인한다
+5. `.ai-republic/sync-applied/` 아래 archive와 dashboard의 `Sync handoffs` / `Sync retention` 섹션을 함께 확인한다
 6. 오래된 applied handoff group을 정리하기 전에는 `uv run republic clean --sync-applied --dry-run`으로 먼저 확인한다
+   review가 필요하면 `--report --report-format all`로 machine-readable cleanup preview도 남긴다.
+7. manifest drift가 의심되면 `sync repair` 전에 `uv run republic sync check --issue <id>`를 먼저 실행한다
+8. 공유 가능한 machine-readable snapshot이 필요하면 `uv run republic sync audit --issue <id> --format all`을 export한다
 
 ## 사람 승인 경계
 

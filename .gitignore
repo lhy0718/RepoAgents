@@ -39,6 +39,7 @@ pip-wheel-metadata/
 .ai-republic/dashboard/
 .ai-republic/inbox/
 .ai-republic/logs/
+.ai-republic/reports/
 .ai-republic/sync/
 .ai-republic/sync-applied/
 .ai-republic/workspaces/
