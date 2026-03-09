@@ -1,0 +1,9 @@
+.ai-republic/artifacts/
+.ai-republic/branches/
+.ai-republic/dashboard/
+.ai-republic/logs/
+.ai-republic/reports/
+.ai-republic/state/runs.json
+.ai-republic/sync/
+.ai-republic/sync-applied/
+.ai-republic/workspaces/

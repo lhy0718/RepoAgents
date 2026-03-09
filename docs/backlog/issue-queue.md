@@ -1,15 +1,17 @@
-# Issue Queue
+# Completed Issue Archive
 
-`TODO.md`를 실제 구현 이슈 단위로 쪼갠 초안입니다. GitHub 이슈로 옮길 때는 `.github/ISSUE_TEMPLATE/implementation-task.yml`을 기본 템플릿으로 사용하면 됩니다.
+이 문서는 구현 이력과 완료된 작업을 보관하는 archive입니다.
 
-## 운영 방식
+- 현재 바로 진행할 작업은 [active-queue.md](./active-queue.md)에서 확인합니다.
+- GitHub 이슈로 옮길 때는 `.github/ISSUE_TEMPLATE/implementation-task.yml`을 기본 템플릿으로 사용하면 됩니다.
+
+## Archive rules
 
 - 이 문서는 우선순위 순서의 backlog입니다.
 - 각 항목은 한 번에 구현 가능한 크기로 유지했습니다.
-- 권장 순서는 상단부터 하단입니다.
-- 구현을 시작할 때는 한 이슈만 active로 두는 편이 좋습니다.
+- 현재 active item은 archive에서 분리해 `active-queue.md`로 관리합니다.
 
-## Queue
+## Archived Queue
 
 ### RR-001. Git branch 생성과 draft PR 오픈 경로 구현
 
@@ -2072,4 +2074,138 @@
 
 ## 권장 다음 순서
 
-1. publish-enabled sandbox rollout 예제를 추가하기
+### RR-136. publish-enabled sandbox rollout 예제를 추가하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Examples / Rollout
+- Problem: live GitHub ops 예제는 handoff bundle과 smoke rehearsal까지는 보여줬지만, `allow_write_comments`와 `allow_open_pr`를 sandbox repo에서 점진적으로 켜는 실제 rollout gate를 runnable example로 설명하지 못했다.
+- Scope:
+  - `examples/live-github-sandbox-rollout` 예제와 phase fixture 추가
+  - `baseline -> comments-ready -> pr-gated -> pr-ready` rollout rehearsal 스크립트 추가
+  - `github smoke --require-write-ready`의 fail/pass gate를 예제 수준에서 고정
+  - final sandbox handoff bundle, walkthrough 문서, demo test 추가
+- Acceptance criteria:
+  - [x] sandbox rollout 예제가 per-phase `doctor` / `github-smoke` export를 남김
+  - [x] `pr-gated`와 `pr-ready`에서 `require-write-ready.exit-code`가 각각 `1`, `0`으로 고정됨
+  - [x] final sandbox handoff bundle과 archive가 demo script에서 생성됨
+
+### RR-137. 오픈소스 공개 준비 묶음 추가
+
+- Status: done
+- Priority: P1
+- Area: Release / OSS Hygiene / CI
+- Problem: RepoRepublic는 기능과 문서는 충분했지만, 공개 저장소와 첫 릴리스에 필요한 governance 문서, changelog, release checklist, CI build/test gate가 빠져 있어 오픈소스 배포 표면이 불완전했다.
+- Scope:
+  - `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` 추가
+  - `docs/release.md`, `docs/release.ko.md`에 release checklist 추가
+  - `.github/workflows/ci.yml`에서 `uv sync --dev`, `uv run pytest -q`, `uv build`, wheel smoke install 수행
+  - README/docs index에 community/release 진입점 추가
+- Acceptance criteria:
+  - [x] 저장소 루트에 governance/license/changelog 문서가 존재함
+  - [x] release checklist 문서가 영문/국문으로 존재함
+  - [x] GitHub Actions CI가 test/build/smoke install을 수행함
+  - [x] README와 docs index에서 새 문서에 접근할 수 있음
+
+### RR-138. sandbox publish rehearsal을 실제 single-issue execution 예제와 연결하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Examples / Execution
+- Problem: sandbox publish rollout 예제는 green readiness gate와 handoff bundle까지는 보여줬지만, 그 상태가 실제 issue execution artifact와 어떻게 이어지는지는 보여주지 못했다.
+- Scope:
+  - sandbox 예제에 fixture issue와 execution helper 추가
+  - green sandbox posture 이후 `github fixture + mock backend`로 issue 하나를 deterministic하게 실행
+  - execution report와 second ops bundle을 생성한 뒤 live sandbox config를 복구
+  - demo test와 walkthrough 문서 갱신
+- Acceptance criteria:
+  - [x] sandbox demo가 `trigger --dry-run`, `trigger`, `status --issue` artifact를 남김
+  - [x] execution 전용 ops bundle이 생성됨
+  - [x] 데모 종료 시 config가 다시 live `tracker.mode=rest`, `llm.mode=codex` 상태로 복구됨
+
+## 권장 다음 순서
+
+### RR-139. 첫 공개 프리뷰 릴리스 dry-run 정리
+
+- Status: done
+- Priority: P1
+- Area: Release / CLI / Docs
+- Problem: 공개 준비 문서와 checklist는 있었지만, maintainers가 실제 tag 후보를 기준으로 release notes와 command order를 즉시 확인할 수 있는 runnable dry-run surface가 없었다.
+- Scope:
+  - `republic release preview` CLI 추가
+  - `pyproject.toml`, `src/reporepublic/__init__.py`, `CHANGELOG.md`, git working tree를 묶은 release preview snapshot 생성
+  - `.ai-republic/reports/release-preview.json|md`와 `release-notes-v<version>.md` export
+  - config가 없는 저장소에서도 동작하도록 fallback 경로 지원
+  - release 문서와 quickstart/README 갱신
+- Acceptance criteria:
+  - [x] `republic release preview --format all`이 release preview report와 GitHub notes markdown을 생성함
+  - [x] 현재 버전에 이미 dated changelog section이 있으면 다음 patch tag를 preview target으로 추론함
+  - [x] `.ai-republic/reporepublic.yaml`이 없는 저장소에서도 command가 동작함
+
+### RR-140. 첫 공개 프리뷰 announcement/release-cut 문안 정리
+
+- Status: done
+- Priority: P1
+- Area: Release / CLI / Comms
+- Problem: `republic release preview`는 tag/notes/checklist dry-run을 제공하지만, 공개 직전 maintainer가 실제로 복사해 써야 하는 short announcement, pinned discussion, social copy, release-cut message set은 별도 손작업이 필요했다.
+- Scope:
+  - `republic release announce` CLI 추가
+  - release preview target을 재사용해서 announcement/discussion/social/release-cut copy pack export
+  - `.ai-republic/reports/release-announce.json|md`와 snippet markdown files 생성
+  - release guide와 quickstart/README 갱신
+- Acceptance criteria:
+  - [x] `republic release announce --format all`이 copy pack report와 channel snippet files를 생성함
+  - [x] command가 config 없는 저장소에서도 동작함
+  - [x] release docs가 preview + announce artifact를 모두 설명함
+
+### RR-141. 첫 공개 프리뷰 tag rehearsal 정리
+
+- Status: done
+- Priority: P1
+- Area: Release / Examples / Rehearsal
+- Problem: preview/announcement artifact는 준비됐지만, 실제 공개 직전 maintainers가 disposable clone에서 annotated tag와 build evidence를 함께 확인하는 runnable rehearsal path는 없었다.
+- Scope:
+  - `scripts/demo_release_rehearsal.sh` 추가
+  - temp workspace copy, local annotated rehearsal tag, `uv build`, checksum capture, release artifact read order 생성
+  - release guide, quickstart, examples index 갱신
+  - demo test 추가
+- Acceptance criteria:
+  - [x] demo script가 `release-preview`, `release-announce`, local annotated tag evidence, build checksum을 남김
+  - [x] temp workspace 기준으로 `dist/*.whl`, `dist/*.tar.gz`와 `tag-show.txt`가 생성됨
+  - [x] 문서가 runnable rehearsal 진입점을 설명함
+
+### RR-142. TestPyPI 또는 release asset publish dry-run 정리
+
+- Status: done
+- Priority: P1
+- Area: Release / Assets / Examples
+- Problem: preview/announcement/tag rehearsal은 준비됐지만, 실제 wheel/sdist artifact와 post-tag upload command를 external index 없이 검증하는 runnable dry-run surface는 없었다.
+- Scope:
+  - `republic release assets` CLI 추가
+  - dist artifact metadata, sha256, optional `uv build`, optional smoke install, upload command 초안 export
+  - `scripts/demo_release_publish_dry_run.sh`와 example README 추가
+  - quickstart/release guide/examples index 갱신
+- Acceptance criteria:
+  - [x] `republic release assets --format all`이 asset report와 `release-assets-v<tag>.md`를 생성함
+  - [x] `--build --smoke-install` 경로가 build와 wheel install smoke 결과를 snapshot에 포함함
+  - [x] runnable demo가 local annotated rehearsal tag와 build evidence를 함께 남김
+
+### RR-143. 오픈소스 배포 전 release preflight checklist 정리
+
+- Status: done
+- Priority: P1
+- Area: Release / CLI / Docs
+- Problem: release preview, announcement, asset dry-run surface는 각각 준비됐지만, maintainer가 배포 직전에 “이 명령만 돌리면 된다”는 일관된 preflight gate와 checklist report가 없어 여전히 수동 조합이 필요했다.
+- Scope:
+  - `republic release check` CLI 추가
+  - release preview, announcement copy pack, pytest, build, smoke install, governance/CI 파일 점검을 한 snapshot으로 통합
+  - `.ai-republic/reports/release-checklist.json|md` export와 companion release report 생성
+  - `scripts/release_preflight.sh` wrapper와 release guide/README/quickstart 갱신
+- Acceptance criteria:
+  - [x] `republic release check --format all`이 release-checklist report와 companion release preview/announce/assets report를 함께 생성함
+  - [x] command가 clean일 때만 exit code `0`을 반환함
+  - [x] `scripts/release_preflight.sh`로 같은 flow를 한 줄로 실행할 수 있음
+
+## 권장 다음 순서
+
+1. 첫 공개 프리뷰 post-release follow-up 체크 정리

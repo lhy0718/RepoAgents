@@ -60,20 +60,48 @@ Fast path:
 
 ```bash
 bash scripts/demo_python_lib.sh
-bash scripts/demo_web_app.sh
 bash scripts/demo_local_file_tracker.sh
+bash scripts/demo_live_ops.sh
+bash scripts/release_preflight.sh
+```
+
+More runnable demos:
+
+<details>
+<summary>Full demo matrix</summary>
+
+```bash
+bash scripts/demo_web_app.sh
 bash scripts/demo_local_file_sync.sh
 bash scripts/demo_local_markdown_tracker.sh
 bash scripts/demo_local_markdown_sync.sh
 bash scripts/demo_qa_role_pack.sh
 bash scripts/demo_webhook_receiver.sh
 bash scripts/demo_webhook_signature_receiver.sh
-bash scripts/demo_live_ops.sh
+bash scripts/demo_live_publish_sandbox.sh
+bash scripts/demo_release_rehearsal.sh
+bash scripts/demo_release_publish_dry_run.sh
 ```
+
+</details>
 
 These scripts copy the example repos into temporary workspaces so the checked-in examples stay untouched.
 
 `bash scripts/demo_live_ops.sh` now goes beyond a blueprint-only setup: it rehearses `github smoke`, generates an `ops snapshot` handoff bundle plus archive, refreshes `ops-status`, and leaves the reading order pinned inside `examples/live-github-ops/ops/handoff-order.md`.
+
+`bash scripts/demo_live_publish_sandbox.sh` adds the next rollout layer: it walks `baseline -> comments-ready -> pr-gated -> pr-ready`, records phase reports under `.ai-republic/reports/sandbox-rollout/`, proves that `github smoke --require-write-ready` fails before the branch-policy gate is fixed and passes after, generates the final sandbox readiness bundle under `.ai-republic/reports/ops/sandbox-pr-ready/`, then runs one deterministic issue and leaves an execution bundle under `.ai-republic/reports/ops/sandbox-issue-201/`.
+
+`bash scripts/demo_release_rehearsal.sh` copies the current repository into a disposable workspace, generates `release preview` and `release announce` artifacts, creates a local annotated rehearsal tag, runs `uv build`, and records tag/build evidence under `.ai-republic/reports/release-rehearsal/`.
+
+`bash scripts/demo_release_publish_dry_run.sh` adds the next release step: it patches the disposable workspace to the inferred preview version, creates a local annotated rehearsal tag, runs `republic release assets --build --smoke-install --format all`, and leaves publish-ready checksum and upload-command evidence under `.ai-republic/reports/release-publish-dry-run/`.
+
+When you want the real repository pre-publish gate instead of a disposable demo, run:
+
+```bash
+bash scripts/release_preflight.sh
+```
+
+That wrapper runs `republic release check --format all`, which executes release preview, announcement copy-pack generation, `uv run pytest -q`, `uv build`, wheel smoke install, and OSS governance/CI checks in one pass.
 
 ```bash
 cd examples/python-lib
@@ -167,6 +195,13 @@ cd examples/live-github-ops
 bash ../../scripts/demo_live_ops.sh
 ```
 
+If you want to rehearse a publish-enabled sandbox rollout with stepwise safety changes, use:
+
+```bash
+cd examples/live-github-sandbox-rollout
+bash ../../scripts/demo_live_publish_sandbox.sh
+```
+
 ## 4. Switch to production mode
 
 Edit `.ai-republic/reporepublic.yaml`:
@@ -218,8 +253,19 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - optional JSONL logs: `.ai-republic/logs/reporepublic.jsonl`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
 - status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
+- release preview snapshots: `.ai-republic/reports/release-preview.json`, `.ai-republic/reports/release-preview.md`
+- GitHub release notes preview: `.ai-republic/reports/release-notes-v<version>.md`
+- release announcement pack: `.ai-republic/reports/release-announce.json`, `.ai-republic/reports/release-announce.md`
+- release checklist: `.ai-republic/reports/release-checklist.json`, `.ai-republic/reports/release-checklist.md`
+- channel copy snippets: `.ai-republic/reports/announcement-v<version>.md`, `discussion-v<version>.md`, `social-v<version>.md`, `release-cut-v<version>.md`
+- release asset report: `.ai-republic/reports/release-assets.json`, `.ai-republic/reports/release-assets.md`
+- release asset summary: `.ai-republic/reports/release-assets-v<tag>.md`
 - single issue status: `uv run republic status --issue 123`
 - export operator health snapshots: `uv run republic doctor --format all` and `uv run republic status --format all`
+- preview the next public tag cut: `uv run republic release preview --format all`
+- generate the release copy pack: `uv run republic release announce --format all`
+- run the full release preflight gate: `uv run republic release check --format all`
+- validate local release assets: `uv run republic release assets --build --smoke-install --format all`
 - run one issue immediately: `uv run republic trigger 123`
 - validate a GitHub webhook payload: `uv run republic webhook --event issues --payload webhook.json --dry-run`
 - force an immediate retry: `uv run republic retry 123`

@@ -238,5 +238,7 @@ Weekly:
 
 - live GitHub ops blueprint: [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
 - live GitHub rollout walkthrough: [./live-github-ops.md](./live-github-ops.md)
+- sandbox publish rollout example: [../examples/live-github-sandbox-rollout/README.md](../examples/live-github-sandbox-rollout/README.md)
+- sandbox publish rollout walkthrough: [./live-github-sandbox-rollout.md](./live-github-sandbox-rollout.md)
 - local webhook receiver: [../examples/webhook-receiver/README.md](../examples/webhook-receiver/README.md)
 - signed local webhook receiver: [../examples/webhook-signature-receiver/README.md](../examples/webhook-signature-receiver/README.md)

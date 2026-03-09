@@ -4,13 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reporepublic"
-version = "0.1.0"
+version = "0.1.1"
 description = "Install an AI maintainer team into any repo."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
   { name = "RepoRepublic Maintainers" }
+]
+keywords = ["ai", "codex", "github", "orchestrator", "automation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
   "httpx>=0.28.1",
@@ -24,6 +34,12 @@ dependencies = [
 dev = [
   "pytest>=8.3.5",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lhy0718/RepoRepublic"
+Repository = "https://github.com/lhy0718/RepoRepublic"
+Documentation = "https://github.com/lhy0718/RepoRepublic/tree/main/docs"
+Issues = "https://github.com/lhy0718/RepoRepublic/issues"
 
 [dependency-groups]
 dev = [

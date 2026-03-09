@@ -135,6 +135,16 @@ The operating model stays in the repo, so maintainers can inspect and evolve it 
 
 The examples are designed for local fixture issues and the mock backend. That keeps demos deterministic while preserving the production architecture.
 
+Recommended first runs:
+
+- `bash scripts/demo_python_lib.sh` for the default local issue pipeline.
+- `bash scripts/demo_local_file_tracker.sh` for the simplest fully offline inbox flow.
+- `bash scripts/demo_live_ops.sh` for the production-shaped GitHub REST rehearsal.
+- `bash scripts/release_preflight.sh` for the real repository release gate before publishing.
+
+<details>
+<summary>Full example matrix</summary>
+
 | Scenario | Command | What it shows |
 | --- | --- | --- |
 | Python library | `bash scripts/demo_python_lib.sh` | Full init, dry-run, single run, status, and dashboard flow |
@@ -148,6 +158,11 @@ The examples are designed for local fixture issues and the mock backend. That ke
 | Webhook receiver | `bash scripts/demo_webhook_receiver.sh` | Local HTTP receiver that forwards GitHub-style POSTs |
 | Signed webhook receiver | `bash scripts/demo_webhook_signature_receiver.sh` | `X-Hub-Signature-256` verification before dispatch |
 | Live GitHub ops | `bash scripts/demo_live_ops.sh` | GitHub REST mode, `worktree`, file logging, offline `github smoke` rehearsal, and ops handoff bundle generation |
+| Sandbox publish rollout | `bash scripts/demo_live_publish_sandbox.sh` | Stepwise `allow_write_comments` / `allow_open_pr` enablement with per-phase `github smoke` gates, a readiness bundle, and a deterministic single-issue execution rehearsal |
+| Release rehearsal | `bash scripts/demo_release_rehearsal.sh` | Local annotated tag rehearsal, release preview/announce copy pack export, and build checksum capture |
+| Release publish dry-run | `bash scripts/demo_release_publish_dry_run.sh` | Local version-bump rehearsal, asset build/smoke validation, and publish-command dry-run evidence |
+
+</details>
 
 <details>
 <summary>Manual demo walkthrough</summary>
@@ -214,7 +229,17 @@ For staged local publish proposals:
 | Role packs | [docs/role-packs.md](./docs/role-packs.md) | [docs/role-packs.ko.md](./docs/role-packs.ko.md) |
 | Runbook | [docs/runbook.md](./docs/runbook.md) | [docs/runbook.ko.md](./docs/runbook.ko.md) |
 | Live GitHub ops | [docs/live-github-ops.md](./docs/live-github-ops.md) | [docs/live-github-ops.ko.md](./docs/live-github-ops.ko.md) |
-| Backlog queue | [docs/backlog/issue-queue.md](./docs/backlog/issue-queue.md) | - |
+| Sandbox publish rollout | [docs/live-github-sandbox-rollout.md](./docs/live-github-sandbox-rollout.md) | [docs/live-github-sandbox-rollout.ko.md](./docs/live-github-sandbox-rollout.ko.md) |
+| Release process | [docs/release.md](./docs/release.md) | [docs/release.ko.md](./docs/release.ko.md) |
+| Active queue | [docs/backlog/active-queue.md](./docs/backlog/active-queue.md) | - |
+
+## Community
+
+- Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Security policy: [SECURITY.md](./SECURITY.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- Changelog: [CHANGELOG.md](./CHANGELOG.md)
+- License: [LICENSE](./LICENSE)
 
 <details>
 <summary>Codex setup and smoke tests</summary>
@@ -270,6 +295,11 @@ republic ops status
 republic ops status --format all
 republic github smoke
 republic github smoke --format all
+republic release preview
+republic release preview --format all
+republic release announce --format all
+republic release check --format all
+republic release assets --format all
 republic sync health --issue 123 --format all
 ```
 
@@ -291,13 +321,16 @@ Helpful flags:
 - `republic sync repair --dry-run` previews manifest reconstruction and orphan adoption before writing.
 - `republic sync health --format all` exports one combined operator snapshot for pending staged artifacts, applied manifest integrity, repair preview, cleanup preview, and linked raw report posture under `.ai-republic/reports/sync-health.json|md`. Add `--show-remediation` and `--show-mismatches` to print the same related-report detail blocks inline.
 - `republic sync audit --format all` exports JSON and Markdown sync audit reports under `.ai-republic/reports/`, links matching cleanup preview/result exports, warns when a cleanup report was generated for a different `issue_filter`, records `policy_alignment` metadata for those related cleanup exports directly inside the raw report, adds a plain-text `related_reports.detail_summary` block for mismatch/drift/remediation reuse, and summarizes linked cleanup policy drift counts in CLI output. Add `--show-remediation` to print the same guidance inline, or `--show-mismatches` to print linked cleanup issue-filter mismatch warnings inline. When both flags are set, the CLI groups drift and mismatch details into one related-report block.
-- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, the HTML `Cross references` panel exposes the same `mismatches / policy drifts / remediation` semantics directly, and the JSON export now carries a ready-to-display `related_report_detail_summary` string for each report entry. When `.ai-republic/reports/ops-status.json` or `.ai-republic/reports/ops-brief.json` exists, the `Reports` section renders `Ops status` and `Ops brief` cards that cross-link the latest handoff posture with the incident brief.
-- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, so mismatch warnings, related policy drifts, and remediation guidance read the same way in shared exports.
+- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot mirrors the CLI related-report detail block, the HTML `Cross references` panel exposes the same `mismatches / policy drifts / remediation` semantics directly, and the JSON export carries a ready-to-display `related_report_detail_summary` string for each report entry. When `.ai-republic/reports/ops-status.json` or `.ai-republic/reports/ops-brief.json` exists, the `Reports` section renders `Ops status` and `Ops brief` cards that cross-link the latest handoff posture with the incident brief.
 - `republic ops snapshot` exports one incident-ready bundle directory with `doctor`, `status`, `dashboard`, `sync-audit`, bundle-local `sync-health`, bundle-local `ops-status`, bundle-local `ops-brief`, bundle-local `github-smoke` when the tracker is in live GitHub REST mode, bundle-local landing files `index.html` and `README.md`, and `bundle.json` / `bundle.md` manifests. The `ops-brief` export is the operator-facing landing summary for the handoff and the landing page links that brief directly to the rest of the bundle. Add `--include-cleanup-preview` to generate a cleanup preview inside the bundle, `--include-cleanup-result` to copy the latest existing cleanup result, `--include-sync-check` to add a dedicated applied-manifest integrity snapshot, `--include-sync-repair-preview` to add a dry-run repair preview, and `--archive` to pack the completed handoff into a `.tar.gz` file with checksum output. Every run also refreshes `.ai-republic/reports/ops/latest.json|md`, `.ai-republic/reports/ops/history.json|md`, `.ai-republic/reports/ops-status.json|md`, `.ai-republic/reports/ops-brief.json|md`, `.ai-republic/reports/sync-health.json|md`, and, for live GitHub REST trackers, `.ai-republic/reports/github-smoke.json|md` so automation and dashboard/report surfaces can find the newest handoff from one place even when the bundle directory lives elsewhere. Use `--history-limit` to cap retained index entries for one run, and `--prune-history` to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`. Repo default retention lives in `cleanup.ops_snapshot_keep_entries` and `cleanup.ops_snapshot_prune_managed`.
 - `republic ops status` reads `.ai-republic/reports/ops/latest.*`, `.ai-republic/reports/ops/history.*`, and the latest indexed `bundle.json` to print one operator-facing summary for handoff posture, latest bundle health, component summaries, recent history, landing paths, and related report posture. `republic ops status --format all` exports the same snapshot to `.ai-republic/reports/ops-status.json` and `.ai-republic/reports/ops-status.md`.
 - `republic github smoke` probes live GitHub REST readiness against `tracker.repo`, samples open issues, and reports publish preflight posture for comment and draft-PR writes. In REST mode, `GITHUB_TOKEN` is the real requirement; `gh auth` alone is not enough for RepoRepublic's API calls.
 - `republic github smoke` now also folds repo metadata permissions into publish readiness, so a repo that reports `permissions.push=false` will stay in warning state for draft-PR publish even if token and origin preflight pass.
 - `republic github smoke` also inspects default-branch policy. Unprotected default branches, missing PR review requirements, missing required status checks, or unreadable branch protection details keep draft-PR publish in warning state under `--require-write-ready`.
+- `republic release preview` prepares a maintainer-facing public release dry-run even when the repo has not been bootstrapped with `republic init`. It infers the next patch tag when the current version already has a dated changelog section, exports `.ai-republic/reports/release-preview.json|md`, and writes a ready-to-use GitHub release notes file at `.ai-republic/reports/release-notes-v<version>.md`.
+- `republic release announce` builds the copy pack that sits on top of the release preview: `.ai-republic/reports/release-announce.json|md` plus `announcement-v<version>.md`, `discussion-v<version>.md`, `social-v<version>.md`, and `release-cut-v<version>.md`.
+- `republic release check --format all` is the default pre-publish gate. It runs release preview, announcement copy-pack generation, `uv run pytest -q`, `uv build`, temporary-wheel smoke install, and OSS governance/CI file checks, then exports `.ai-republic/reports/release-checklist.json|md` plus the companion release reports. `bash scripts/release_preflight.sh` is the one-line wrapper for the same flow.
+- `republic release assets` validates the local dist artifacts for the inferred release target and exports `.ai-republic/reports/release-assets.json|md` plus `release-assets-v<tag>.md`. Add `--build --smoke-install` when you want the command to rebuild wheel/sdist and verify a temporary-wheel install before publishing to GitHub Releases or TestPyPI.
 - Live GitHub branch publish now stages from the repository default branch when GitHub metadata reports one, instead of inheriting the current local branch by default.
 
 </details>

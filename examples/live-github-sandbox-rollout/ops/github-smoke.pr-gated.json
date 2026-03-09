@@ -1,0 +1,118 @@
+{
+  "auth": {
+    "gh_authenticated": false,
+    "gh_path": "/opt/homebrew/bin/gh",
+    "hint": null,
+    "message": "GITHUB_TOKEN is set",
+    "requires_token": true,
+    "source": "token_env",
+    "status": "ok",
+    "token_env": "GITHUB_TOKEN",
+    "token_present": true
+  },
+  "branch_policy": {
+    "default_branch": "main",
+    "enforce_admins": true,
+    "hint": "Add the missing required status check before enabling unattended draft PR publish in the sandbox.",
+    "local_branch": "main",
+    "local_matches_default_branch": true,
+    "message": "default branch main is protected but missing one required status check context",
+    "notes": [
+      "local branch matches the repository default branch"
+    ],
+    "protected": true,
+    "protection_details_status": "ok",
+    "required_approving_review_count": 1,
+    "required_pull_request_reviews": true,
+    "required_status_check_context_count": 1,
+    "required_status_checks": true,
+    "status": "warn",
+    "warnings": [
+      "default branch main is missing required status check context ci/publish-sandbox"
+    ]
+  },
+  "issues": {
+    "count": 2,
+    "message": "loaded 2 open issue(s)",
+    "sampled": [
+      {
+        "id": 21,
+        "labels": [
+          "ops",
+          "sandbox"
+        ],
+        "title": "Sandbox publish rollout checklist",
+        "url": "https://github.com/acme/sandbox-repo/issues/21"
+      },
+      {
+        "id": 22,
+        "labels": [
+          "docs"
+        ],
+        "title": "Document the sandbox publish gate",
+        "url": "https://github.com/acme/sandbox-repo/issues/22"
+      }
+    ],
+    "status": "ok"
+  },
+  "meta": {
+    "fixture_name": "sandbox-pr-gated"
+  },
+  "origin": {
+    "matches_tracker_repo": true,
+    "message": "origin remote matches tracker.repo (acme/sandbox-repo)",
+    "remote_url": "git@github.com:acme/sandbox-repo.git",
+    "repo_slug": "acme/sandbox-repo",
+    "status": "ok"
+  },
+  "publish": {
+    "comment_writes_ready": true,
+    "comment_writes_requested": true,
+    "hint": "Keep draft PR publish disabled until the missing sandbox status check is required and green.",
+    "message": "default branch main is protected but missing one required status check context before unattended draft PR publish",
+    "open_pr_enabled": true,
+    "pr_writes_ready": false,
+    "pr_writes_requested": true,
+    "status": "warn",
+    "write_comments_enabled": true
+  },
+  "repo_access": {
+    "default_branch": "main",
+    "full_name": "acme/sandbox-repo",
+    "message": "loaded repo metadata for acme/sandbox-repo",
+    "permissions": {
+      "pull": true,
+      "push": true
+    },
+    "private": true,
+    "status": "ok"
+  },
+  "sampled_issue": {
+    "comment_count": 3,
+    "issue_id": 21,
+    "labels": [
+      "ops",
+      "sandbox"
+    ],
+    "message": "loaded issue #21",
+    "recent_comments": [
+      "Comment publish succeeded in the sandbox.",
+      "Do not enable draft PR publish until the branch policy check turns green."
+    ],
+    "status": "ok",
+    "title": "Sandbox publish rollout checklist",
+    "url": "https://github.com/acme/sandbox-repo/issues/21"
+  },
+  "summary": {
+    "auth_status": "ok",
+    "branch_policy_status": "warn",
+    "message": "draft PR publish is still gated by sandbox branch policy",
+    "open_issue_count": 2,
+    "open_pr_enabled": true,
+    "publish_status": "warn",
+    "repo_access_status": "ok",
+    "sampled_issue_id": 21,
+    "status": "attention",
+    "write_comments_enabled": true
+  }
+}

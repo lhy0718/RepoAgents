@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 import tarfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -232,6 +233,197 @@ def test_cli_webhook_ignores_unsupported_payload(demo_repo: Path, monkeypatch) -
     assert result.exit_code == 0
     assert "should_run=False" in result.stdout
     assert "issue is closed" in result.stdout
+
+
+def test_cli_release_preview_exports_report_and_notes(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    _install_release_metadata(demo_repo)
+
+    result = runner.invoke(
+        app,
+        ["release", "preview", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    preview_json = demo_repo / ".ai-republic" / "reports" / "release-preview.json"
+    preview_markdown = demo_repo / ".ai-republic" / "reports" / "release-preview.md"
+    notes_markdown = demo_repo / ".ai-republic" / "reports" / "release-notes-v0.1.1.md"
+    payload = json.loads(preview_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert "Release preview exports:" in result.stdout
+    assert f"- notes_markdown: {notes_markdown}" in result.stdout
+    assert preview_json.exists()
+    assert preview_markdown.exists()
+    assert notes_markdown.exists()
+    assert payload["target"]["version"] == "0.1.1"
+    assert payload["summary"]["status"] == "attention"
+    assert payload["artifacts"]["notes_markdown_path"] == str(notes_markdown)
+    assert "## Highlights" in notes_markdown.read_text(encoding="utf-8")
+
+
+def test_cli_release_preview_works_without_reporepublic_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _install_release_metadata(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["release", "preview", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / ".ai-republic" / "reports" / "release-preview.json").exists()
+    assert (tmp_path / ".ai-republic" / "reports" / "release-preview.md").exists()
+    assert (tmp_path / ".ai-republic" / "reports" / "release-notes-v0.1.1.md").exists()
+
+
+def test_cli_release_announce_exports_copy_pack(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    _install_release_metadata(demo_repo)
+
+    result = runner.invoke(
+        app,
+        ["release", "announce", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    reports_dir = demo_repo / ".ai-republic" / "reports"
+    announce_json = reports_dir / "release-announce.json"
+    announce_markdown = reports_dir / "release-announce.md"
+    announcement = reports_dir / "announcement-v0.1.1.md"
+    discussion = reports_dir / "discussion-v0.1.1.md"
+    social = reports_dir / "social-v0.1.1.md"
+    release_cut = reports_dir / "release-cut-v0.1.1.md"
+    release_notes = reports_dir / "release-notes-v0.1.1.md"
+    payload = json.loads(announce_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert "Release announcement exports:" in result.stdout
+    assert announce_json.exists()
+    assert announce_markdown.exists()
+    assert announcement.exists()
+    assert discussion.exists()
+    assert social.exists()
+    assert release_cut.exists()
+    assert release_notes.exists()
+    assert payload["summary"]["snippet_count"] == 5
+    assert payload["artifacts"]["snippet_paths"]["social"] == str(social)
+    assert "public preview" in social.read_text(encoding="utf-8")
+
+
+def test_cli_release_assets_exports_report_and_summary(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _install_release_metadata(tmp_path)
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["release", "assets", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    reports_dir = tmp_path / ".ai-republic" / "reports"
+    payload = json.loads((reports_dir / "release-assets.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert "Release assets exports:" in result.stdout
+    assert (reports_dir / "release-assets.md").exists()
+    assert (reports_dir / "release-assets-v0.1.1.md").exists()
+    assert payload["summary"]["status"] == "clean"
+    assert payload["summary"]["artifact_count"] == 2
+
+
+def test_cli_release_check_exports_preflight_and_companion_reports(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _install_release_metadata(tmp_path)
+    _set_release_version(tmp_path, "0.1.1")
+    _install_release_governance_files(tmp_path)
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "RepoRepublic Tests"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "tests@reporepublic.local"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "release",
+            "check",
+            "--no-run-tests",
+            "--no-build",
+            "--no-smoke-install",
+            "--format",
+            "all",
+        ],
+        catch_exceptions=False,
+    )
+
+    reports_dir = tmp_path / ".ai-republic" / "reports"
+    payload = json.loads((reports_dir / "release-checklist.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert "Release checklist exports:" in result.stdout
+    assert (reports_dir / "release-checklist.md").exists()
+    assert (reports_dir / "release-preview.json").exists()
+    assert (reports_dir / "release-announce.json").exists()
+    assert (reports_dir / "release-assets.json").exists()
+    assert payload["summary"]["status"] == "clean"
+    assert payload["summary"]["ready_to_publish"] is True
+    assert payload["artifacts"]["assets"]["asset_summary_path"].endswith("release-assets-v0.1.1.md")
+
+
+def test_cli_release_check_fails_when_governance_files_are_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _install_release_metadata(tmp_path)
+    _set_release_version(tmp_path, "0.1.1")
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "RepoRepublic Tests"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "tests@reporepublic.local"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "release",
+            "check",
+            "--no-run-tests",
+            "--no-build",
+            "--no-smoke-install",
+            "--format",
+            "all",
+        ],
+        catch_exceptions=False,
+    )
+
+    payload = json.loads((tmp_path / ".ai-republic" / "reports" / "release-checklist.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 1
+    assert payload["summary"]["status"] == "issues"
+    assert any(
+        item["name"] == "Open-source release files" and item["status"] == "error"
+        for item in payload["checklist"]
+    )
 
 
 def test_cli_run_warns_on_dirty_working_tree(demo_git_repo: Path, monkeypatch) -> None:
@@ -4034,3 +4226,82 @@ def _write_cleanup_reports_for_sync_audit(
         encoding="utf-8",
     )
     (reports_dir / "cleanup-result.md").write_text("# Cleanup result\n", encoding="utf-8")
+
+
+def _install_release_metadata(repo_root: Path) -> None:
+    (repo_root / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[project]",
+                'name = "reporepublic"',
+                'version = "0.1.0"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    package_init = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text(
+        '\n'.join(
+            [
+                '"""RepoRepublic package."""',
+                "",
+                '__all__ = ["__version__"]',
+                "",
+                '__version__ = "0.1.0"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (repo_root / "CHANGELOG.md").write_text(
+        "\n".join(
+            [
+                "# Changelog",
+                "",
+                "## [Unreleased]",
+                "",
+                "### Added",
+                "",
+                "- publish-enabled sandbox rollout example with staged `github smoke` gates and handoff bundle rehearsal",
+                "",
+                "## [0.1.0] - 2026-03-09",
+                "",
+                "### Added",
+                "",
+                "- initial public-preview release of RepoRepublic",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _install_release_governance_files(repo_root: Path) -> None:
+    for relative_path, body in (
+        ("LICENSE", "MIT License\n"),
+        ("CONTRIBUTING.md", "# Contributing\n"),
+        ("SECURITY.md", "# Security\n"),
+        ("CODE_OF_CONDUCT.md", "# Code of Conduct\n"),
+        ("README.md", "# RepoRepublic\n"),
+        ("QUICKSTART.md", "# Quickstart\n"),
+        ("docs/release.md", "# Release Checklist\n"),
+        (".github/workflows/ci.yml", "name: ci\n"),
+    ):
+        path = repo_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
+def _set_release_version(repo_root: Path, version: str) -> None:
+    pyproject_path = repo_root / "pyproject.toml"
+    pyproject_body = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(pyproject_body.replace('version = "0.1.0"', f'version = "{version}"'), encoding="utf-8")
+
+    package_init_path = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_body = package_init_path.read_text(encoding="utf-8")
+    package_init_path.write_text(
+        package_body.replace('__version__ = "0.1.0"', f'__version__ = "{version}"'),
+        encoding="utf-8",
+    )

@@ -62,20 +62,48 @@ uv run republic init --upgrade --force
 
 ```bash
 bash scripts/demo_python_lib.sh
-bash scripts/demo_web_app.sh
 bash scripts/demo_local_file_tracker.sh
+bash scripts/demo_live_ops.sh
+bash scripts/release_preflight.sh
+```
+
+추가 runnable demo:
+
+<details>
+<summary>전체 데모 매트릭스</summary>
+
+```bash
+bash scripts/demo_web_app.sh
 bash scripts/demo_local_file_sync.sh
 bash scripts/demo_local_markdown_tracker.sh
 bash scripts/demo_local_markdown_sync.sh
 bash scripts/demo_qa_role_pack.sh
 bash scripts/demo_webhook_receiver.sh
 bash scripts/demo_webhook_signature_receiver.sh
-bash scripts/demo_live_ops.sh
+bash scripts/demo_live_publish_sandbox.sh
+bash scripts/demo_release_rehearsal.sh
+bash scripts/demo_release_publish_dry_run.sh
 ```
+
+</details>
 
 이 스크립트들은 예제 저장소를 임시 작업 디렉터리로 복사해서, 체크인된 예제 파일을 건드리지 않고 데모를 재현합니다.
 
 `bash scripts/demo_live_ops.sh`는 이제 청사진만 준비하는 수준을 넘어서 `github smoke`를 rehearse하고, `ops snapshot` handoff bundle과 archive를 만들고, `ops-status`를 갱신하며, 읽기 순서는 `examples/live-github-ops/ops/handoff-order.md`에 고정해 둡니다.
+
+`bash scripts/demo_live_publish_sandbox.sh`는 그 다음 단계입니다. `baseline -> comments-ready -> pr-gated -> pr-ready` 순서로 rollout을 rehearse하고, phase report를 `.ai-republic/reports/sandbox-rollout/` 아래에 남기고, branch-policy gate가 열리기 전에는 `github smoke --require-write-ready`가 실패하고 열린 뒤에는 통과한다는 것을 보여준 다음 sandbox readiness bundle을 `.ai-republic/reports/ops/sandbox-pr-ready/` 아래에 만들고, 이어서 deterministic issue 하나를 실행한 execution bundle을 `.ai-republic/reports/ops/sandbox-issue-201/` 아래에 남깁니다.
+
+`bash scripts/demo_release_rehearsal.sh`는 현재 저장소를 disposable workspace로 복사한 뒤 `release preview`, `release announce` artifact를 만들고, local annotated rehearsal tag를 생성하고, `uv build`를 돌린 뒤 tag/build evidence를 `.ai-republic/reports/release-rehearsal/` 아래에 남깁니다.
+
+`bash scripts/demo_release_publish_dry_run.sh`는 그 다음 release 단계를 rehearse합니다. disposable workspace를 inferred preview version으로 맞추고, local annotated rehearsal tag를 만들고, `republic release assets --build --smoke-install --format all`을 실행하고, publish-ready checksum과 upload command evidence를 `.ai-republic/reports/release-publish-dry-run/` 아래에 남깁니다.
+
+disposable demo가 아니라 실제 저장소에서 배포 직전 gate를 한 번에 돌리고 싶다면 아래 wrapper를 사용하면 됩니다.
+
+```bash
+bash scripts/release_preflight.sh
+```
+
+이 스크립트는 `republic release check --format all`을 실행해서 release preview, announcement copy pack 생성, `uv run pytest -q`, `uv build`, wheel smoke install, OSS governance/CI 체크를 한 번에 수행합니다.
 
 ```bash
 cd examples/python-lib
@@ -117,6 +145,13 @@ bash ../../scripts/demo_webhook_signature_receiver.sh
 ```bash
 cd examples/live-github-ops
 bash ../../scripts/demo_live_ops.sh
+```
+
+publish-enabled sandbox rollout을 단계적으로 rehearse하려면 아래 예제를 사용하면 됩니다.
+
+```bash
+cd examples/live-github-sandbox-rollout
+bash ../../scripts/demo_live_publish_sandbox.sh
 ```
 
 무슨 일이 일어나는지:
@@ -219,9 +254,20 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
 - status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
+- release preview snapshots: `.ai-republic/reports/release-preview.json`, `.ai-republic/reports/release-preview.md`
+- GitHub release notes preview: `.ai-republic/reports/release-notes-v<version>.md`
+- release announcement pack: `.ai-republic/reports/release-announce.json`, `.ai-republic/reports/release-announce.md`
+- release checklist: `.ai-republic/reports/release-checklist.json`, `.ai-republic/reports/release-checklist.md`
+- channel copy snippets: `.ai-republic/reports/announcement-v<version>.md`, `discussion-v<version>.md`, `social-v<version>.md`, `release-cut-v<version>.md`
+- release asset report: `.ai-republic/reports/release-assets.json`, `.ai-republic/reports/release-assets.md`
+- release asset summary: `.ai-republic/reports/release-assets-v<tag>.md`
 - 선택적 JSONL 로그: `.ai-republic/logs/reporepublic.jsonl`
 - 특정 이슈 상태: `uv run republic status --issue 123`
 - operator health snapshot export: `uv run republic doctor --format all`, `uv run republic status --format all`
+- 다음 public tag cut preview: `uv run republic release preview --format all`
+- release copy pack 생성: `uv run republic release announce --format all`
+- 전체 release preflight gate 실행: `uv run republic release check --format all`
+- local release asset 검증: `uv run republic release assets --build --smoke-install --format all`
 - 특정 이슈 즉시 실행: `uv run republic trigger 123`
 - GitHub webhook payload 검증: `uv run republic webhook --event issues --payload webhook.json --dry-run`
 - 즉시 재시도 예약: `uv run republic retry 123`

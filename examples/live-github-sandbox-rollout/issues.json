@@ -1,0 +1,15 @@
+[
+  {
+    "id": 201,
+    "number": 201,
+    "title": "Improve sandbox rollout README quickstart",
+    "body": "The sandbox rollout example should explain the readiness gate and the execution rehearsal path more clearly for maintainers.",
+    "labels": ["docs", "sandbox"],
+    "comments": [
+      {
+        "author": "maintainer",
+        "body": "After the publish gate turns green, we also want one deterministic issue execution run."
+      }
+    ]
+  }
+]

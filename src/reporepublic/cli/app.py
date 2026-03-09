@@ -71,6 +71,30 @@ from reporepublic._related_report_details.rendering import (
     extract_related_report_warning_lines,
     render_related_report_detail_lines,
 )
+from reporepublic.release_announcement import (
+    build_release_announcement_exports,
+    build_release_announcement_snapshot,
+    normalize_release_announcement_formats,
+    render_release_announcement_text,
+)
+from reporepublic.release_assets import (
+    build_release_asset_exports,
+    build_release_asset_snapshot,
+    normalize_release_asset_formats,
+    render_release_asset_text,
+)
+from reporepublic.release_checklist import (
+    build_release_checklist_exports,
+    build_release_checklist_snapshot,
+    normalize_release_checklist_formats,
+    render_release_checklist_text,
+)
+from reporepublic.release_preview import (
+    build_release_preview_exports,
+    build_release_preview_snapshot,
+    normalize_release_preview_formats,
+    render_release_preview_text,
+)
 from reporepublic.report_policy import build_report_policy_drift_guidance
 from reporepublic.sync_manifest_reports import (
     build_sync_check_report,
@@ -128,6 +152,7 @@ app = typer.Typer(
 sync_app = typer.Typer(help="Inspect staged tracker sync artifacts.")
 ops_app = typer.Typer(help="Export operator snapshot bundles.")
 github_app = typer.Typer(help="Inspect live GitHub tracker readiness.")
+release_app = typer.Typer(help="Prepare public release preview artifacts.")
 RAW_POLICY_REPORT_EXPORTS = (
     "sync-audit.json",
     "cleanup-preview.json",
@@ -195,6 +220,7 @@ def callback() -> None:
 app.add_typer(sync_app, name="sync")
 app.add_typer(ops_app, name="ops")
 app.add_typer(github_app, name="github")
+app.add_typer(release_app, name="release")
 
 
 @app.command("init")
@@ -1819,6 +1845,332 @@ def sync_health_command(
         show_mismatches=show_mismatches,
     )
     if result.overall_status == "issues":
+        raise typer.Exit(code=1)
+
+
+@release_app.command("preview")
+def release_preview_command(
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Optional target release version. Defaults to the inferred next preview version.",
+    ),
+    tag: str | None = typer.Option(
+        None,
+        "--tag",
+        help="Optional target git tag. Defaults to v<version>.",
+    ),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional export path. Defaults to .ai-republic/reports/release-preview.<ext>.",
+    ),
+) -> None:
+    repo_root = resolve_repo_root()
+    try:
+        loaded = load_config(repo_root)
+    except ConfigLoadError:
+        loaded = None
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_release_preview_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    snapshot = build_release_preview_snapshot(
+        loaded=loaded,
+        repo_root=repo_root,
+        target_version=version,
+        target_tag=tag,
+    )
+    if export_formats is None:
+        typer.echo(render_release_preview_text(snapshot), nl=False)
+        if snapshot["summary"]["status"] == "issues":
+            raise typer.Exit(code=1)
+        return
+
+    output_path = _resolve_operator_report_output(
+        repo_root=repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="release-preview",
+    )
+    result = build_release_preview_exports(
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Release preview", result.output_paths)
+    typer.echo(f"- notes_markdown: {result.notes_markdown_path}")
+    typer.echo(
+        "Release preview summary: "
+        f"status={result.snapshot['summary']['status']} "
+        f"target={result.snapshot['target']['tag']} "
+        f"warnings={result.snapshot['summary']['warning_count']} "
+        f"errors={result.snapshot['summary']['error_count']}"
+    )
+    if result.snapshot["summary"]["status"] == "issues":
+        raise typer.Exit(code=1)
+
+
+@release_app.command("announce")
+def release_announce_command(
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Optional target release version. Defaults to the inferred next preview version.",
+    ),
+    tag: str | None = typer.Option(
+        None,
+        "--tag",
+        help="Optional target git tag. Defaults to v<version>.",
+    ),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional export path. Defaults to .ai-republic/reports/release-announce.<ext>.",
+    ),
+) -> None:
+    repo_root = resolve_repo_root()
+    try:
+        loaded = load_config(repo_root)
+    except ConfigLoadError:
+        loaded = None
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_release_announcement_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    snapshot = build_release_announcement_snapshot(
+        loaded=loaded,
+        repo_root=repo_root,
+        target_version=version,
+        target_tag=tag,
+    )
+    if export_formats is None:
+        typer.echo(render_release_announcement_text(snapshot), nl=False)
+        if snapshot["preview"]["status"] == "issues":
+            raise typer.Exit(code=1)
+        return
+
+    output_path = _resolve_operator_report_output(
+        repo_root=repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="release-announce",
+    )
+    result = build_release_announcement_exports(
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Release announcement", result.output_paths)
+    for key, path in sorted(result.snippet_paths.items()):
+        typer.echo(f"- {key}: {path}")
+    typer.echo(
+        "Release announcement summary: "
+        f"status={result.snapshot['summary']['status']} "
+        f"target={result.snapshot['target']['tag']} "
+        f"preview_status={result.snapshot['preview']['status']} "
+        f"snippets={result.snapshot['summary']['snippet_count']}"
+    )
+    if result.snapshot["preview"]["status"] == "issues":
+        raise typer.Exit(code=1)
+
+
+@release_app.command("check")
+def release_check_command(
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Optional target release version. Defaults to the inferred next preview version.",
+    ),
+    tag: str | None = typer.Option(
+        None,
+        "--tag",
+        help="Optional target git tag. Defaults to v<version>.",
+    ),
+    format: str = typer.Option(
+        "all",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional export path. Defaults to .ai-republic/reports/release-checklist.<ext>.",
+    ),
+    run_tests: bool = typer.Option(
+        True,
+        "--run-tests/--no-run-tests",
+        help="Run `uv run pytest -q` as part of the preflight gate.",
+    ),
+    build: bool = typer.Option(
+        True,
+        "--build/--no-build",
+        help="Run `uv build` before validating release assets.",
+    ),
+    smoke_install: bool = typer.Option(
+        True,
+        "--smoke-install/--no-smoke-install",
+        help="Install the built wheel into a temporary venv and run `republic --help`.",
+    ),
+) -> None:
+    repo_root = resolve_repo_root()
+    try:
+        loaded = load_config(repo_root)
+    except ConfigLoadError:
+        loaded = None
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_release_checklist_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    snapshot = build_release_checklist_snapshot(
+        loaded=loaded,
+        repo_root=repo_root,
+        target_version=version,
+        target_tag=tag,
+        run_tests=run_tests,
+        build=build,
+        smoke_install=smoke_install,
+    )
+    if export_formats is None:
+        typer.echo(render_release_checklist_text(snapshot), nl=False)
+        if snapshot["summary"]["status"] != "clean":
+            raise typer.Exit(code=1)
+        return
+
+    output_path = _resolve_operator_report_output(
+        repo_root=repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="release-checklist",
+    )
+    result = build_release_checklist_exports(
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Release checklist", result.output_paths)
+    artifacts = result.snapshot["artifacts"]
+    typer.echo(
+        f"- release_preview_notes: {artifacts['preview']['notes_markdown_path']}"
+    )
+    typer.echo(
+        f"- release_asset_summary: {artifacts['assets']['asset_summary_path']}"
+    )
+    typer.echo(
+        "Release checklist summary: "
+        f"status={result.snapshot['summary']['status']} "
+        f"ready={result.snapshot['summary']['ready_to_publish']} "
+        f"target={result.snapshot['target']['tag']} "
+        f"errors={result.snapshot['summary']['error_count']} "
+        f"warnings={result.snapshot['summary']['warning_count']}"
+    )
+    if result.snapshot["summary"]["status"] != "clean":
+        raise typer.Exit(code=1)
+
+
+@release_app.command("assets")
+def release_assets_command(
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Optional target release version. Defaults to the inferred next preview version.",
+    ),
+    tag: str | None = typer.Option(
+        None,
+        "--tag",
+        help="Optional target git tag. Defaults to v<version>.",
+    ),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional export path. Defaults to .ai-republic/reports/release-assets.<ext>.",
+    ),
+    build: bool = typer.Option(
+        False,
+        "--build",
+        help="Run `uv build` before collecting dist artifact metadata.",
+    ),
+    smoke_install: bool = typer.Option(
+        False,
+        "--smoke-install",
+        help="Create a temporary venv, install the built wheel, and run `republic --help`.",
+    ),
+) -> None:
+    repo_root = resolve_repo_root()
+    try:
+        loaded = load_config(repo_root)
+    except ConfigLoadError:
+        loaded = None
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_release_asset_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    snapshot = build_release_asset_snapshot(
+        loaded=loaded,
+        repo_root=repo_root,
+        target_version=version,
+        target_tag=tag,
+        build=build,
+        smoke_install=smoke_install,
+    )
+    if export_formats is None:
+        typer.echo(render_release_asset_text(snapshot), nl=False)
+        if snapshot["summary"]["status"] == "issues":
+            raise typer.Exit(code=1)
+        return
+
+    output_path = _resolve_operator_report_output(
+        repo_root=repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="release-assets",
+    )
+    result = build_release_asset_exports(
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Release assets", result.output_paths)
+    typer.echo(f"- asset_summary: {result.asset_summary_path}")
+    typer.echo(
+        "Release assets summary: "
+        f"status={result.snapshot['summary']['status']} "
+        f"target={result.snapshot['target']['tag']} "
+        f"artifacts={result.snapshot['summary']['artifact_count']} "
+        f"smoke_install={result.snapshot['smoke_install']['status']}"
+    )
+    if result.snapshot["summary"]["status"] == "issues":
         raise typer.Exit(code=1)
 
 

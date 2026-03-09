@@ -135,6 +135,16 @@ WORKFLOW.md
 
 예제들은 로컬 fixture issue와 mock backend를 기준으로 설계되어 있어서, 동작은 결정적이면서도 실운영 구조는 그대로 유지됩니다.
 
+추천 시작 경로:
+
+- `bash scripts/demo_python_lib.sh`로 기본 local issue pipeline을 가장 빠르게 확인
+- `bash scripts/demo_local_file_tracker.sh`로 가장 단순한 완전 오프라인 inbox 흐름 확인
+- `bash scripts/demo_live_ops.sh`로 production에 가까운 GitHub REST rehearsal 확인
+- `bash scripts/release_preflight.sh`로 실제 저장소 배포 직전 release gate 실행
+
+<details>
+<summary>전체 예제 매트릭스</summary>
+
 | 시나리오 | 명령 | 보여주는 것 |
 | --- | --- | --- |
 | Python 라이브러리 | `bash scripts/demo_python_lib.sh` | 초기화, dry-run, 단일 실행, 상태, 대시보드 전체 흐름 |
@@ -148,6 +158,11 @@ WORKFLOW.md
 | Webhook receiver | `bash scripts/demo_webhook_receiver.sh` | GitHub 스타일 POST를 전달하는 로컬 HTTP receiver |
 | Signed webhook receiver | `bash scripts/demo_webhook_signature_receiver.sh` | dispatch 전 `X-Hub-Signature-256` 검증 |
 | Live GitHub ops | `bash scripts/demo_live_ops.sh` | GitHub REST mode, `worktree`, 파일 로그, offline `github smoke` rehearsal, ops handoff bundle 생성 |
+| Sandbox publish rollout | `bash scripts/demo_live_publish_sandbox.sh` | `allow_write_comments` / `allow_open_pr`를 단계적으로 켜고 per-phase `github smoke` gate, readiness bundle, deterministic single-issue execution rehearsal을 함께 검증 |
+| Release rehearsal | `bash scripts/demo_release_rehearsal.sh` | local annotated tag rehearsal, release preview/announce copy pack export, build checksum 수집 |
+| Release publish dry-run | `bash scripts/demo_release_publish_dry_run.sh` | local version-bump rehearsal, asset build/smoke 검증, publish command dry-run evidence |
+
+</details>
 
 <details>
 <summary>수동 데모 walkthrough</summary>
@@ -214,7 +229,17 @@ staged local publish proposal을 보려면:
 | Role pack | [docs/role-packs.md](./docs/role-packs.md) | [docs/role-packs.ko.md](./docs/role-packs.ko.md) |
 | Runbook | [docs/runbook.md](./docs/runbook.md) | [docs/runbook.ko.md](./docs/runbook.ko.md) |
 | Live GitHub ops | [docs/live-github-ops.md](./docs/live-github-ops.md) | [docs/live-github-ops.ko.md](./docs/live-github-ops.ko.md) |
-| Backlog queue | [docs/backlog/issue-queue.md](./docs/backlog/issue-queue.md) | - |
+| Sandbox publish rollout | [docs/live-github-sandbox-rollout.md](./docs/live-github-sandbox-rollout.md) | [docs/live-github-sandbox-rollout.ko.md](./docs/live-github-sandbox-rollout.ko.md) |
+| Release process | [docs/release.md](./docs/release.md) | [docs/release.ko.md](./docs/release.ko.md) |
+| 현재 큐 | [docs/backlog/active-queue.md](./docs/backlog/active-queue.md) | - |
+
+## 커뮤니티
+
+- 기여 가이드: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- 보안 정책: [SECURITY.md](./SECURITY.md)
+- 행동 강령: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- 변경 이력: [CHANGELOG.md](./CHANGELOG.md)
+- 라이선스: [LICENSE](./LICENSE)
 
 <details>
 <summary>Codex 설정과 smoke test</summary>
@@ -270,6 +295,11 @@ republic ops status
 republic ops status --format all
 republic github smoke
 republic github smoke --format all
+republic release preview
+republic release preview --format all
+republic release announce --format all
+republic release check --format all
+republic release assets --format all
 republic sync health --issue 123 --format all
 ```
 
@@ -291,13 +321,16 @@ republic sync health --issue 123 --format all
 - `republic sync repair --dry-run`은 manifest 재구성과 orphan adoption 결과를 쓰기 전에 미리 보여줍니다.
 - `republic sync health --format all`은 pending staged artifact, applied manifest integrity, repair preview, cleanup preview, linked raw report posture를 한 번에 묶은 operator snapshot을 `.ai-republic/reports/sync-health.json|md`로 export합니다. `--show-remediation`, `--show-mismatches`를 붙이면 같은 related-report detail block을 터미널에도 바로 출력합니다.
 - `republic sync audit --format all`은 `.ai-republic/reports/` 아래에 JSON/Markdown sync audit report를 export하고, matching cleanup preview/result export를 연결하며, 다른 `issue_filter`로 생성된 cleanup report가 있으면 warning도 함께 남기고, 관련 cleanup export의 `policy_alignment` metadata도 raw report 안에 직접 기록하며, mismatch/drift/remediation 묶음을 재사용할 수 있는 평문 `related_reports.detail_summary`도 추가하고, linked cleanup policy drift count도 CLI에서 함께 요약합니다. `--show-remediation`을 붙이면 같은 guidance도 바로 출력하고, `--show-mismatches`를 붙이면 linked cleanup issue-filter mismatch warning도 같은 자리에서 바로 출력합니다. 두 플래그를 함께 쓰면 drift와 mismatch detail이 하나의 related-report block으로 묶여 출력됩니다.
-- `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot도 이제 CLI의 related-report detail block을 따라가고, HTML `Cross references` 패널도 `mismatches / policy drifts / remediation` 의미 단위를 직접 드러내도록 정리됐습니다. JSON export에도 각 report entry별 `related_report_detail_summary` 문자열이 추가돼 바로 표시용으로 재사용할 수 있습니다. `.ai-republic/reports/ops-status.json`이나 `.ai-republic/reports/ops-brief.json`이 존재하면 `Reports` 섹션에 `Ops status`, `Ops brief` 카드가 같이 렌더링되어 최신 ops handoff posture와 incident brief를 같은 화면에서 바로 따라갈 수 있습니다.
-- `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot도 이제 CLI의 related-report detail block을 따라가서, mismatch warning, related policy drift, remediation guidance를 같은 방식으로 읽을 수 있습니다.
+- `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot은 CLI의 related-report detail block과 같은 구조를 따르고, HTML `Cross references` 패널도 `mismatches / policy drifts / remediation` 의미 단위를 직접 드러내며, JSON export에는 각 report entry별 `related_report_detail_summary` 문자열이 들어갑니다. `.ai-republic/reports/ops-status.json`이나 `.ai-republic/reports/ops-brief.json`이 존재하면 `Reports` 섹션에 `Ops status`, `Ops brief` 카드가 같이 렌더링되어 최신 ops handoff posture와 incident brief를 같은 화면에서 바로 따라갈 수 있습니다.
 - `republic ops snapshot`은 `doctor`, `status`, `dashboard`, `sync-audit`, bundle-local `sync-health`, bundle-local `ops-status`, bundle-local `ops-brief`, live GitHub REST tracker일 때는 bundle-local `github-smoke`, bundle-local landing 파일 `index.html`, `README.md`, 그리고 `bundle.json`, `bundle.md`를 한 디렉터리에 묶어 incident handoff용 번들로 export합니다. `ops-brief` export는 운영자가 bundle을 열었을 때 가장 먼저 보는 landing summary이고, landing page는 이 brief에서 나머지 bundle artifact로 바로 이동할 수 있게 연결됩니다. `--include-cleanup-preview`는 cleanup preview를 같은 번들 안에 생성하고, `--include-cleanup-result`는 기존 `cleanup-result` export를 복사해 넣으며, `--include-sync-check`는 applied manifest integrity snapshot을, `--include-sync-repair-preview`는 dry-run repair preview를 같은 디렉터리에 함께 포함합니다. `--archive`를 붙이면 완성된 번들을 `.tar.gz` handoff archive로 묶고 checksum도 함께 출력합니다. 매 실행마다 `.ai-republic/reports/ops/latest.json|md`, `.ai-republic/reports/ops/history.json|md`, `.ai-republic/reports/ops-status.json|md`, `.ai-republic/reports/ops-brief.json|md`, `.ai-republic/reports/sync-health.json|md`, 그리고 live GitHub REST tracker일 때는 `.ai-republic/reports/github-smoke.json|md`도 갱신되어, bundle directory가 다른 위치에 있어도 automation과 dashboard/report surface가 최신 handoff를 한 경로에서 찾을 수 있습니다. `--history-limit`은 이번 실행에서 유지할 history entry 수를 제한하고, `--prune-history`는 `.ai-republic/reports/ops/` 아래의 dropped managed bundle/archive를 함께 정리합니다. 기본 retention은 `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`에서 제어합니다.
 - `republic ops status`는 `.ai-republic/reports/ops/latest.*`, `.ai-republic/reports/ops/history.*`, 그리고 최신 indexed `bundle.json`을 함께 읽어 handoff posture, 최신 bundle health, component summary, recent history, landing path, related report posture를 한 번에 보여주는 operator surface입니다. `republic ops status --format all`은 같은 snapshot을 `.ai-republic/reports/ops-status.json`, `.ai-republic/reports/ops-status.md`로 export합니다.
 - `republic github smoke`는 `tracker.repo` 기준 live GitHub REST readiness를 점검하고, open issue를 sample로 읽어오며, comment/draft PR publish preflight 상태를 함께 보여줍니다. REST mode에서는 실제 요구사항이 `GITHUB_TOKEN`이고, `gh auth`만으로는 RepoRepublic API 호출이 준비되지 않습니다.
 - `republic github smoke`는 이제 repo metadata permission도 publish readiness에 반영하므로, token과 origin preflight가 통과해도 `permissions.push=false`인 repo는 draft PR publish 경로에서 계속 warning 상태로 남습니다.
 - `republic github smoke`는 이제 default branch policy도 함께 점검합니다. default branch가 보호되지 않았거나, PR review requirement/required status check가 없거나, branch protection detail을 읽지 못하면 `--require-write-ready` 기준에서 draft PR publish가 계속 warning 상태로 남습니다.
+- `republic release preview`는 저장소가 `republic init`으로 부트스트랩되지 않았어도 maintainer용 public release dry-run을 준비합니다. 현재 버전에 이미 날짜가 있는 changelog section이 있으면 다음 patch tag를 추론하고, `.ai-republic/reports/release-preview.json|md`와 바로 쓸 수 있는 GitHub release notes 파일 `.ai-republic/reports/release-notes-v<version>.md`를 생성합니다.
+- `republic release announce`는 release preview 위에 올라가는 copy pack을 생성합니다. `.ai-republic/reports/release-announce.json|md`와 함께 `announcement-v<version>.md`, `discussion-v<version>.md`, `social-v<version>.md`, `release-cut-v<version>.md`를 한 번에 만듭니다.
+- `republic release check --format all`은 기본 pre-publish gate입니다. release preview, announcement copy pack 생성, `uv run pytest -q`, `uv build`, temporary wheel smoke install, OSS governance/CI 파일 점검을 한 번에 실행하고 `.ai-republic/reports/release-checklist.json|md`와 관련 release report를 함께 export합니다. `bash scripts/release_preflight.sh`는 같은 흐름을 한 줄로 감싼 wrapper입니다.
+- `republic release assets`는 inferred release target 기준으로 local dist artifact를 검사하고 `.ai-republic/reports/release-assets.json|md`와 `release-assets-v<tag>.md`를 export합니다. GitHub Releases나 TestPyPI publish 전 build와 temporary wheel install까지 확인하려면 `--build --smoke-install`을 붙이면 됩니다.
 - live GitHub branch publish는 이제 GitHub metadata가 알려주는 repository default branch를 기준으로 staging branch를 만들며, 기본적으로 local current branch를 그대로 base로 이어받지 않습니다.
 
 </details>

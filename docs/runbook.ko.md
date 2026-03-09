@@ -238,5 +238,7 @@ incident마다:
 
 - live GitHub ops 청사진: [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
 - live GitHub 운영 walkthrough: [./live-github-ops.ko.md](./live-github-ops.ko.md)
+- sandbox publish rollout 예제: [../examples/live-github-sandbox-rollout/README.md](../examples/live-github-sandbox-rollout/README.md)
+- sandbox publish rollout walkthrough: [./live-github-sandbox-rollout.ko.md](./live-github-sandbox-rollout.ko.md)
 - 로컬 webhook receiver: [../examples/webhook-receiver/README.md](../examples/webhook-receiver/README.md)
 - 서명 검증이 있는 로컬 webhook receiver: [../examples/webhook-signature-receiver/README.md](../examples/webhook-signature-receiver/README.md)

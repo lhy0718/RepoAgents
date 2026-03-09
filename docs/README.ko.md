@@ -30,10 +30,13 @@ RepoRepublic는 다국어 문서를 같은 위치에 두고, 아래 규칙으로
 - 영문: [runbook.md](./runbook.md)
 - 국문: [runbook.ko.md](./runbook.ko.md)
 - Live GitHub 운영 walkthrough: [live-github-ops.md](./live-github-ops.md), [live-github-ops.ko.md](./live-github-ops.ko.md)
+- Sandbox publish rollout: [live-github-sandbox-rollout.md](./live-github-sandbox-rollout.md), [live-github-sandbox-rollout.ko.md](./live-github-sandbox-rollout.ko.md)
+- Release process: [release.md](./release.md), [release.ko.md](./release.ko.md)
 
 ## 백로그
 
-- 구현 큐: [backlog/issue-queue.md](./backlog/issue-queue.md)
+- 현재 구현 큐: [backlog/active-queue.md](./backlog/active-queue.md)
+- 완료 이력 archive: [backlog/issue-queue.md](./backlog/issue-queue.md)
 
 ## 예제
 
@@ -47,6 +50,9 @@ RepoRepublic는 다국어 문서를 같은 위치에 두고, 아래 규칙으로
 - Webhook receiver 데모: [examples/webhook-receiver/README.md](../examples/webhook-receiver/README.md)
 - Signed webhook receiver 데모: [examples/webhook-signature-receiver/README.md](../examples/webhook-signature-receiver/README.md)
 - Live GitHub ops 청사진: [examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
+- Sandbox publish rollout 청사진: [examples/live-github-sandbox-rollout/README.md](../examples/live-github-sandbox-rollout/README.md)
+- Release rehearsal 데모: [examples/release-rehearsal/README.md](../examples/release-rehearsal/README.md)
+- Release publish dry-run 데모: [examples/release-publish-dry-run/README.md](../examples/release-publish-dry-run/README.md)
 
 ## 새 문서 추가 규칙
 

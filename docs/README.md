@@ -30,10 +30,13 @@ RepoRepublic keeps multilingual documents side-by-side with a simple naming rule
 - English: [runbook.md](./runbook.md)
 - Korean: [runbook.ko.md](./runbook.ko.md)
 - Live GitHub walkthrough: [live-github-ops.md](./live-github-ops.md), [live-github-ops.ko.md](./live-github-ops.ko.md)
+- Sandbox publish rollout: [live-github-sandbox-rollout.md](./live-github-sandbox-rollout.md), [live-github-sandbox-rollout.ko.md](./live-github-sandbox-rollout.ko.md)
+- Release process: [release.md](./release.md), [release.ko.md](./release.ko.md)
 
 ## Backlog
 
-- Implementation queue: [backlog/issue-queue.md](./backlog/issue-queue.md)
+- Active queue: [backlog/active-queue.md](./backlog/active-queue.md)
+- Completed archive: [backlog/issue-queue.md](./backlog/issue-queue.md)
 
 ## Examples
 
@@ -47,6 +50,9 @@ RepoRepublic keeps multilingual documents side-by-side with a simple naming rule
 - Webhook receiver demo: [examples/webhook-receiver/README.md](../examples/webhook-receiver/README.md)
 - Signed webhook receiver demo: [examples/webhook-signature-receiver/README.md](../examples/webhook-signature-receiver/README.md)
 - Live GitHub ops blueprint: [examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
+- Sandbox publish rollout blueprint: [examples/live-github-sandbox-rollout/README.md](../examples/live-github-sandbox-rollout/README.md)
+- Release rehearsal: [examples/release-rehearsal/README.md](../examples/release-rehearsal/README.md)
+- Release publish dry-run: [examples/release-publish-dry-run/README.md](../examples/release-publish-dry-run/README.md)
 
 ## Rule for new docs
 
