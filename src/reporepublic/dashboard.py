@@ -43,8 +43,10 @@ class DashboardBuildResult:
 VALID_DASHBOARD_FORMATS = ("html", "json", "markdown")
 REPORT_EXPORTS = (
     ("sync-audit", "Sync audit", "sync-audit.json", "sync-audit.md"),
+    ("sync-health", "Sync health", "sync-health.json", "sync-health.md"),
     ("cleanup-preview", "Cleanup preview", "cleanup-preview.json", "cleanup-preview.md"),
     ("cleanup-result", "Cleanup result", "cleanup-result.json", "cleanup-result.md"),
+    ("ops-status", "Ops status", "ops-status.json", "ops-status.md"),
 )
 OPS_SNAPSHOT_ENTRY_PREVIEW_LIMIT = 5
 SEVERITY_ORDER = {
@@ -2164,6 +2166,51 @@ def _report_summary_details(
     key: str,
     report_summary: dict[str, object],
 ) -> tuple[str, str, dict[str, object]]:
+    if key == "sync-health":
+        status = _string_or_none(report_summary.get("overall_status")) or "available"
+        pending = report_summary.get("pending_artifacts", 0)
+        integrity = report_summary.get("integrity_issue_count", 0)
+        cleanup_actions = report_summary.get("cleanup_action_count", 0)
+        summary = (
+            f"pending={pending} integrity_issues={integrity} cleanup_actions={cleanup_actions}"
+        )
+        metrics = {
+            "pending_artifacts": pending,
+            "integrity_issue_count": integrity,
+            "repair_changed_reports": report_summary.get("repair_changed_reports", 0),
+            "repair_findings_after": report_summary.get("repair_findings_after", 0),
+            "cleanup_action_count": cleanup_actions,
+            "cleanup_sync_applied_action_count": report_summary.get(
+                "cleanup_sync_applied_action_count",
+                0,
+            ),
+            "prunable_groups": report_summary.get("prunable_groups", 0),
+            "repair_needed_issues": report_summary.get("repair_needed_issues", 0),
+            "related_cleanup_reports": report_summary.get("related_cleanup_reports", 0),
+            "related_sync_audit_reports": report_summary.get("related_sync_audit_reports", 0),
+            "related_report_mismatches": report_summary.get("related_report_mismatches", 0),
+            "related_report_policy_drifts": report_summary.get("related_report_policy_drifts", 0),
+            "next_action_count": len(_list_of_strings(report_summary.get("next_actions"))),
+        }
+        return status, summary, metrics
+    if key == "ops-status":
+        status = _string_or_none(report_summary.get("status")) or "available"
+        index_status = report_summary.get("index_status", "unknown")
+        latest_bundle_status = report_summary.get("latest_bundle_status", "unknown")
+        history_entry_count = report_summary.get("history_entry_count", 0)
+        history_limit = report_summary.get("history_limit", 0)
+        summary = (
+            f"index={index_status} latest_bundle={latest_bundle_status} "
+            f"history={history_entry_count}/{history_limit}"
+        )
+        metrics = {
+            "history_entry_count": history_entry_count,
+            "history_limit": history_limit,
+            "dropped_entry_count": report_summary.get("dropped_entry_count", 0),
+            "archive_entry_count": report_summary.get("archive_entry_count", 0),
+            "related_report_count": report_summary.get("related_report_count", 0),
+        }
+        return status, summary, metrics
     if key == "sync-audit":
         status = _string_or_none(report_summary.get("overall_status")) or "available"
         pending = report_summary.get("pending_artifacts", 0)
@@ -2197,6 +2244,34 @@ def _report_details(key: str, payload: dict[str, object]) -> dict[str, object]:
     related_mismatch_reports = 0
     related_policy_drift_warnings: list[str] = []
     related_policy_drift_reports = 0
+    if key == "sync-health":
+        summary = _dict_value(payload, "summary")
+        cleanup_group = _sync_health_related_report_group(payload, "cleanup_reports")
+        sync_audit_group = _sync_health_related_report_group(payload, "sync_audit_reports")
+        cleanup_mismatches = _sync_health_group_warning_lines(cleanup_group, "mismatches")
+        cleanup_policy_drifts = _sync_health_group_warning_lines(cleanup_group, "policy_drifts")
+        sync_audit_mismatches = _sync_health_group_warning_lines(sync_audit_group, "mismatches")
+        sync_audit_policy_drifts = _sync_health_group_warning_lines(sync_audit_group, "policy_drifts")
+        related_mismatch_warnings = [*cleanup_mismatches, *sync_audit_mismatches]
+        related_policy_drift_warnings = [*cleanup_policy_drifts, *sync_audit_policy_drifts]
+        return {
+            "related_report_mismatch_warnings": related_mismatch_warnings,
+            "related_report_mismatches": summary.get("related_report_mismatches", 0),
+            "related_report_policy_drift_warnings": related_policy_drift_warnings,
+            "related_report_policy_drifts": summary.get("related_report_policy_drifts", 0),
+            "cleanup_related_report_count": cleanup_group.get("total_reports", 0),
+            "cleanup_related_report_mismatches": cleanup_group.get("mismatch_reports", 0),
+            "cleanup_related_report_policy_drifts": cleanup_group.get("policy_drift_reports", 0),
+            "cleanup_related_report_detail_summary": cleanup_group.get("detail_summary"),
+            "sync_audit_related_report_count": sync_audit_group.get("total_reports", 0),
+            "sync_audit_related_report_mismatches": sync_audit_group.get("mismatch_reports", 0),
+            "sync_audit_related_report_policy_drifts": sync_audit_group.get("policy_drift_reports", 0),
+            "sync_audit_related_report_detail_summary": sync_audit_group.get("detail_summary"),
+            "repair_findings_after": summary.get("repair_findings_after", 0),
+            "prunable_groups": summary.get("prunable_groups", 0),
+            "repair_needed_issues": summary.get("repair_needed_issues", 0),
+            "next_actions": _list_of_strings(summary.get("next_actions")),
+        }
     if isinstance(related_reports, dict):
         raw_mismatch_reports = related_reports.get("mismatch_reports")
         if isinstance(raw_mismatch_reports, int):
@@ -2220,6 +2295,26 @@ def _report_details(key: str, payload: dict[str, object]) -> dict[str, object]:
                 label = _string_or_none(entry.get("label")) or "related-report"
                 warning = _string_or_none(entry.get("warning")) or "policy drift"
                 related_policy_drift_warnings.append(f"{label}: {warning}")
+    if key == "ops-status":
+        latest = payload.get("latest")
+        if not isinstance(latest, dict):
+            latest = {}
+        latest_bundle = payload.get("latest_bundle")
+        if not isinstance(latest_bundle, dict):
+            latest_bundle = {}
+        return {
+            "latest_entry_id": latest.get("entry_id"),
+            "latest_overall_status": latest.get("overall_status"),
+            "latest_bundle_status": latest_bundle.get("status"),
+            "latest_bundle_component_count": latest_bundle.get("component_count", 0),
+            "latest_bundle_cross_link_count": latest_bundle.get("cross_link_count", 0),
+            "latest_bundle_path": latest_bundle.get("path"),
+            "history_index_path": _dict_value(payload, "index").get("history_json_path"),
+            "latest_index_path": _dict_value(payload, "index").get("latest_json_path"),
+            "related_report_count": related_reports.get("total", 0)
+            if isinstance(related_reports, dict)
+            else 0,
+        }
     if key != "sync-audit":
         details: dict[str, object] = {}
         if related_mismatch_warnings:
@@ -2319,6 +2414,48 @@ def _integrity_action_hints(finding_counts: dict[str, object]) -> list[str]:
 
 
 def _report_relation_specs(key: str, payload: dict[str, object]) -> list[dict[str, object]]:
+    if key == "sync-health":
+        related_reports = payload.get("related_reports")
+        if not isinstance(related_reports, dict):
+            return []
+        specs: list[dict[str, object]] = []
+        cleanup_group = _sync_health_related_report_group(payload, "cleanup_reports")
+        cleanup_labels = _sync_health_group_labels(cleanup_group)
+        if cleanup_group and (
+            cleanup_group.get("total_reports")
+            or cleanup_group.get("mismatch_reports")
+            or cleanup_group.get("policy_drift_reports")
+        ):
+            if int(cleanup_group.get("total_reports", 0) or 0) >= 1 or "Cleanup preview" in cleanup_labels:
+                specs.append(
+                    _build_sync_health_relation_spec(
+                        key="cleanup-preview",
+                        label="Cleanup preview",
+                        group=cleanup_group,
+                    )
+                )
+            if int(cleanup_group.get("total_reports", 0) or 0) >= 2 or "Cleanup result" in cleanup_labels:
+                specs.append(
+                    _build_sync_health_relation_spec(
+                        key="cleanup-result",
+                        label="Cleanup result",
+                        group=cleanup_group,
+                    )
+                )
+        sync_audit_group = _sync_health_related_report_group(payload, "sync_audit_reports")
+        if sync_audit_group and (
+            sync_audit_group.get("total_reports")
+            or sync_audit_group.get("mismatch_reports")
+            or sync_audit_group.get("policy_drift_reports")
+        ):
+            specs.append(
+                _build_sync_health_relation_spec(
+                    key="sync-audit",
+                    label="Sync audit",
+                    group=sync_audit_group,
+                )
+            )
+        return specs
     related_reports = payload.get("related_reports")
     if not isinstance(related_reports, dict):
         return []
@@ -2326,6 +2463,75 @@ def _report_relation_specs(key: str, payload: dict[str, object]) -> list[dict[st
     if not isinstance(entries, list):
         return []
     return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _sync_health_related_report_group(
+    payload: dict[str, object],
+    group_key: str,
+) -> dict[str, object]:
+    related_reports = payload.get("related_reports")
+    if not isinstance(related_reports, dict):
+        return {}
+    group = related_reports.get(group_key)
+    if not isinstance(group, dict):
+        return {}
+    return group
+
+
+def _sync_health_group_warning_lines(
+    group: dict[str, object],
+    key: str,
+) -> list[str]:
+    warnings: list[str] = []
+    raw_entries = group.get(key)
+    if not isinstance(raw_entries, list):
+        return warnings
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            continue
+        label = _string_or_none(entry.get("label")) or "related-report"
+        warning = _string_or_none(entry.get("warning")) or key.rstrip("s")
+        warnings.append(f"{label}: {warning}")
+    return warnings
+
+
+def _sync_health_group_labels(group: dict[str, object]) -> set[str]:
+    labels: set[str] = set()
+    for key in ("mismatches", "policy_drifts"):
+        raw_entries = group.get(key)
+        if not isinstance(raw_entries, list):
+            continue
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            label = _string_or_none(entry.get("label"))
+            if label:
+                labels.add(label)
+    return labels
+
+
+def _build_sync_health_relation_spec(
+    *,
+    key: str,
+    label: str,
+    group: dict[str, object],
+) -> dict[str, object]:
+    mismatch_reports = int(group.get("mismatch_reports", 0) or 0)
+    policy_drift_reports = int(group.get("policy_drift_reports", 0) or 0)
+    total_reports = int(group.get("total_reports", 0) or 0)
+    warning_parts: list[str] = []
+    if mismatch_reports:
+        warning_parts.append(f"mismatches={mismatch_reports}")
+    if policy_drift_reports:
+        warning_parts.append(f"policy_drifts={policy_drift_reports}")
+    if not warning_parts and total_reports:
+        warning_parts.append(f"related_reports={total_reports}")
+    return {
+        "key": key,
+        "label": label,
+        "status": "attention" if warning_parts else "available",
+        "warning": ", ".join(warning_parts) if warning_parts else None,
+    }
 
 
 def _attach_report_cross_references(entries: list[dict[str, object]]) -> None:
@@ -3117,6 +3323,12 @@ def _list_of_dicts(items: object) -> list[dict[str, object]]:
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
+
+
+def _list_of_strings(items: object) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, str) and item]
 
 
 def _string_or_none(value: object) -> str | None:

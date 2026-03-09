@@ -27,11 +27,15 @@ def test_build_ops_status_snapshot_reads_latest_history_and_bundle_manifest(
     assert snapshot["summary"]["status"] == "clean"
     assert snapshot["summary"]["index_status"] == "available"
     assert snapshot["summary"]["history_entry_count"] == 2
+    assert snapshot["summary"]["related_report_count"] == 2
     assert snapshot["latest"]["entry_id"] == "20260309T101500Z"
     assert snapshot["latest"]["age_human"] == "1h 45m"
+    assert snapshot["policy"]["summary"] == "unknown>=1 stale>=1 future>=1 aging>=1"
+    assert snapshot["related_reports"]["entries"][0]["key"] == "sync-audit"
+    assert snapshot["related_reports"]["entries"][1]["key"] == "sync-health"
     assert snapshot["latest_bundle"]["status"] == "available"
     assert snapshot["latest_bundle"]["overall_status"] == "clean"
-    assert snapshot["latest_bundle"]["component_count"] == 4
+    assert snapshot["latest_bundle"]["component_count"] == 5
     assert snapshot["latest_bundle"]["cross_link_count"] == 2
     assert snapshot["latest_bundle"]["components"][0]["key"] == "dashboard"
     assert snapshot["latest_bundle"]["components"][1]["key"] == "doctor"
@@ -57,12 +61,17 @@ def test_render_ops_status_markdown_includes_latest_bundle_and_history(
     assert "# Ops snapshot status" in markdown
     assert "## Summary" in markdown
     assert "- status: clean" in markdown
+    assert "## Policy" in markdown
+    assert "- related_report_count: 2" in markdown
     assert "## Latest bundle manifest" in markdown
-    assert "- component_count: 4" in markdown
+    assert "- component_count: 5" in markdown
     assert "### doctor" in markdown
     assert "- summary: diagnostic_count=5, exit_code=0" in markdown
     assert "## Bundle cross links" in markdown
     assert "- sync_audit -> cleanup_preview" in markdown
+    assert "## Related reports" in markdown
+    assert "- Sync audit" in markdown
+    assert "- Sync health" in markdown
     assert "## History preview" in markdown
     assert "- entry_id: 20260309T100000Z" in markdown
 
@@ -90,6 +99,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "doctor": "clean",
                 "status": "clean",
                 "sync_audit": "attention",
+                "sync_health": "attention",
             },
         },
         "components": {
@@ -134,6 +144,19 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "integrity_issue_count": 1,
                 "prunable_groups": 0,
                 "related_cleanup_reports": 1,
+            },
+            "sync_health": {
+                "status": "attention",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "sync-health.json"),
+                    "markdown": str(latest_bundle_dir / "sync-health.md"),
+                },
+                "pending_artifacts": 1,
+                "integrity_issue_count": 1,
+                "repair_changed_reports": 1,
+                "cleanup_action_count": 2,
+                "related_report_mismatches": 1,
+                "related_report_policy_drifts": 1,
             },
         },
         "cross_links": [
@@ -230,6 +253,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "dashboard": "clean",
                 "status": "clean",
                 "sync_audit": "attention",
+                "sync_health": "attention",
             },
         },
     }

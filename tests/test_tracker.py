@@ -167,6 +167,42 @@ def test_github_tracker_blocks_branch_creation_in_dry_run(tmp_path: Path) -> Non
     assert "Dry-run" in result.reason
 
 
+def test_github_tracker_get_repo_info() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url).endswith("/repos/demo/repo")
+        return httpx.Response(
+            200,
+            json={
+                "full_name": "demo/repo",
+                "default_branch": "main",
+                "private": False,
+                "permissions": {"pull": True, "push": False},
+            },
+        )
+
+    tracker = GitHubTracker(
+        repo="demo/repo",
+        api_url="https://api.github.com",
+        token_env="GITHUB_TOKEN",
+        repo_root=Path.cwd(),
+        mode=TrackerMode.REST,
+        fixtures_path=None,
+        allow_write_comments=True,
+        allow_open_pr=True,
+        dry_run=False,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    async def run_flow():
+        payload = await tracker.get_repo_info()
+        await tracker.aclose()
+        return payload
+
+    payload = asyncio.run(run_flow())
+    assert payload["full_name"] == "demo/repo"
+    assert payload["default_branch"] == "main"
+
+
 def test_github_tracker_list_open_issues_paginates() -> None:
     requests: list[str] = []
 

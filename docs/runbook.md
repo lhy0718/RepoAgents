@@ -39,6 +39,7 @@ uv run republic status --format all
 uv run republic ops snapshot --archive
 uv run republic ops status
 uv run republic ops status --format all
+uv run republic github smoke --require-write-ready
 uv run republic ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
 uv run republic ops snapshot --archive --history-limit 10 --prune-history
 
@@ -48,10 +49,13 @@ The command also refreshes:
 - `.ai-republic/reports/ops/latest.md`
 - `.ai-republic/reports/ops/history.json`
 - `.ai-republic/reports/ops/history.md`
+- `.ai-republic/reports/ops-status.json`
+- `.ai-republic/reports/ops-status.md`
 
 Use `--prune-history` only for bundle/archive paths managed under `.ai-republic/reports/ops/`. External custom output directories remain indexed but are not deleted by ops history pruning.
 uv run republic sync ls
 uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
+uv run republic sync health --issue 1 --format all
 uv run republic sync check --issue 1
 uv run republic sync repair --issue 1 --dry-run
 uv run republic sync audit --format all
@@ -78,6 +82,7 @@ uv run republic dashboard --format all
 - status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
 - ops status snapshots: `.ai-republic/reports/ops-status.json`, `.ai-republic/reports/ops-status.md`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
+- sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - logs when enabled: `.ai-republic/logs/reporepublic.jsonl`
@@ -89,6 +94,7 @@ uv run republic dashboard --format all
 The dashboard now includes `Sync handoffs` and `Sync retention` sourced from `.ai-republic/sync-applied/**/manifest.json`, an `Ops snapshots` section sourced from `.ai-republic/reports/ops/latest.*` and `history.*`, plus direct `Reports` links for sync audit and cleanup exports under `.ai-republic/reports/`.
 
 Use `republic ops status` when you want the same ops index posture in one CLI/export surface, but with the latest bundle manifest component summaries and recent history preview included directly in the output.
+When `ops-status.json` exists, the dashboard `Reports` section also renders an `Ops status` card and cross-links it to related report exports referenced by the latest bundle. `republic ops snapshot` now writes the same `ops-status.json|md` inside the handoff bundle and refreshes `sync-health.json|md` at the repo root, so both the handoff bundle and dashboard/report surfaces can follow the latest sync posture without a separate command.
 
 Use it when you need to:
 
@@ -109,8 +115,9 @@ uv run republic dashboard --format all
 Before starting live runs:
 
 - confirm `codex --version` and `codex login`
-- confirm `GITHUB_TOKEN` if the tracker is in live GitHub mode
+- confirm `GITHUB_TOKEN` if the tracker is in live GitHub REST mode
 - run `uv run republic doctor`
+- run `uv run republic github smoke --require-write-ready` before enabling unattended live writes
 - if the repo uses `workspace.strategy: worktree`, confirm the target repo is a valid Git work tree
 - inspect `workspace.dirty_policy` before running against a locally modified repository
 
@@ -191,8 +198,9 @@ When a tracker stages publish proposals locally instead of applying them directl
 5. review the archive under `.ai-republic/sync-applied/` and the dashboard `Sync handoffs` / `Sync retention` sections
 6. use `uv run republic clean --sync-applied --dry-run` before pruning old applied handoff groups
    Capture a shareable machine-readable cleanup preview with `--report --report-format all` when the cleanup needs review.
-7. if manifest drift is suspected, run `uv run republic sync check --issue <id>` before `sync repair`
-8. export `uv run republic sync audit --issue <id> --format all` when you need a shareable machine-readable snapshot
+7. use `uv run republic sync health --issue <id> --format all` when you want one combined snapshot before choosing between repair, audit, or cleanup
+8. if manifest drift is suspected, run `uv run republic sync check --issue <id>` before `sync repair`
+9. export `uv run republic sync audit --issue <id> --format all` when you need a narrower shareable audit snapshot
 
 ## Human approval boundary
 

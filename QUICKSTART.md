@@ -90,7 +90,7 @@ cat .ai-republic/reports/ops/history.json
 ```
 
 `ops snapshot` history retention defaults to `cleanup.ops_snapshot_keep_entries`. Add `--prune-history` only when you want RepoRepublic to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`.
-Use `ops status` when you want one CLI/export surface that includes the latest indexed handoff bundle plus recent history without opening the dashboard.
+Use `ops status` when you want one CLI/export surface that includes the latest indexed handoff bundle, recent history, and the latest bundle's linked `sync-health` / `sync-audit` posture without opening the dashboard.
 
 What happens:
 
@@ -138,6 +138,7 @@ Use `uv run republic sync apply --issue 1 --tracker local-markdown --action comm
 Use `uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle` to archive the related branch/PR handoff set in one step.
 The equivalent JSON-inbox flow is `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`.
 Use `uv run republic sync check --issue 1` to inspect applied manifest integrity, and `uv run republic sync repair --issue 1 --dry-run` to preview canonicalization and orphan adoption.
+Use `uv run republic sync health --issue 1 --format all` when you want one combined sync-ops snapshot before drilling into `sync check`, `sync repair`, or `clean`.
 Use `uv run republic clean --sync-applied --dry-run` to preview manifest-aware retention before pruning old applied handoff groups.
 Use `uv run republic dashboard --format all` to review both `Sync handoffs` and `Sync retention`, including prunable groups, prunable bytes, and oldest prunable age.
 
@@ -183,6 +184,7 @@ Then export a token and start polling:
 ```bash
 export GITHUB_TOKEN=...
 uv run republic doctor
+uv run republic github smoke --require-write-ready
 uv run republic run
 ```
 
@@ -203,6 +205,7 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - optional JSONL logs: `.ai-republic/logs/reporepublic.jsonl`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
@@ -217,6 +220,7 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - export cleanup preview/report: `uv run republic clean --sync-applied --dry-run --report --report-format all`
 - inspect applied manifest integrity: `uv run republic sync check --issue 123`
 - preview manifest repair: `uv run republic sync repair --issue 123 --dry-run`
+- export a combined sync-ops snapshot: `uv run republic sync health --issue 123 --format all`
 - export a sync audit bundle: `uv run republic sync audit --format all`
 - regenerate the local dashboard: `uv run republic dashboard`
 - generate a dashboard with timed reload: `uv run republic dashboard --refresh-seconds 30`

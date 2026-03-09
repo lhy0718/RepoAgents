@@ -121,6 +121,9 @@ def build_ops_status_snapshot(
         archive_entry_count=archive_entry_count,
         history_preview_count=len(history_entries),
     )
+    policy = _build_policy_snapshot(loaded)
+    related_reports = _build_related_report_snapshot(latest_bundle)
+    summary["related_report_count"] = related_reports["total"]
     return {
         "meta": {
             "kind": "ops_status",
@@ -130,6 +133,7 @@ def build_ops_status_snapshot(
             "history_preview_limit": max(1, history_preview_limit),
         },
         "summary": summary,
+        "policy": policy,
         "index": {
             "status": index_status,
             "latest_json_path": str(latest_json) if latest_json.exists() else None,
@@ -140,6 +144,7 @@ def build_ops_status_snapshot(
         "latest": latest_entry,
         "history": history_entries,
         "latest_bundle": latest_bundle,
+        "related_reports": related_reports,
     }
 
 
@@ -164,10 +169,12 @@ def render_ops_status_json(snapshot: dict[str, Any]) -> str:
 def render_ops_status_markdown(snapshot: dict[str, Any]) -> str:
     meta = _mapping(snapshot, "meta")
     summary = _mapping(snapshot, "summary")
+    policy = _mapping(snapshot, "policy")
     index = _mapping(snapshot, "index")
     latest = _mapping(snapshot, "latest")
     history = _list(snapshot.get("history"))
     latest_bundle = _mapping(snapshot, "latest_bundle")
+    related_reports = _mapping(snapshot, "related_reports")
 
     lines = [
         "# Ops snapshot status",
@@ -189,6 +196,11 @@ def render_ops_status_markdown(snapshot: dict[str, Any]) -> str:
         f"- archive_entry_count: {summary.get('archive_entry_count', 0)}",
         f"- latest_entry_id: {summary.get('latest_entry_id', '-')}",
         f"- latest_overall_status: {summary.get('latest_overall_status', '-')}",
+        f"- related_report_count: {summary.get('related_report_count', 0)}",
+        "",
+        "## Policy",
+        f"- summary: {policy.get('summary', '-')}",
+        f"- thresholds: {_format_scalar(_mapping(policy, 'report_freshness_policy'))}",
         "",
         "## Index files",
         f"- latest_json_path: {index.get('latest_json_path', '-')}",
@@ -256,6 +268,25 @@ def render_ops_status_markdown(snapshot: dict[str, Any]) -> str:
                     f"- {entry.get('source', '-')} -> {entry.get('target', '-')}",
                     f"  - status: {entry.get('status', '-')}",
                     f"  - reason: {entry.get('reason', '-')}",
+                ]
+            )
+
+    lines.extend(["", "## Related reports"])
+    related_entries = [
+        entry
+        for entry in _list(related_reports.get("entries"))
+        if isinstance(entry, dict)
+    ]
+    if not related_entries:
+        lines.append("- none")
+    else:
+        for entry in related_entries:
+            lines.extend(
+                [
+                    f"- {entry.get('label', entry.get('key', 'related'))}",
+                    f"  - key: {entry.get('key', '-')}",
+                    f"  - status: {entry.get('status', '-')}",
+                    f"  - warning: {entry.get('warning', '-')}",
                 ]
             )
 
@@ -380,6 +411,59 @@ def _build_ops_status_summary(
         "archive_entry_count": archive_entry_count,
         "latest_entry_id": latest_entry.get("entry_id"),
         "latest_overall_status": latest_entry.get("overall_status"),
+    }
+
+
+def _build_policy_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
+    policy = loaded.data.dashboard.report_freshness_policy
+    thresholds = {
+        "unknown_issues_threshold": policy.unknown_issues_threshold,
+        "stale_issues_threshold": policy.stale_issues_threshold,
+        "future_attention_threshold": policy.future_attention_threshold,
+        "aging_attention_threshold": policy.aging_attention_threshold,
+    }
+    return {
+        "summary": (
+            f"unknown>={policy.unknown_issues_threshold} "
+            f"stale>={policy.stale_issues_threshold} "
+            f"future>={policy.future_attention_threshold} "
+            f"aging>={policy.aging_attention_threshold}"
+        ),
+        "report_freshness_policy": thresholds,
+    }
+
+
+def _build_related_report_snapshot(latest_bundle: dict[str, Any]) -> dict[str, Any]:
+    relation_map = {
+        "sync_audit": ("sync-audit", "Sync audit"),
+        "sync_health": ("sync-health", "Sync health"),
+        "cleanup_preview": ("cleanup-preview", "Cleanup preview"),
+        "cleanup_result": ("cleanup-result", "Cleanup result"),
+    }
+    entries: list[dict[str, Any]] = []
+    for component in _list(latest_bundle.get("components")):
+        if not isinstance(component, dict):
+            continue
+        key = _string_or_none(component.get("key"))
+        mapped = relation_map.get(key) if key else None
+        if mapped is None:
+            continue
+        report_key, label = mapped
+        status = _string_or_none(component.get("status")) or "unknown"
+        warning = None
+        if status in {"attention", "issues"}:
+            warning = f"latest bundle component status is {status}"
+        entries.append(
+            {
+                "key": report_key,
+                "label": label,
+                "status": status,
+                "warning": warning,
+            }
+        )
+    return {
+        "total": len(entries),
+        "entries": entries,
     }
 
 

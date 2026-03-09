@@ -11,7 +11,7 @@ import yaml
 
 from reporepublic.cli.app import app
 from reporepublic.config import load_config
-from reporepublic.models import ExternalActionResult, RunLifecycle, RunRecord
+from reporepublic.models import ExternalActionResult, IssueComment, IssueRef, RunLifecycle, RunRecord
 from reporepublic.models.domain import utc_now
 from reporepublic.orchestrator import RunStateStore
 from reporepublic.sync_audit import SyncAuditBuildResult
@@ -520,6 +520,10 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
+    monkeypatch.setattr(
+        "reporepublic.ops_status.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
 
     store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
     store.upsert(
@@ -543,18 +547,59 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
 
     manifest_json = output_dir / "bundle.json"
     manifest_markdown = output_dir / "bundle.md"
+    bundle_ops_status_json = output_dir / "ops-status.json"
+    bundle_ops_status_markdown = output_dir / "ops-status.md"
+    bundle_sync_health_json = output_dir / "sync-health.json"
+    bundle_sync_health_markdown = output_dir / "sync-health.md"
+    ops_status_json = demo_repo / ".ai-republic" / "reports" / "ops-status.json"
+    ops_status_markdown = demo_repo / ".ai-republic" / "reports" / "ops-status.md"
+    sync_health_json = demo_repo / ".ai-republic" / "reports" / "sync-health.json"
+    sync_health_markdown = demo_repo / ".ai-republic" / "reports" / "sync-health.md"
     payload = json.loads(manifest_json.read_text(encoding="utf-8"))
+    ops_status_payload = json.loads(ops_status_json.read_text(encoding="utf-8"))
+    sync_health_payload = json.loads(sync_health_json.read_text(encoding="utf-8"))
+    bundle_pairs = {(entry["source"], entry["target"]) for entry in payload["cross_links"]}
 
     assert result.exit_code == 0
     assert "Ops snapshot bundle:" in result.stdout
     assert f"- bundle_dir: {output_dir}" in result.stdout
+    assert f"- bundle_sync_health_json: {bundle_sync_health_json}" in result.stdout
+    assert f"- bundle_sync_health_markdown: {bundle_sync_health_markdown}" in result.stdout
+    assert f"- root_sync_health_json: {sync_health_json}" in result.stdout
+    assert f"- root_sync_health_markdown: {sync_health_markdown}" in result.stdout
+    assert f"- ops_status_json: {bundle_ops_status_json}" in result.stdout
+    assert f"- ops_status_markdown: {bundle_ops_status_markdown}" in result.stdout
+    assert f"- root_ops_status_json: {ops_status_json}" in result.stdout
+    assert f"- root_ops_status_markdown: {ops_status_markdown}" in result.stdout
     assert manifest_json.exists()
     assert manifest_markdown.exists()
+    assert bundle_sync_health_json.exists()
+    assert bundle_sync_health_markdown.exists()
+    assert bundle_ops_status_json.exists()
+    assert bundle_ops_status_markdown.exists()
+    assert sync_health_json.exists()
+    assert sync_health_markdown.exists()
+    assert ops_status_json.exists()
+    assert ops_status_markdown.exists()
     assert payload["summary"]["overall_status"] == "clean"
     assert payload["components"]["doctor"]["status"] == "clean"
     assert payload["components"]["status"]["selected_runs"] == 1
     assert payload["components"]["dashboard"]["output_paths"]["html"].endswith("dashboard.html")
     assert payload["components"]["sync_audit"]["status"] == "clean"
+    assert payload["components"]["sync_health"]["output_paths"]["json"].endswith("sync-health.json")
+    assert payload["components"]["sync_health"]["next_action_count"] == 0
+    assert payload["components"]["ops_status"]["output_paths"]["json"].endswith("ops-status.json")
+    assert payload["components"]["ops_status"]["related_report_count"] == 2
+    assert ("sync_health", "sync_audit") in bundle_pairs
+    assert ("sync_audit", "sync_health") in bundle_pairs
+    assert ("ops_status", "sync_audit") in bundle_pairs
+    assert ("sync_audit", "ops_status") in bundle_pairs
+    assert sync_health_payload["summary"]["pending_artifacts"] == 0
+    assert sync_health_payload["summary"]["next_actions"] == []
+    assert ops_status_payload["latest"]["entry_id"] == output_dir.name
+    assert ops_status_payload["latest_bundle"]["component_count"] == 6
+    assert ops_status_payload["related_reports"]["entries"][0]["key"] == "sync-audit"
+    assert ops_status_payload["related_reports"]["entries"][1]["key"] == "sync-health"
 
 
 def test_cli_ops_snapshot_returns_non_zero_when_sync_audit_has_issues(demo_repo: Path, monkeypatch) -> None:
@@ -829,6 +874,119 @@ def test_cli_ops_status_exports_json_and_markdown(
     assert "# Ops snapshot status" in markdown
     assert "## Latest bundle manifest" in markdown
     assert "## History preview" in markdown
+
+
+def test_cli_github_smoke_exports_json_and_markdown(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
+        encoding="utf-8",
+    )
+
+    class FakeTracker:
+        async def get_repo_info(self) -> dict[str, object]:
+            return {
+                "full_name": "demo/repo",
+                "default_branch": "main",
+                "private": False,
+                "permissions": {"pull": True, "push": False},
+            }
+
+        async def list_open_issues(self) -> list[IssueRef]:
+            return [
+                IssueRef.model_validate(
+                    {
+                        "id": 1,
+                        "number": 1,
+                        "title": "Fix empty input crash",
+                        "labels": ["bug"],
+                    }
+                )
+            ]
+
+        async def get_issue(self, issue_id: int) -> IssueRef:
+            return IssueRef.model_validate(
+                {
+                    "id": issue_id,
+                    "number": issue_id,
+                    "title": "Fix empty input crash",
+                    "labels": ["bug"],
+                    "comments": [
+                        IssueComment.model_validate(
+                            {"author": "demo", "body": "please fix"}
+                        )
+                    ],
+                }
+            )
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(app_module, "build_tracker", lambda loaded, dry_run=False: FakeTracker())
+
+    result = runner.invoke(
+        app,
+        ["github", "smoke", "--issue", "1", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    report_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
+    report_markdown = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.md"
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert "GitHub smoke exports:" in result.stdout
+    assert "GitHub smoke summary: status=clean open_issues=1 sampled_issue=1" in result.stdout
+    assert report_json.exists()
+    assert report_markdown.exists()
+    assert payload["summary"]["status"] == "clean"
+    assert payload["repo_access"]["full_name"] == "demo/repo"
+    assert payload["sampled_issue"]["comment_count"] == 1
+    assert "# GitHub smoke report" in report_markdown.read_text(encoding="utf-8")
+
+
+def test_cli_github_smoke_requires_write_ready_when_requested(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        .replace("mode: fixture", "mode: rest")
+        .replace("allow_open_pr: false", "allow_open_pr: true"),
+        encoding="utf-8",
+    )
+
+    class FakeTracker:
+        async def get_repo_info(self) -> dict[str, object]:
+            return {"full_name": "demo/repo", "default_branch": "main", "private": False}
+
+        async def list_open_issues(self) -> list[IssueRef]:
+            return []
+
+        async def get_issue(self, issue_id: int) -> IssueRef:
+            raise AssertionError("get_issue should not be called")
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(app_module, "build_tracker", lambda loaded, dry_run=False: FakeTracker())
+
+    result = runner.invoke(
+        app,
+        ["github", "smoke", "--require-write-ready"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "publish readiness: warn" in result.stdout.lower()
 
 
 def test_cli_ops_snapshot_can_prune_managed_history_entries(
@@ -2194,6 +2352,209 @@ def test_cli_sync_audit_reports_cleanup_issue_filter_mismatch(demo_repo: Path, m
     assert "issue_filter=3 does not match audit issue_filter=7" in markdown
 
 
+def test_cli_sync_health_writes_default_reports_and_summarizes_pipeline(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    pending_dir = loaded.sync_dir / "local-file" / "issue-1"
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    (pending_dir / "20260308T020101000001Z-comment.md").write_text(
+        "---\nissue_id: 1\nstaged_at: 20260308T020101000001Z\n---\n\nPending maintainer note.\n",
+        encoding="utf-8",
+    )
+    applied_root = loaded.sync_applied_dir / "local-file" / "issue-1"
+    applied_root.mkdir(parents=True, exist_ok=True)
+    (applied_root / "20260308T030101000001Z-comment.md").write_text(
+        "---\nissue_id: 1\n---\n\nOrphan archive.\n",
+        encoding="utf-8",
+    )
+    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    workspace_path = loaded.workspace_root / "issue-1" / "run-stale" / "repo"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    artifact_dir = loaded.artifacts_dir / "issue-1" / "run-stale"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    store.upsert(
+        RunRecord(
+            run_id="run-stale",
+            issue_id=1,
+            issue_title="Fix empty input crash",
+            fingerprint="fp-stale",
+            status=RunLifecycle.COMPLETED,
+            workspace_path=str(workspace_path),
+            summary="completed",
+        )
+    )
+
+    result = runner.invoke(app, ["sync", "health", "--issue", "1", "--format", "all"], catch_exceptions=False)
+    report_json = demo_repo / ".ai-republic" / "reports" / "sync-health.json"
+    report_markdown = demo_repo / ".ai-republic" / "reports" / "sync-health.md"
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+    markdown = report_markdown.read_text(encoding="utf-8")
+
+    assert result.exit_code == 1
+    assert "Sync health exports:" in result.stdout
+    assert "Sync health summary: status=issues pending=1 integrity_issues=1" in result.stdout
+    assert "Next actions:" in result.stdout
+    assert report_json.exists()
+    assert report_markdown.exists()
+    assert payload["summary"]["overall_status"] == "issues"
+    assert payload["summary"]["pending_artifacts"] == 1
+    assert payload["summary"]["integrity_issue_count"] == 1
+    assert payload["summary"]["cleanup_action_count"] == 2
+    assert payload["repair_preview"]["summary"]["changed_reports"] == 1
+    assert payload["cleanup_preview"]["summary"]["action_count"] == 2
+    assert any(
+        "republic clean --sync-applied --dry-run --report" in item
+        for item in payload["summary"]["next_actions"]
+    )
+    assert "# RepoRepublic Sync Health" in markdown
+    assert "## Next actions" in markdown
+    assert "## Sync repair preview" in markdown
+
+
+def test_cli_sync_health_can_print_related_report_details(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_repo)
+    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "\n"
+        + "\n".join(
+            [
+                "dashboard:",
+                "  report_freshness_policy:",
+                "    unknown_issues_threshold: 2",
+                "    stale_issues_threshold: 2",
+                "    future_attention_threshold: 2",
+                "    aging_attention_threshold: 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "cleanup-preview.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-08T05:00:00+00:00"},
+                "policy": {
+                    "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+                    "report_freshness_policy": {
+                        "unknown_issues_threshold": 1,
+                        "stale_issues_threshold": 1,
+                        "future_attention_threshold": 1,
+                        "aging_attention_threshold": 1,
+                    },
+                },
+                "summary": {
+                    "overall_status": "preview",
+                    "action_count": 1,
+                    "affected_issue_count": 1,
+                    "sync_applied_action_count": 1,
+                    "related_sync_audit_reports": 0,
+                    "sync_audit_issue_filter_mismatches": 0,
+                    "sync_audit_policy_drifts": 0,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "cleanup-preview.md").write_text("# Cleanup preview\n", encoding="utf-8")
+    (reports_dir / "cleanup-result.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-08T05:10:00+00:00", "issue_filter": 3},
+                "policy": {
+                    "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+                    "report_freshness_policy": {
+                        "unknown_issues_threshold": 1,
+                        "stale_issues_threshold": 1,
+                        "future_attention_threshold": 1,
+                        "aging_attention_threshold": 1,
+                    },
+                },
+                "summary": {
+                    "overall_status": "cleaned",
+                    "action_count": 1,
+                    "affected_issue_count": 1,
+                    "sync_applied_action_count": 1,
+                    "related_sync_audit_reports": 0,
+                    "sync_audit_issue_filter_mismatches": 0,
+                    "sync_audit_policy_drifts": 0,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "cleanup-result.md").write_text("# Cleanup result\n", encoding="utf-8")
+    (reports_dir / "sync-audit.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-08T05:00:00+00:00"},
+                "policy": {
+                    "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
+                    "report_freshness_policy": {
+                        "unknown_issues_threshold": 1,
+                        "stale_issues_threshold": 1,
+                        "future_attention_threshold": 1,
+                        "aging_attention_threshold": 1,
+                    },
+                },
+                "summary": {
+                    "overall_status": "attention",
+                    "pending_artifacts": 1,
+                    "integrity_issue_count": 0,
+                    "prunable_groups": 1,
+                    "repair_needed_issues": 0,
+                    "related_cleanup_reports": 0,
+                    "cleanup_report_mismatches": 0,
+                    "related_cleanup_policy_drifts": 0,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "sync-audit.md").write_text("# Sync audit\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["sync", "health", "--issue", "1", "--show-mismatches", "--show-remediation"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Sync health:" in result.stdout
+    assert "- overall_status: attention" in result.stdout
+    assert "Related cleanup details:" in result.stdout
+    assert "Related sync audit details:" in result.stdout
+    assert "  mismatches:" in result.stdout
+    assert "  policy_drifts:" in result.stdout
+    assert (
+        "    - Cleanup result: cleanup report issue_filter=3 does not match audit issue_filter=1"
+        in result.stdout
+    )
+    assert (
+        "    - Cleanup preview: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
+        in result.stdout
+    )
+    assert (
+        "    - Sync audit: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
+        in result.stdout
+    )
+    assert "  remediation: refresh raw report exports to align embedded policy metadata;" in result.stdout
+
+
 def test_cli_sync_audit_can_print_cleanup_mismatch_details(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     _write_cleanup_reports_for_sync_audit(
@@ -2633,7 +2994,7 @@ def test_cli_doctor_reports_drift_and_hints(demo_git_repo: Path, monkeypatch) ->
     monkeypatch.setattr(
         app_module,
         "_probe_github_auth",
-        lambda loaded: app_module.DiagnosticCheck(
+        lambda loaded, auth_snapshot=None: app_module.DiagnosticCheck(
             name="GitHub auth",
             status="WARN",
             message="GITHUB_TOKEN is not set",
@@ -2648,6 +3009,16 @@ def test_cli_doctor_reports_drift_and_hints(demo_git_repo: Path, monkeypatch) ->
             status="WARN",
             message="could not reach https://api.github.com/rate_limit",
             hint="Check network connectivity.",
+        ),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_repo_access",
+        lambda loaded, auth_snapshot=None: app_module.DiagnosticCheck(
+            name="GitHub repo access",
+            status="WARN",
+            message="demo/repo metadata probe was skipped in test",
+            hint="Set GITHUB_TOKEN for a live repo metadata probe.",
         ),
     )
 
@@ -2704,6 +3075,52 @@ def test_cli_doctor_warns_on_relaxed_report_freshness_policy(demo_repo: Path, mo
         "hint: Dashboard report health may stay below `issues` until several stale or "
         "unknown reports accumulate."
     ) in result.stdout
+
+
+def test_cli_doctor_reports_github_publish_readiness_warning(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        .replace("mode: fixture", "mode: rest")
+        .replace("allow_open_pr: false", "allow_open_pr: true"),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
+    monkeypatch.setattr(
+        app_module.shutil,
+        "which",
+        lambda command: None if command == "gh" else f"/opt/test/{command}",
+    )
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_network",
+        lambda loaded: app_module.DiagnosticCheck(
+            name="GitHub network",
+            status="OK",
+            message="https://api.github.com/rate_limit reachable (status 200)",
+        ),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_repo_access",
+        lambda loaded, auth_snapshot=None: app_module.DiagnosticCheck(
+            name="GitHub repo access",
+            status="OK",
+            message="demo/repo reachable (public; default_branch=main)",
+        ),
+    )
+
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "GitHub publish readiness: WARN (" in result.stdout
+    assert "git remote origin is not configured" in result.stdout
 
 
 def test_cli_doctor_warns_on_report_policy_export_mismatch(demo_repo: Path, monkeypatch) -> None:

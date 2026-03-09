@@ -9,6 +9,7 @@ import yaml
 from reporepublic.config import load_config
 from reporepublic.dashboard import build_dashboard
 from reporepublic.models import ExternalActionResult, RunLifecycle, RunRecord
+from reporepublic.ops_status import build_ops_status_exports, build_ops_status_snapshot
 from reporepublic.orchestrator import RunStateStore
 
 
@@ -500,6 +501,92 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     assert "- dropped_entry_count: 1" in markdown
     assert "  - entry_id: 20260309T101500Z" in markdown
     assert "  - 20260309T101500Z: status=clean" in markdown
+
+
+def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+    _write_ops_snapshot_index(demo_repo)
+    monkeypatch.setattr(
+        "reporepublic.ops_status.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
+    build_ops_status_exports(
+        snapshot=build_ops_status_snapshot(loaded=loaded, history_preview_limit=2),
+        output_path=loaded.reports_dir / "ops-status.json",
+        formats=("json", "markdown"),
+    )
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    ops_status_entry = next(
+        entry for entry in payload["reports"]["entries"] if entry["key"] == "ops-status"
+    )
+
+    assert "Ops status" in html
+    assert "report-ops-status" in html
+    assert payload["reports"]["total"] == 3
+    assert ops_status_entry["status"] == "clean"
+    assert ops_status_entry["metrics"]["related_report_count"] == 1
+    assert ops_status_entry["details"]["latest_bundle_component_count"] == 4
+    assert ops_status_entry["related_cards"][0]["key"] == "sync-audit"
+    assert "### Ops status" in markdown
+    assert "- related_cards: Sync audit" in markdown
+
+
+def test_build_dashboard_surfaces_sync_health_report_and_relations(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+    _write_sync_health_report(demo_repo)
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    sync_health_entry = next(
+        entry for entry in payload["reports"]["entries"] if entry["key"] == "sync-health"
+    )
+
+    assert "Sync health" in html
+    assert "report-sync-health" in html
+    assert sync_health_entry["status"] == "attention"
+    assert sync_health_entry["summary"] == "pending=2 integrity_issues=1 cleanup_actions=3"
+    assert sync_health_entry["metrics"]["repair_changed_reports"] == 1
+    assert sync_health_entry["metrics"]["related_report_mismatches"] == 1
+    assert sync_health_entry["details"]["cleanup_related_report_count"] == 2
+    assert sync_health_entry["details"]["sync_audit_related_report_count"] == 1
+    assert sync_health_entry["related_cards"][0]["key"] == "cleanup-preview"
+    assert sync_health_entry["related_cards"][1]["key"] == "cleanup-result"
+    assert sync_health_entry["related_cards"][2]["key"] == "sync-audit"
+    assert "### Sync health" in markdown
+    assert "- related_cards: Cleanup preview, Cleanup result, Sync audit" in markdown
+    assert "Cleanup preview: cleanup report issue_filter=9 does not match audit issue_filter=7" in markdown
 
 
 def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path) -> None:
@@ -1048,9 +1135,204 @@ def _write_dashboard_reports(repo_root: Path) -> None:
     (reports_dir / "cleanup-preview.md").write_text("# Cleanup preview\n", encoding="utf-8")
 
 
+def _write_sync_health_report(repo_root: Path) -> None:
+    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "sync-health.json").write_text(
+        json.dumps(
+            {
+                "meta": {"rendered_at": "2026-03-09T02:30:00+00:00"},
+                "summary": {
+                    "overall_status": "attention",
+                    "pending_artifacts": 2,
+                    "integrity_issue_count": 1,
+                    "repair_changed_reports": 1,
+                    "repair_findings_after": 0,
+                    "cleanup_action_count": 3,
+                    "cleanup_sync_applied_action_count": 2,
+                    "prunable_groups": 1,
+                    "repair_needed_issues": 1,
+                    "related_cleanup_reports": 2,
+                    "related_sync_audit_reports": 1,
+                    "related_report_mismatches": 1,
+                    "related_report_policy_drifts": 1,
+                    "next_actions": [
+                        "Run republic sync repair --dry-run --issue 7",
+                        "Review cleanup preview before pruning",
+                    ],
+                },
+                "related_reports": {
+                    "cleanup_reports": {
+                        "total_reports": 2,
+                        "mismatch_reports": 1,
+                        "policy_drift_reports": 1,
+                        "mismatches": [
+                            {
+                                "label": "Cleanup preview",
+                                "warning": "cleanup report issue_filter=9 does not match audit issue_filter=7",
+                            }
+                        ],
+                        "policy_drifts": [
+                            {
+                                "label": "Cleanup result",
+                                "warning": "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)",
+                            }
+                        ],
+                        "detail_summary": "Cleanup preview: cleanup report issue_filter=9 does not match audit issue_filter=7\nCleanup result: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)",
+                    },
+                    "sync_audit_reports": {
+                        "total_reports": 1,
+                        "mismatch_reports": 0,
+                        "policy_drift_reports": 1,
+                        "mismatches": [],
+                        "policy_drifts": [
+                            {
+                                "label": "Sync audit",
+                                "warning": "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)",
+                            }
+                        ],
+                        "detail_summary": "Sync audit: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)",
+                    },
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "sync-health.md").write_text("# Sync health\n", encoding="utf-8")
+
+
 def _write_ops_snapshot_index(repo_root: Path) -> None:
     ops_root = repo_root / ".ai-republic" / "reports" / "ops"
     ops_root.mkdir(parents=True, exist_ok=True)
+    latest_bundle_dir = ops_root / "20260309T101500Z"
+    previous_bundle_dir = ops_root / "20260309T100000Z"
+    latest_bundle_dir.mkdir(parents=True, exist_ok=True)
+    previous_bundle_dir.mkdir(parents=True, exist_ok=True)
+    latest_bundle_manifest = {
+        "meta": {
+            "rendered_at": "2026-03-09T10:15:00+00:00",
+            "repo_root": str(repo_root),
+            "bundle_dir": str(latest_bundle_dir),
+            "issue_filter": 1,
+            "tracker_filter": "local-file",
+        },
+        "summary": {
+            "overall_status": "clean",
+            "component_statuses": {
+                "dashboard": "clean",
+                "doctor": "clean",
+                "status": "clean",
+                "sync_audit": "attention",
+            },
+        },
+        "components": {
+            "dashboard": {
+                "status": "clean",
+                "output_paths": {
+                    "html": str(latest_bundle_dir / "dashboard.html"),
+                    "json": str(latest_bundle_dir / "dashboard.json"),
+                },
+                "total_runs": 4,
+                "visible_runs": 4,
+                "report_health_severity": "attention",
+                "available_reports": 3,
+            },
+            "doctor": {
+                "status": "clean",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "doctor.json"),
+                    "markdown": str(latest_bundle_dir / "doctor.md"),
+                },
+                "diagnostic_count": 5,
+                "exit_code": 0,
+            },
+            "status": {
+                "status": "clean",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "status.json"),
+                    "markdown": str(latest_bundle_dir / "status.md"),
+                },
+                "total_runs": 4,
+                "selected_runs": 2,
+                "report_health_severity": "attention",
+            },
+            "sync_audit": {
+                "status": "attention",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "sync-audit.json"),
+                    "markdown": str(latest_bundle_dir / "sync-audit.md"),
+                },
+                "overall_status": "attention",
+                "pending_artifacts": 1,
+                "integrity_issue_count": 1,
+                "prunable_groups": 0,
+                "related_cleanup_reports": 1,
+            },
+        },
+        "cross_links": [
+            {
+                "source": "sync_audit",
+                "target": "cleanup_preview",
+                "status": "attention",
+                "reason": "paired in ops snapshot bundle",
+            },
+            {
+                "source": "cleanup_preview",
+                "target": "sync_audit",
+                "status": "attention",
+                "reason": "paired in ops snapshot bundle",
+            },
+        ],
+    }
+    previous_bundle_manifest = {
+        "meta": {
+            "rendered_at": "2026-03-09T10:00:00+00:00",
+            "repo_root": str(repo_root),
+            "bundle_dir": str(previous_bundle_dir),
+            "issue_filter": None,
+            "tracker_filter": None,
+        },
+        "summary": {
+            "overall_status": "issues",
+            "component_statuses": {
+                "dashboard": "issues",
+                "doctor": "clean",
+            },
+        },
+        "components": {
+            "dashboard": {
+                "status": "issues",
+                "output_paths": {
+                    "html": str(previous_bundle_dir / "dashboard.html"),
+                },
+                "total_runs": 2,
+                "visible_runs": 2,
+                "report_health_severity": "issues",
+                "available_reports": 2,
+            },
+            "doctor": {
+                "status": "clean",
+                "output_paths": {
+                    "json": str(previous_bundle_dir / "doctor.json"),
+                },
+                "diagnostic_count": 3,
+                "exit_code": 0,
+            },
+        },
+        "cross_links": [],
+    }
+    (latest_bundle_dir / "bundle.json").write_text(
+        json.dumps(latest_bundle_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (latest_bundle_dir / "bundle.md").write_text("# Latest bundle\n", encoding="utf-8")
+    (previous_bundle_dir / "bundle.json").write_text(
+        json.dumps(previous_bundle_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (previous_bundle_dir / "bundle.md").write_text("# Previous bundle\n", encoding="utf-8")
     latest_payload = {
         "meta": {
             "generated_at": "2026-03-09T10:16:00+00:00",

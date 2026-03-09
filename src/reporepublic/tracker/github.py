@@ -83,6 +83,20 @@ class GitHubTracker(Tracker):
         issue.comments = [self._parse_comment(item) for item in comments_response.json()]
         return issue
 
+    async def get_repo_info(self) -> dict[str, Any]:
+        if self.mode == TrackerMode.FIXTURE:
+            return {
+                "full_name": self.repo,
+                "default_branch": None,
+                "private": None,
+                "permissions": {},
+            }
+        response = await self._request("GET", f"/repos/{self.repo}")
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
     async def post_comment(self, issue_id: int, body: str) -> ExternalActionResult:
         if self.dry_run:
             return ExternalActionResult(

@@ -185,6 +185,7 @@ For staged local publish proposals:
 - `uv run republic sync ls --issue 1`
 - `uv run republic sync check --issue 1`
 - `uv run republic sync repair --issue 1 --dry-run`
+- `uv run republic sync health --issue 1 --format all`
 - `uv run republic sync audit --format all`
 - `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`
 - `uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest`
@@ -265,6 +266,9 @@ republic dashboard --format all
 republic ops snapshot --archive
 republic ops status
 republic ops status --format all
+republic github smoke
+republic github smoke --format all
+republic sync health --issue 123 --format all
 ```
 
 Helpful flags:
@@ -283,11 +287,13 @@ Helpful flags:
 - `republic clean --sync-applied --dry-run --report --report-format all` exports machine-readable cleanup previews under `.ai-republic/reports/` and summarizes linked sync-audit drift counts in CLI output. Add `--show-remediation` to print the re-export guidance inline, or `--show-mismatches` to print linked sync-audit issue-filter mismatch warnings inline. When both flags are set, the CLI groups drift and mismatch details into one related-report block.
 - `republic sync check` reports applied manifest integrity problems such as dangling entries, duplicate keys, and orphan archives.
 - `republic sync repair --dry-run` previews manifest reconstruction and orphan adoption before writing.
+- `republic sync health --format all` exports one combined operator snapshot for pending staged artifacts, applied manifest integrity, repair preview, cleanup preview, and linked raw report posture under `.ai-republic/reports/sync-health.json|md`. Add `--show-remediation` and `--show-mismatches` to print the same related-report detail blocks inline.
 - `republic sync audit --format all` exports JSON and Markdown sync audit reports under `.ai-republic/reports/`, links matching cleanup preview/result exports, warns when a cleanup report was generated for a different `issue_filter`, records `policy_alignment` metadata for those related cleanup exports directly inside the raw report, adds a plain-text `related_reports.detail_summary` block for mismatch/drift/remediation reuse, and summarizes linked cleanup policy drift counts in CLI output. Add `--show-remediation` to print the same guidance inline, or `--show-mismatches` to print linked cleanup issue-filter mismatch warnings inline. When both flags are set, the CLI groups drift and mismatch details into one related-report block.
-- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, the HTML `Cross references` panel exposes the same `mismatches / policy drifts / remediation` semantics directly, and the JSON export now carries a ready-to-display `related_report_detail_summary` string for each report entry.
+- `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, the HTML `Cross references` panel exposes the same `mismatches / policy drifts / remediation` semantics directly, and the JSON export now carries a ready-to-display `related_report_detail_summary` string for each report entry. When `.ai-republic/reports/ops-status.json` exists, the `Reports` section also renders an `Ops status` card that cross-links the latest ops handoff posture with report exports such as `sync-audit`.
 - `republic dashboard --format all` exports HTML, JSON, and Markdown snapshots together. The Markdown snapshot now mirrors the CLI related-report detail block too, so mismatch warnings, related policy drifts, and remediation guidance read the same way in shared exports.
-- `republic ops snapshot` exports one incident-ready bundle directory with `doctor`, `status`, `dashboard`, `sync-audit`, and `bundle.json` / `bundle.md` manifests. Add `--include-cleanup-preview` to generate a cleanup preview inside the bundle, `--include-cleanup-result` to copy the latest existing cleanup result, `--include-sync-check` to add a dedicated applied-manifest integrity snapshot, `--include-sync-repair-preview` to add a dry-run repair preview, and `--archive` to pack the completed handoff into a `.tar.gz` file with checksum output. Every run also refreshes `.ai-republic/reports/ops/latest.json|md` and `.ai-republic/reports/ops/history.json|md` so automation can find the newest handoff even when the bundle directory lives elsewhere. Use `--history-limit` to cap retained index entries for one run, and `--prune-history` to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`. Repo default retention lives in `cleanup.ops_snapshot_keep_entries` and `cleanup.ops_snapshot_prune_managed`.
+- `republic ops snapshot` exports one incident-ready bundle directory with `doctor`, `status`, `dashboard`, `sync-audit`, bundle-local `sync-health`, bundle-local `ops-status`, and `bundle.json` / `bundle.md` manifests. Add `--include-cleanup-preview` to generate a cleanup preview inside the bundle, `--include-cleanup-result` to copy the latest existing cleanup result, `--include-sync-check` to add a dedicated applied-manifest integrity snapshot, `--include-sync-repair-preview` to add a dry-run repair preview, and `--archive` to pack the completed handoff into a `.tar.gz` file with checksum output. Every run also refreshes `.ai-republic/reports/ops/latest.json|md`, `.ai-republic/reports/ops/history.json|md`, `.ai-republic/reports/ops-status.json|md`, and `.ai-republic/reports/sync-health.json|md` so automation and dashboard/report surfaces can find the newest handoff from one place even when the bundle directory lives elsewhere. Use `--history-limit` to cap retained index entries for one run, and `--prune-history` to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`. Repo default retention lives in `cleanup.ops_snapshot_keep_entries` and `cleanup.ops_snapshot_prune_managed`.
 - `republic ops status` reads `.ai-republic/reports/ops/latest.*`, `.ai-republic/reports/ops/history.*`, and the latest indexed `bundle.json` to print one operator-facing summary for handoff posture, latest bundle health, component summaries, and recent history. `republic ops status --format all` exports the same snapshot to `.ai-republic/reports/ops-status.json` and `.ai-republic/reports/ops-status.md`.
+- `republic github smoke` probes live GitHub REST readiness against `tracker.repo`, samples open issues, and reports publish preflight posture for comment and draft-PR writes. In REST mode, `GITHUB_TOKEN` is the real requirement; `gh auth` alone is not enough for RepoRepublic's API calls.
 
 </details>
 

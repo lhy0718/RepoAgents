@@ -223,6 +223,7 @@ def build_ops_snapshot_index(
     bundle_result: OpsSnapshotBundleResult,
     archive_result: OpsSnapshotArchiveResult | None = None,
     history_limit: int = OPS_SNAPSHOT_HISTORY_LIMIT,
+    additional_dropped_entries: tuple[dict[str, Any], ...] = (),
 ) -> OpsSnapshotIndexResult:
     resolved_ops_root = ops_root.resolve()
     resolved_ops_root.mkdir(parents=True, exist_ok=True)
@@ -246,7 +247,10 @@ def build_ops_snapshot_index(
     bounded_limit = max(1, history_limit)
     combined_entries = [entry, *filtered_entries]
     entries = combined_entries[:bounded_limit]
-    dropped_entries = tuple(item for item in combined_entries[bounded_limit:] if isinstance(item, dict))
+    dropped_entries = _merge_ops_snapshot_dropped_entries(
+        additional_dropped_entries,
+        tuple(item for item in combined_entries[bounded_limit:] if isinstance(item, dict)),
+    )
     latest_payload = {
         "meta": {
             "generated_at": utc_now().isoformat(),
@@ -281,6 +285,24 @@ def build_ops_snapshot_index(
         entry_count=len(entries),
         dropped_entries=dropped_entries,
     )
+
+
+def _merge_ops_snapshot_dropped_entries(
+    *entry_groups: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    merged: list[dict[str, Any]] = []
+    seen_entry_ids: set[str] = set()
+    for entries in entry_groups:
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_id = entry.get("entry_id")
+            if isinstance(entry_id, str) and entry_id:
+                if entry_id in seen_entry_ids:
+                    continue
+                seen_entry_ids.add(entry_id)
+            merged.append(entry)
+    return tuple(merged)
 
 
 def prune_ops_snapshot_history(
@@ -390,14 +412,21 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
             "pending_artifacts",
             "integrity_issue_count",
             "prunable_groups",
+            "repair_needed_issues",
             "related_cleanup_reports",
+            "related_report_mismatches",
+            "related_report_policy_drifts",
             "mode",
             "action_count",
+            "cleanup_action_count",
+            "cleanup_sync_applied_action_count",
             "report_count",
             "issues_with_findings",
             "total_findings",
             "changed_reports",
             "unchanged_reports",
+            "repair_changed_reports",
+            "repair_findings_after",
             "findings_before",
             "findings_after",
             "dropped_entries",
@@ -405,6 +434,7 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
             "normalized_entries",
             "related_sync_audit_reports",
             "sync_audit_policy_drifts",
+            "next_action_count",
             "reason",
         ):
             if field in component:

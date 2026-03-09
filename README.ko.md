@@ -185,6 +185,7 @@ staged local publish proposal을 보려면:
 - `uv run republic sync ls --issue 1`
 - `uv run republic sync check --issue 1`
 - `uv run republic sync repair --issue 1 --dry-run`
+- `uv run republic sync health --issue 1 --format all`
 - `uv run republic sync audit --format all`
 - `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`
 - `uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest`
@@ -265,6 +266,9 @@ republic dashboard --format all
 republic ops snapshot --archive
 republic ops status
 republic ops status --format all
+republic github smoke
+republic github smoke --format all
+republic sync health --issue 123 --format all
 ```
 
 유용한 플래그:
@@ -283,11 +287,13 @@ republic ops status --format all
 - `republic clean --sync-applied --dry-run --report --report-format all`은 `.ai-republic/reports/` 아래에 machine-readable cleanup preview를 export하고, linked sync-audit drift count도 CLI에서 함께 요약합니다. `--show-remediation`을 붙이면 re-export guidance도 바로 출력하고, `--show-mismatches`를 붙이면 linked sync-audit issue-filter mismatch warning도 함께 출력합니다. 두 플래그를 함께 쓰면 drift와 mismatch detail이 하나의 related-report block으로 묶여 출력됩니다.
 - `republic sync check`는 dangling entry, duplicate key, orphan archive 같은 applied manifest 무결성 문제를 보고합니다.
 - `republic sync repair --dry-run`은 manifest 재구성과 orphan adoption 결과를 쓰기 전에 미리 보여줍니다.
+- `republic sync health --format all`은 pending staged artifact, applied manifest integrity, repair preview, cleanup preview, linked raw report posture를 한 번에 묶은 operator snapshot을 `.ai-republic/reports/sync-health.json|md`로 export합니다. `--show-remediation`, `--show-mismatches`를 붙이면 같은 related-report detail block을 터미널에도 바로 출력합니다.
 - `republic sync audit --format all`은 `.ai-republic/reports/` 아래에 JSON/Markdown sync audit report를 export하고, matching cleanup preview/result export를 연결하며, 다른 `issue_filter`로 생성된 cleanup report가 있으면 warning도 함께 남기고, 관련 cleanup export의 `policy_alignment` metadata도 raw report 안에 직접 기록하며, mismatch/drift/remediation 묶음을 재사용할 수 있는 평문 `related_reports.detail_summary`도 추가하고, linked cleanup policy drift count도 CLI에서 함께 요약합니다. `--show-remediation`을 붙이면 같은 guidance도 바로 출력하고, `--show-mismatches`를 붙이면 linked cleanup issue-filter mismatch warning도 같은 자리에서 바로 출력합니다. 두 플래그를 함께 쓰면 drift와 mismatch detail이 하나의 related-report block으로 묶여 출력됩니다.
-- `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot도 이제 CLI의 related-report detail block을 따라가고, HTML `Cross references` 패널도 `mismatches / policy drifts / remediation` 의미 단위를 직접 드러내도록 정리됐습니다. JSON export에도 각 report entry별 `related_report_detail_summary` 문자열이 추가돼 바로 표시용으로 재사용할 수 있습니다.
+- `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot도 이제 CLI의 related-report detail block을 따라가고, HTML `Cross references` 패널도 `mismatches / policy drifts / remediation` 의미 단위를 직접 드러내도록 정리됐습니다. JSON export에도 각 report entry별 `related_report_detail_summary` 문자열이 추가돼 바로 표시용으로 재사용할 수 있습니다. `.ai-republic/reports/ops-status.json`이 존재하면 `Reports` 섹션에 `Ops status` 카드도 같이 렌더링되어 최신 ops handoff posture와 `sync-audit` 같은 report export를 함께 교차 확인할 수 있습니다.
 - `republic dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot도 이제 CLI의 related-report detail block을 따라가서, mismatch warning, related policy drift, remediation guidance를 같은 방식으로 읽을 수 있습니다.
-- `republic ops snapshot`은 `doctor`, `status`, `dashboard`, `sync-audit`, `bundle.json`, `bundle.md`를 한 디렉터리에 묶어 incident handoff용 번들로 export합니다. `--include-cleanup-preview`는 cleanup preview를 같은 번들 안에 생성하고, `--include-cleanup-result`는 기존 `cleanup-result` export를 복사해 넣으며, `--include-sync-check`는 applied manifest integrity snapshot을, `--include-sync-repair-preview`는 dry-run repair preview를 같은 디렉터리에 함께 포함합니다. `--archive`를 붙이면 완성된 번들을 `.tar.gz` handoff archive로 묶고 checksum도 함께 출력합니다. 매 실행마다 `.ai-republic/reports/ops/latest.json|md`와 `history.json|md`도 갱신되어, bundle directory가 다른 위치에 있어도 automation이 최신 handoff를 한 경로에서 찾을 수 있습니다. `--history-limit`은 이번 실행에서 유지할 history entry 수를 제한하고, `--prune-history`는 `.ai-republic/reports/ops/` 아래의 dropped managed bundle/archive를 함께 정리합니다. 기본 retention은 `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`에서 제어합니다.
+- `republic ops snapshot`은 `doctor`, `status`, `dashboard`, `sync-audit`, bundle-local `sync-health`, bundle-local `ops-status`, `bundle.json`, `bundle.md`를 한 디렉터리에 묶어 incident handoff용 번들로 export합니다. `--include-cleanup-preview`는 cleanup preview를 같은 번들 안에 생성하고, `--include-cleanup-result`는 기존 `cleanup-result` export를 복사해 넣으며, `--include-sync-check`는 applied manifest integrity snapshot을, `--include-sync-repair-preview`는 dry-run repair preview를 같은 디렉터리에 함께 포함합니다. `--archive`를 붙이면 완성된 번들을 `.tar.gz` handoff archive로 묶고 checksum도 함께 출력합니다. 매 실행마다 `.ai-republic/reports/ops/latest.json|md`, `.ai-republic/reports/ops/history.json|md`, `.ai-republic/reports/ops-status.json|md`, `.ai-republic/reports/sync-health.json|md`도 갱신되어, bundle directory가 다른 위치에 있어도 automation과 dashboard/report surface가 최신 handoff를 한 경로에서 찾을 수 있습니다. `--history-limit`은 이번 실행에서 유지할 history entry 수를 제한하고, `--prune-history`는 `.ai-republic/reports/ops/` 아래의 dropped managed bundle/archive를 함께 정리합니다. 기본 retention은 `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`에서 제어합니다.
 - `republic ops status`는 `.ai-republic/reports/ops/latest.*`, `.ai-republic/reports/ops/history.*`, 그리고 최신 indexed `bundle.json`을 함께 읽어 handoff posture, 최신 bundle health, component summary, recent history를 한 번에 보여주는 operator surface입니다. `republic ops status --format all`은 같은 snapshot을 `.ai-republic/reports/ops-status.json`, `.ai-republic/reports/ops-status.md`로 export합니다.
+- `republic github smoke`는 `tracker.repo` 기준 live GitHub REST readiness를 점검하고, open issue를 sample로 읽어오며, comment/draft PR publish preflight 상태를 함께 보여줍니다. REST mode에서는 실제 요구사항이 `GITHUB_TOKEN`이고, `gh auth`만으로는 RepoRepublic API 호출이 준비되지 않습니다.
 
 </details>
 

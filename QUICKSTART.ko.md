@@ -92,7 +92,7 @@ cat .ai-republic/reports/ops/history.json
 ```
 
 `ops snapshot` history retention 기본값은 `cleanup.ops_snapshot_keep_entries`입니다. dropped managed bundle/archive를 `.ai-republic/reports/ops/` 아래에서 함께 정리하고 싶을 때만 `--prune-history`를 사용하면 됩니다.
-dashboard를 열지 않고 최신 indexed handoff bundle과 recent history를 한 번에 확인하려면 `ops status`를 사용하면 됩니다.
+dashboard를 열지 않고 최신 indexed handoff bundle, recent history, 그리고 최신 bundle이 참조한 `sync-health` / `sync-audit` posture를 한 번에 확인하려면 `ops status`를 사용하면 됩니다.
 
 optional role pack 동작을 보려면 아래 예제를 사용하면 됩니다.
 
@@ -161,6 +161,7 @@ bash ../../scripts/demo_local_markdown_sync.sh
 `uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle`을 실행하면 관련 branch/PR handoff set을 한 번에 archive할 수 있습니다.
 같은 JSON inbox 경로에서는 `uv run republic sync apply --issue 1 --tracker local-file --action comment --latest`를 사용하면 됩니다.
 `uv run republic sync check --issue 1`로 applied manifest 무결성을 확인하고, `uv run republic sync repair --issue 1 --dry-run`으로 canonicalize/adopt 결과를 미리 볼 수 있습니다.
+`uv run republic sync health --issue 1 --format all`은 `sync check`, `sync repair`, `clean`로 들어가기 전에 sync 운영 상태를 한 번에 묶어서 보여줍니다.
 오래된 applied handoff group을 지우기 전에는 `uv run republic clean --sync-applied --dry-run`으로 manifest-aware retention 결과를 먼저 확인합니다.
 `uv run republic dashboard --format all`을 실행하면 `Sync handoffs`와 함께 `Sync retention`도 볼 수 있고, prunable group 수, prunable bytes, oldest prunable age를 한눈에 확인할 수 있습니다.
 
@@ -185,6 +186,7 @@ codex:
 ```bash
 export GITHUB_TOKEN=...
 uv run republic doctor
+uv run republic github smoke --require-write-ready
 uv run republic run
 ```
 
@@ -205,6 +207,7 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
+- sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
 - status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
@@ -219,6 +222,7 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - cleanup preview/report export: `uv run republic clean --sync-applied --dry-run --report --report-format all`
 - applied manifest 무결성 검사: `uv run republic sync check --issue 123`
 - applied manifest repair 미리보기: `uv run republic sync repair --issue 123 --dry-run`
+- combined sync-ops snapshot export: `uv run republic sync health --issue 123 --format all`
 - sync audit bundle export: `uv run republic sync audit --format all`
 - 로컬 대시보드 다시 생성: `uv run republic dashboard`
 - timed reload가 있는 대시보드 생성: `uv run republic dashboard --refresh-seconds 30`

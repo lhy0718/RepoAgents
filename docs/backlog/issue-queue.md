@@ -1878,4 +1878,96 @@
 
 ## 권장 다음 순서
 
-1. `ops status` export를 dashboard handoff/report card와 더 강하게 교차 링크할지 결정하기
+### RR-125. `ops status`를 dashboard/report flow와 더 강하게 교차 링크하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: dedicated `ops status` surface는 생겼지만, dashboard `Reports`와 `ops snapshot` flow는 여전히 이를 별도 수동 export처럼 취급해서 operator가 최신 handoff posture와 related report export를 한 화면에서 자연스럽게 연결해 보기 어려웠다.
+- Scope:
+  - dashboard `Reports`에 `ops-status` export 추가
+  - `ops snapshot` 실행 시 root `ops-status.json|md` 자동 갱신
+  - `ops-status` report payload에 latest bundle 기준 related report cross-link 추가
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] dashboard가 `ops-status.json|md`를 report card로 렌더링함
+  - [x] `republic ops snapshot`이 root `ops-status` export를 자동 갱신함
+  - [x] `ops-status` report card가 `sync-audit` 같은 관련 report export와 cross-link됨
+
+### RR-126. `ops snapshot` bundle 내부에도 `ops-status` export를 포함하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: root `ops-status` export와 dashboard card는 생겼지만, incident handoff용 `ops snapshot` bundle 자체에는 같은 operator summary가 없어 bundle만 전달받은 사람이 latest/history posture를 다시 root reports에서 찾아야 했다.
+- Scope:
+  - `republic ops snapshot`이 bundle-local `ops-status.json|md`를 생성
+  - bundle manifest `components.ops_status`에 output path와 metrics 기록
+  - bundle cross-link가 `ops_status`와 `sync_audit` / cleanup component 관계를 함께 반영
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `ops snapshot` bundle directory에 `ops-status.json|md`가 포함됨
+  - [x] `bundle.json`이 `ops_status` component와 관련 cross-link를 기록함
+  - [x] root `ops-status` export 자동 갱신은 계속 유지됨
+
+## 권장 다음 순서
+
+### RR-127. live GitHub 운영 경로 guardrail과 smoke path를 강화하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Live Ops / Safety
+- Problem: live GitHub adapter는 동작했지만, `doctor`가 실제 repo access와 publish preflight를 충분히 분리해서 보여주지 못했고, operator가 `tracker.repo`, issue sampling, comment/PR write readiness를 한 번에 점검할 dedicated smoke surface도 부족했다.
+- Scope:
+  - `doctor`에 `GitHub repo access`, `GitHub publish readiness` 진단 추가
+  - `republic github smoke` subcommand 추가
+  - live REST mode에서 `GITHUB_TOKEN` requirement를 명확히 하고 `gh auth` only 상태를 warning으로 노출
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `doctor`가 repo access와 live publish preflight를 별도 line item으로 출력함
+  - [x] `republic github smoke`가 sampled issue, repo metadata, publish readiness를 출력/export함
+  - [x] `--require-write-ready`가 publish preflight warning을 non-zero exit로 바꿀 수 있음
+
+## 권장 다음 순서
+
+1. `sync check / repair / audit / clean`을 하나의 운영 흐름으로 더 강하게 묶기
+
+### RR-128. `sync check / repair / audit / clean`을 하나의 운영 흐름으로 더 강하게 묶기
+
+- Status: done
+- Priority: P2
+- Area: Sync / Ops UX / Reporting
+- Problem: sync 운영에 필요한 surface가 `sync check`, `sync repair`, `sync audit`, `clean --sync-applied --report`로 나뉘어 있어서 operator가 한 번에 현재 posture를 보기 어렵고, 어떤 명령으로 들어가야 할지 판단하려면 여러 snapshot을 따로 열어야 했다.
+- Scope:
+  - `republic sync health` subcommand 추가
+  - pending staged artifact, applied manifest integrity, repair preview, cleanup preview, linked raw report posture를 한 snapshot으로 묶는 builder 추가
+  - text + JSON/Markdown export와 related-report mismatch/remediation 출력 추가
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `republic sync health --issue <id>`가 sync 운영 posture를 한 번에 요약함
+  - [x] `republic sync health --format all`이 `.ai-republic/reports/sync-health.json|md`를 생성함
+  - [x] `--show-remediation`, `--show-mismatches`가 cleanup/sync-audit related-report detail block을 같은 규약으로 출력함
+
+## 권장 다음 순서
+
+1. `sync health`를 `ops snapshot` bundle과 dashboard/report flow에 포함하기
+
+### RR-129. `sync health`를 `ops snapshot` bundle과 dashboard/report flow에 포함하기
+
+- Status: done
+- Priority: P2
+- Area: Sync / Ops UX / Handoff
+- Problem: `republic sync health`는 별도 surface로 존재했지만, `ops snapshot` bundle과 dashboard/report flow는 여전히 `sync-audit` 중심이라 operator가 최신 sync posture를 handoff bundle, dashboard, `ops status` 사이에서 자연스럽게 따라가기 어려웠다.
+- Scope:
+  - `republic ops snapshot`이 bundle-local `sync-health.json|md`와 root `.ai-republic/reports/sync-health.json|md`를 함께 갱신
+  - bundle manifest / cross-link / `ops status` related report snapshot에 `sync_health` component 반영
+  - dashboard `Reports`에 `sync-health` card와 related cleanup/sync-audit cross-link 추가
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `ops snapshot` bundle directory에 `sync-health.json|md`가 포함됨
+  - [x] `bundle.json`과 `ops-status` snapshot이 `sync_health` component / related report link를 기록함
+  - [x] dashboard `Reports`가 `sync-health` export를 card로 렌더링하고 related cleanup/sync-audit card와 연결함
+
+## 권장 다음 순서
+
+1. `ops snapshot` handoff summary를 operator-facing incident brief로 강화하기

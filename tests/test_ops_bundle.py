@@ -122,6 +122,10 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     cleanup_preview_md = bundle_dir / "cleanup-preview.md"
     cleanup_result_json = bundle_dir / "cleanup-result.json"
     cleanup_result_md = bundle_dir / "cleanup-result.md"
+    sync_health_json = bundle_dir / "sync-health.json"
+    sync_health_md = bundle_dir / "sync-health.md"
+    ops_status_json = bundle_dir / "ops-status.json"
+    ops_status_md = bundle_dir / "ops-status.md"
 
     for path in (
         sync_json,
@@ -137,6 +141,10 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
         cleanup_preview_md,
         cleanup_result_json,
         cleanup_result_md,
+        sync_health_json,
+        sync_health_md,
+        ops_status_json,
+        ops_status_md,
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix == ".json":
@@ -202,6 +210,28 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
                 "action_count": 2,
                 "link_to_sync_audit": True,
             },
+            "sync_health": {
+                "status": "attention",
+                "reason": "generated sync health report in ops snapshot bundle",
+                "output_paths": {"json": sync_health_json, "markdown": sync_health_md},
+                "pending_artifacts": 1,
+                "integrity_issue_count": 1,
+                "repair_changed_reports": 1,
+                "repair_findings_after": 0,
+                "cleanup_action_count": 2,
+                "related_report_mismatches": 1,
+                "related_report_policy_drifts": 1,
+                "next_action_count": 3,
+                "link_targets": ("sync_audit", "cleanup_preview", "cleanup_result"),
+            },
+            "ops_status": {
+                "status": "clean",
+                "reason": "generated ops status report in ops snapshot bundle",
+                "output_paths": {"json": ops_status_json, "markdown": ops_status_md},
+                "history_entry_count": 1,
+                "related_report_count": 1,
+                "link_targets": ("sync_audit", "cleanup_preview"),
+            },
         },
     )
 
@@ -209,14 +239,27 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     pairs = {(entry["source"], entry["target"]) for entry in payload["cross_links"]}
     assert result.component_statuses["cleanup_preview"] == "attention"
     assert result.component_statuses["cleanup_result"] == "clean"
+    assert result.component_statuses["sync_health"] == "attention"
+    assert result.component_statuses["ops_status"] == "clean"
     assert payload["components"]["cleanup_preview"]["mode"] == "preview"
     assert payload["components"]["cleanup_result"]["mode"] == "applied"
-    assert len(payload["cross_links"]) == 4
+    assert payload["components"]["sync_health"]["repair_changed_reports"] == 1
+    assert payload["components"]["ops_status"]["related_report_count"] == 1
+    assert len(payload["cross_links"]) == 14
     assert ("sync_audit", "cleanup_preview") in pairs
     assert ("cleanup_preview", "sync_audit") in pairs
     assert ("sync_audit", "cleanup_result") in pairs
     assert ("cleanup_result", "sync_audit") in pairs
+    assert ("sync_health", "sync_audit") in pairs
+    assert ("sync_health", "cleanup_preview") in pairs
+    assert ("sync_health", "cleanup_result") in pairs
+    assert ("ops_status", "sync_audit") in pairs
+    assert ("sync_audit", "ops_status") in pairs
+    assert ("ops_status", "cleanup_preview") in pairs
+    assert ("cleanup_preview", "ops_status") in pairs
     assert "cleanup-preview.json" in payload["components"]["cleanup_preview"]["output_paths"]["json"]
+    assert "sync-health.json" in payload["components"]["sync_health"]["output_paths"]["json"]
+    assert "ops-status.json" in payload["components"]["ops_status"]["output_paths"]["json"]
 
 
 def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_path: Path) -> None:
@@ -472,6 +515,79 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
     ]
     assert "## Entry 1" in history_markdown
     assert "archive:" in history_markdown
+
+
+def test_build_ops_snapshot_index_preserves_additional_dropped_entries(tmp_path: Path) -> None:
+    ops_root = tmp_path / "reports" / "ops"
+    bundle_dir = ops_root / "20260309T101500Z"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "rendered_at": "2026-03-09T10:15:00+00:00",
+                    "bundle_dir": str(bundle_dir),
+                    "issue_filter": None,
+                    "tracker_filter": None,
+                },
+                "summary": {
+                    "overall_status": "clean",
+                    "component_statuses": {"doctor": "clean", "sync_audit": "clean"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "bundle.md").write_text("# Bundle\n", encoding="utf-8")
+    bundle_result = build_ops_snapshot_bundle(
+        bundle_dir=bundle_dir,
+        repo_root=tmp_path,
+        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        issue_filter=None,
+        tracker_filter=None,
+        dashboard_limit=10,
+        sync_limit=10,
+        refresh_seconds=0,
+        doctor_snapshot={"meta": {"rendered_at": "2026-03-09T10:15:00+00:00"}, "summary": {"overall_status": "clean", "diagnostic_count": 1, "exit_code": 0}},
+        doctor_result=OperatorReportBuildResult(output_paths={}, kind="doctor"),
+        status_snapshot={"summary": {"total_runs": 1, "selected_runs": 1}, "report_health": {"hero": {"severity": "clean"}}},
+        status_result=OperatorReportBuildResult(output_paths={}, kind="status"),
+        dashboard_result=DashboardBuildResult(output_path=bundle_dir / "dashboard.html", total_runs=1, visible_runs=1, exported_paths={}),
+        sync_result=SyncAuditBuildResult(
+            output_paths={},
+            overall_status="clean",
+            pending_artifacts=0,
+            integrity_issue_count=0,
+            prunable_groups=0,
+            related_cleanup_reports=0,
+            cleanup_report_mismatches=0,
+            cleanup_mismatch_warnings=(),
+            related_cleanup_policy_drifts=0,
+            cleanup_policy_drift_warnings=(),
+            policy_drift_guidance=None,
+        ),
+    )
+
+    index_result = build_ops_snapshot_index(
+        ops_root=ops_root,
+        bundle_result=bundle_result,
+        history_limit=1,
+        additional_dropped_entries=(
+            {
+                "entry_id": "20260309T090000Z",
+                "bundle_dir": str(ops_root / "20260309T090000Z"),
+                "bundle_json": str(ops_root / "20260309T090000Z" / "bundle.json"),
+            },
+        ),
+    )
+
+    latest_payload = json.loads(index_result.latest_json.read_text(encoding="utf-8"))
+    history_payload = json.loads(index_result.history_json.read_text(encoding="utf-8"))
+
+    assert len(index_result.dropped_entries) == 1
+    assert index_result.dropped_entries[0]["entry_id"] == "20260309T090000Z"
+    assert latest_payload["meta"]["dropped_entry_count"] == 1
+    assert history_payload["meta"]["dropped_entry_count"] == 1
 
 
 def test_prune_ops_snapshot_history_removes_managed_dropped_entries_and_skips_external_paths(
