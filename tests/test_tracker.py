@@ -6,14 +6,16 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 import pytest
 
 from reporepublic.config.models import TrackerMode
 from reporepublic.tracker import build_tracker
-from reporepublic.tracker.github import GitHubTracker
+from reporepublic.tracker.github import GitHubTracker, _redact_remote_url
 from reporepublic.tracker.local_file import LocalFileTracker
 from reporepublic.tracker.local_markdown import LocalMarkdownTracker
 from reporepublic.config import load_config
@@ -79,6 +81,16 @@ def test_github_tracker_create_branch_and_open_pr(tmp_path: Path) -> None:
     requests: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and str(request.url).endswith("/repos/demo/repo"):
+            return httpx.Response(
+                200,
+                json={
+                    "full_name": "demo/repo",
+                    "default_branch": "main",
+                    "private": False,
+                    "permissions": {"pull": True, "push": True},
+                },
+            )
         requests.append(json.loads(request.content.decode("utf-8")))
         return httpx.Response(
             201,
@@ -201,6 +213,162 @@ def test_github_tracker_get_repo_info() -> None:
     payload = asyncio.run(run_flow())
     assert payload["full_name"] == "demo/repo"
     assert payload["default_branch"] == "main"
+
+
+def test_github_tracker_get_branch_info_and_protection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/repos/demo/repo/branches/main/protection"):
+            return httpx.Response(
+                200,
+                json={
+                    "required_pull_request_reviews": {"required_approving_review_count": 1},
+                    "required_status_checks": {"strict": True, "contexts": ["pytest"]},
+                    "enforce_admins": {"enabled": True},
+                },
+            )
+        assert str(request.url).endswith("/repos/demo/repo/branches/main")
+        return httpx.Response(
+            200,
+            json={
+                "name": "main",
+                "protected": True,
+                "protection_url": "https://api.github.com/repos/demo/repo/branches/main/protection",
+            },
+        )
+
+    tracker = GitHubTracker(
+        repo="demo/repo",
+        api_url="https://api.github.com",
+        token_env="GITHUB_TOKEN",
+        repo_root=Path.cwd(),
+        mode=TrackerMode.REST,
+        fixtures_path=None,
+        allow_write_comments=True,
+        allow_open_pr=True,
+        dry_run=False,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    async def run_flow():
+        branch = await tracker.get_branch_info("main")
+        protection = await tracker.get_branch_protection("main")
+        await tracker.aclose()
+        return branch, protection
+
+    branch, protection = asyncio.run(run_flow())
+    assert branch["protected"] is True
+    assert protection["required_pull_request_reviews"]["required_approving_review_count"] == 1
+    assert protection["required_status_checks"]["contexts"] == ["pytest"]
+
+
+def test_github_tracker_create_branch_prefers_repo_default_branch_over_local_head(tmp_path: Path) -> None:
+    remote_repo = tmp_path / "remote.git"
+    source_repo = tmp_path / "source"
+    workspace = tmp_path / "workspace"
+
+    subprocess.run(
+        ["git", "init", "--bare", str(remote_repo)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    source_repo.mkdir(parents=True)
+    subprocess.run(
+        ["git", "-C", str(source_repo), "init", "-b", "main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "config", "user.name", "Test User"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "config", "user.email", "test@example.com"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    (source_repo / "README.md").write_text("# Demo Repo\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source_repo), "add", "-A"], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(source_repo), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "remote", "add", "origin", str(remote_repo)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "push", "-u", "origin", "main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "checkout", "-b", "feature/local-only"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    (source_repo / "LOCAL.txt").write_text("feature branch only\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source_repo), "add", "-A"], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(source_repo), "commit", "-m", "feature work"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    shutil.copytree(source_repo, workspace, ignore=shutil.ignore_patterns(".git"))
+    (workspace / "README.md").write_text("# Demo Repo\n\nUpdated\n", encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and str(request.url).endswith("/repos/demo/repo"):
+            return httpx.Response(
+                200,
+                json={
+                    "full_name": "demo/repo",
+                    "default_branch": "main",
+                    "private": False,
+                    "permissions": {"pull": True, "push": True},
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    tracker = GitHubTracker(
+        repo="demo/repo",
+        api_url="https://api.github.com",
+        token_env="GITHUB_TOKEN",
+        repo_root=source_repo,
+        mode=TrackerMode.REST,
+        fixtures_path=None,
+        allow_write_comments=True,
+        allow_open_pr=True,
+        dry_run=False,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    async def run_flow():
+        result = await tracker.create_branch(
+            issue_id=9,
+            name="codex/default-branch-policy",
+            workspace_path=workspace,
+            commit_message="republic: test default branch policy",
+        )
+        await tracker.aclose()
+        return result
+
+    result = asyncio.run(run_flow())
+    assert result.executed is True
+    assert result.payload["base_branch"] == "main"
+    assert result.payload["local_branch"] == "feature/local-only"
 
 
 def test_github_tracker_list_open_issues_paginates() -> None:
@@ -691,6 +859,14 @@ def test_build_tracker_supports_local_markdown_kind(demo_repo: Path) -> None:
     assert isinstance(tracker, LocalMarkdownTracker)
 
 
+def test_redact_remote_url_removes_embedded_credentials() -> None:
+    assert (
+        _redact_remote_url("https://x-access-token:secret@github.com/demo/repo.git")
+        == "https://github.com/demo/repo.git"
+    )
+    assert _redact_remote_url("git@github.com:demo/repo.git") == "git@github.com:demo/repo.git"
+
+
 class _SpyLogger:
     def __init__(self, messages: list[str]) -> None:
         self.messages = messages
@@ -753,3 +929,232 @@ def test_github_tracker_live_read_only() -> None:
     assert issue.title
     assert issue.fingerprint()
     assert issue.url is None or issue.url.startswith("https://")
+
+
+def _load_live_github_test_context(
+    *,
+    repo_envs: tuple[str, ...],
+    issue_envs: tuple[str, ...] = (),
+    require_issue: bool = False,
+) -> tuple[str, str, int | None]:
+    token = os.getenv("GITHUB_TOKEN")
+    repo = next((os.getenv(name) for name in repo_envs if os.getenv(name)), None)
+    issue_raw = next((os.getenv(name) for name in issue_envs if os.getenv(name)), None)
+    if not token:
+        pytest.skip("GITHUB_TOKEN is required for the live GitHub publish test.")
+    if not repo:
+        pytest.skip(
+            "Set one of "
+            + ", ".join(repo_envs)
+            + " to point at a writable sandbox repo slug."
+        )
+    issue_id = int(issue_raw) if issue_raw else None
+    if require_issue and issue_id is None:
+        pytest.skip("Set a live GitHub test issue id for the sandbox repo.")
+    return repo, token, issue_id
+
+
+async def _github_api_request(
+    *,
+    method: str,
+    repo: str,
+    token: str,
+    path: str,
+    json_payload: dict[str, object] | None = None,
+    ok_statuses: tuple[int, ...] = (200, 201, 204),
+) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        response = await client.request(
+            method,
+            f"https://api.github.com{path}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json=json_payload,
+        )
+    if response.status_code not in ok_statuses:
+        raise AssertionError(
+            f"GitHub cleanup request failed for {repo} {method} {path}: "
+            f"{response.status_code} {response.text}"
+        )
+    return response
+
+
+def _authenticated_https_remote(repo: str, token: str) -> str:
+    return f"https://x-access-token:{quote(token, safe='')}@github.com/{repo}.git"
+
+
+@pytest.mark.skipif(
+    os.getenv("REPOREPUBLIC_GITHUB_WRITE_E2E") != "1",
+    reason="Set REPOREPUBLIC_GITHUB_WRITE_E2E=1 to run the live GitHub comment write test.",
+)
+def test_github_tracker_live_comment_write() -> None:
+    repo, token, issue_id = _load_live_github_test_context(
+        repo_envs=("REPOREPUBLIC_GITHUB_WRITE_TEST_REPO", "REPOREPUBLIC_GITHUB_TEST_REPO"),
+        issue_envs=("REPOREPUBLIC_GITHUB_WRITE_TEST_ISSUE", "REPOREPUBLIC_GITHUB_TEST_ISSUE"),
+        require_issue=True,
+    )
+    assert issue_id is not None
+
+    async def run_flow() -> tuple[object, int | None]:
+        tracker = GitHubTracker(
+            repo=repo,
+            api_url="https://api.github.com",
+            token_env="GITHUB_TOKEN",
+            repo_root=Path.cwd(),
+            mode=TrackerMode.REST,
+            fixtures_path=None,
+            allow_write_comments=True,
+            allow_open_pr=False,
+            dry_run=False,
+        )
+        comment_id: int | None = None
+        try:
+            marker = f"RepoRepublic live comment E2E {int(time.time())}"
+            result = await tracker.post_comment(issue_id, marker)
+            payload = result.payload if isinstance(result.payload, dict) else {}
+            raw_comment_id = payload.get("comment_id")
+            comment_id = raw_comment_id if isinstance(raw_comment_id, int) else None
+            return result, comment_id
+        finally:
+            await tracker.aclose()
+
+    result, comment_id = asyncio.run(run_flow())
+    try:
+        assert result.executed is True
+        payload = result.payload if isinstance(result.payload, dict) else {}
+        assert payload.get("url")
+        assert isinstance(comment_id, int) and comment_id > 0
+    finally:
+        if isinstance(comment_id, int):
+            asyncio.run(
+                _github_api_request(
+                    method="DELETE",
+                    repo=repo,
+                    token=token,
+                    path=f"/repos/{repo}/issues/comments/{comment_id}",
+                    ok_statuses=(204,),
+                )
+            )
+
+
+@pytest.mark.skipif(
+    os.getenv("REPOREPUBLIC_GITHUB_PR_E2E") != "1",
+    reason="Set REPOREPUBLIC_GITHUB_PR_E2E=1 to run the live GitHub draft PR publish test.",
+)
+def test_github_tracker_live_draft_pr_publish(tmp_path: Path) -> None:
+    repo, token, issue_id = _load_live_github_test_context(
+        repo_envs=("REPOREPUBLIC_GITHUB_PR_TEST_REPO", "REPOREPUBLIC_GITHUB_WRITE_TEST_REPO", "REPOREPUBLIC_GITHUB_TEST_REPO"),
+        issue_envs=("REPOREPUBLIC_GITHUB_PR_TEST_ISSUE", "REPOREPUBLIC_GITHUB_WRITE_TEST_ISSUE", "REPOREPUBLIC_GITHUB_TEST_ISSUE"),
+        require_issue=True,
+    )
+    assert issue_id is not None
+
+    source_repo = tmp_path / "source"
+    workspace = tmp_path / "workspace"
+    subprocess.run(
+        ["git", "clone", "--depth", "1", f"https://github.com/{repo}.git", str(source_repo)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_repo), "remote", "set-url", "origin", _authenticated_https_remote(repo, token)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    shutil.copytree(source_repo, workspace, ignore=shutil.ignore_patterns(".git"))
+    marker = f"reporepublic-pr-e2e-{int(time.time())}"
+    target_file = workspace / "README.md"
+    if target_file.exists():
+        target_file.write_text(
+            target_file.read_text(encoding="utf-8")
+            + f"\n<!-- {marker} -->\n",
+            encoding="utf-8",
+        )
+    else:
+        (workspace / "REPOREPUBLIC_E2E.md").write_text(f"# {marker}\n", encoding="utf-8")
+
+    async def run_flow() -> tuple[object, object, str | None, int | None]:
+        tracker = GitHubTracker(
+            repo=repo,
+            api_url="https://api.github.com",
+            token_env="GITHUB_TOKEN",
+            repo_root=source_repo,
+            mode=TrackerMode.REST,
+            fixtures_path=None,
+            allow_write_comments=False,
+            allow_open_pr=True,
+            dry_run=False,
+        )
+        branch_name: str | None = None
+        pr_number: int | None = None
+        try:
+            repo_info = await tracker.get_repo_info()
+            branch_result = await tracker.create_branch(
+                issue_id=issue_id,
+                name=f"codex/live-pr-e2e-{issue_id}-{marker}",
+                workspace_path=workspace,
+                commit_message=f"republic: live pr e2e {marker}",
+            )
+            branch_payload = branch_result.payload if isinstance(branch_result.payload, dict) else {}
+            branch_name = branch_payload.get("branch_name") if isinstance(branch_payload.get("branch_name"), str) else None
+            if branch_result.executed is not True or not branch_name:
+                raise AssertionError(branch_result.reason)
+            pr_result = await tracker.open_pr(
+                issue_id=issue_id,
+                title=f"RepoRepublic: live publish E2E ({marker})",
+                body=f"RepoRepublic live draft PR smoke for issue #{issue_id}.\n\nMarker: {marker}",
+                head_branch=branch_name,
+                base_branch=str(repo_info.get("default_branch") or branch_payload.get("base_branch") or "main"),
+                draft=True,
+            )
+            pr_payload = pr_result.payload if isinstance(pr_result.payload, dict) else {}
+            raw_pr_number = pr_payload.get("number")
+            pr_number = raw_pr_number if isinstance(raw_pr_number, int) else None
+            return branch_result, pr_result, branch_name, pr_number
+        finally:
+            await tracker.aclose()
+
+    branch_result, pr_result, branch_name, pr_number = asyncio.run(run_flow())
+    cleanup_errors: list[str] = []
+    try:
+        assert branch_result.executed is True
+        assert pr_result.executed is True
+        pr_payload = pr_result.payload if isinstance(pr_result.payload, dict) else {}
+        assert isinstance(pr_number, int) and pr_number > 0
+        assert pr_payload.get("url")
+        assert pr_payload.get("draft") is True
+    finally:
+        if isinstance(pr_number, int):
+            try:
+                asyncio.run(
+                    _github_api_request(
+                        method="PATCH",
+                        repo=repo,
+                        token=token,
+                        path=f"/repos/{repo}/pulls/{pr_number}",
+                        json_payload={"state": "closed"},
+                        ok_statuses=(200,),
+                    )
+                )
+            except AssertionError as exc:
+                cleanup_errors.append(str(exc))
+        if isinstance(branch_name, str) and branch_name:
+            try:
+                asyncio.run(
+                    _github_api_request(
+                        method="DELETE",
+                        repo=repo,
+                        token=token,
+                        path=f"/repos/{repo}/git/refs/heads/{quote(branch_name, safe='')}",
+                        ok_statuses=(204, 422, 404),
+                    )
+                )
+            except AssertionError as exc:
+                cleanup_errors.append(str(exc))
+        if cleanup_errors:
+            raise AssertionError("; ".join(cleanup_errors))

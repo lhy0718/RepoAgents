@@ -51,6 +51,8 @@ uv run republic ops snapshot --archive --history-limit 10 --prune-history
 - `.ai-republic/reports/ops/history.md`
 - `.ai-republic/reports/ops-status.json`
 - `.ai-republic/reports/ops-status.md`
+- `.ai-republic/reports/ops-brief.json`
+- `.ai-republic/reports/ops-brief.md`
 
 `--prune-history`는 `.ai-republic/reports/ops/` 아래에서 RepoRepublic가 관리하는 bundle/archive만 정리합니다. 외부 custom output directory는 index에는 남지만 ops history prune 대상으로 삭제되지는 않습니다.
 uv run republic sync ls
@@ -91,10 +93,10 @@ uv run republic dashboard --format all
 
 ## Dashboard의 sync handoff와 retention
 
-이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/ops/latest.*`, `history.*`를 읽는 `Ops snapshots` 섹션과 `.ai-republic/reports/` 아래 sync audit/cleanup export를 여는 `Reports` 링크도 제공합니다.
+이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/ops/latest.*`, `history.*`를 읽는 `Ops snapshots` 섹션과 `.ai-republic/reports/` 아래 sync audit, sync health, GitHub smoke, ops status, ops brief, cleanup export를 여는 `Reports` 링크도 제공합니다.
 
-최신 bundle manifest component summary와 recent history preview까지 포함한 ops index posture를 CLI/export 한 화면에서 보고 싶을 때는 `republic ops status`를 사용하면 됩니다.
-`ops-status.json`이 있으면 dashboard `Reports` 섹션에도 `Ops status` 카드가 생기고, 최신 bundle이 참조한 관련 report export와 교차 링크가 같이 표시됩니다. 이제 `republic ops snapshot`은 같은 `ops-status.json|md`를 handoff bundle 내부에도 쓰고, repo root의 `sync-health.json|md`도 함께 갱신해서 incident review와 dashboard/report surface가 같은 최신 sync posture를 따라가게 합니다.
+최신 bundle manifest component summary, 현재 handoff brief headline/severity, landing path, recent history preview까지 포함한 ops index posture를 CLI/export 한 화면에서 보고 싶을 때는 `republic ops status`를 사용하면 됩니다.
+`ops-status.json`이나 `ops-brief.json`이 있으면 dashboard `Reports` 섹션에도 같은 카드가 생기고, 최신 bundle이 참조한 관련 report export와 교차 링크가 같이 표시됩니다. 이제 `republic ops snapshot`은 `ops-status.json|md`, `ops-brief.json|md`, live GitHub REST tracker일 때는 `github-smoke.json|md`, bundle landing 파일 `index.html`, `README.md`를 handoff bundle 내부에도 쓰고, repo root의 `ops-status.json|md`, `ops-brief.json|md`, `sync-health.json|md`, live `github-smoke.json|md`도 함께 갱신해서 incident review와 dashboard/report surface가 같은 최신 sync posture, landing summary, GitHub publish readiness를 따라가게 합니다.
 
 다음 상황에서 이 섹션을 사용합니다.
 
@@ -118,6 +120,8 @@ live run 전에 확인할 것:
 - tracker가 live GitHub REST mode면 `GITHUB_TOKEN`
 - `uv run republic doctor`
 - unattended live write를 켜기 전 `uv run republic github smoke --require-write-ready`
+- 이 smoke gate는 draft PR publish를 위해 default branch protection, PR review requirement, required status check, readable GitHub repo permission까지 함께 기대함
+- `REPOREPUBLIC_GITHUB_WRITE_E2E=1`, `REPOREPUBLIC_GITHUB_PR_E2E=1` 테스트는 반드시 전용 sandbox repo/issue에서 실행하고, comment test는 comment 삭제, draft PR test는 PR close와 branch delete까지 cleanup 단계에서 수행
 - `workspace.strategy: worktree`를 쓴다면 대상 저장소가 유효한 Git work tree인지
 - 로컬 수정이 있는 저장소라면 `workspace.dirty_policy`
 

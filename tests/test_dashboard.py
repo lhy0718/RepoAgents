@@ -493,6 +493,8 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     assert payload["ops_snapshots"]["dropped_entry_count"] == 1
     assert payload["ops_snapshots"]["latest"]["entry_id"] == "20260309T101500Z"
     assert payload["ops_snapshots"]["latest"]["has_archive"] is True
+    assert payload["ops_snapshots"]["latest"]["landing_html"].endswith("index.html")
+    assert payload["ops_snapshots"]["latest"]["brief_headline"] == "Sync audit still needs follow-up."
     assert payload["ops_snapshots"]["entries"][0]["entry_id"] == "20260309T101500Z"
     assert "# RepoRepublic Dashboard Snapshot" in markdown
     assert "## Ops snapshots" in markdown
@@ -500,6 +502,7 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     assert "- history_limit: 5" in markdown
     assert "- dropped_entry_count: 1" in markdown
     assert "  - entry_id: 20260309T101500Z" in markdown
+    assert "  - landing_html: " in markdown
     assert "  - 20260309T101500Z: status=clean" in markdown
 
 
@@ -541,11 +544,12 @@ def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
     assert "report-ops-status" in html
     assert payload["reports"]["total"] == 3
     assert ops_status_entry["status"] == "clean"
-    assert ops_status_entry["metrics"]["related_report_count"] == 1
-    assert ops_status_entry["details"]["latest_bundle_component_count"] == 4
-    assert ops_status_entry["related_cards"][0]["key"] == "sync-audit"
+    assert ops_status_entry["metrics"]["related_report_count"] == 2
+    assert ops_status_entry["details"]["latest_bundle_component_count"] == 5
+    assert ops_status_entry["related_cards"][0]["key"] == "ops-brief"
+    assert ops_status_entry["related_cards"][1]["key"] == "sync-audit"
     assert "### Ops status" in markdown
-    assert "- related_cards: Sync audit" in markdown
+    assert "- related_cards: Ops brief, Sync audit" in markdown
 
 
 def test_build_dashboard_surfaces_sync_health_report_and_relations(
@@ -587,6 +591,41 @@ def test_build_dashboard_surfaces_sync_health_report_and_relations(
     assert "### Sync health" in markdown
     assert "- related_cards: Cleanup preview, Cleanup result, Sync audit" in markdown
     assert "Cleanup preview: cleanup report issue_filter=9 does not match audit issue_filter=7" in markdown
+
+
+def test_build_dashboard_surfaces_github_smoke_report(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    loaded = load_config(demo_repo)
+    _write_dashboard_reports(demo_repo)
+    _write_github_smoke_report(demo_repo)
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    github_smoke_entry = next(
+        entry for entry in payload["reports"]["entries"] if entry["key"] == "github-smoke"
+    )
+
+    assert "GitHub smoke" in html
+    assert "report-github-smoke" in html
+    assert github_smoke_entry["status"] == "attention"
+    assert github_smoke_entry["metrics"]["branch_policy_status"] == "warn"
+    assert github_smoke_entry["details"]["default_branch"] == "main"
+    assert github_smoke_entry["details"]["publish_warning_count"] == 2
+    assert "### GitHub smoke" in markdown
+    assert "branch_policy_status=warn" in markdown
 
 
 def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path) -> None:
@@ -1203,6 +1242,58 @@ def _write_sync_health_report(repo_root: Path) -> None:
     (reports_dir / "sync-health.md").write_text("# Sync health\n", encoding="utf-8")
 
 
+def _write_github_smoke_report(repo_root: Path) -> None:
+    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "github-smoke.json").write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "rendered_at": "2026-03-09T02:10:00+00:00",
+                    "tracker_repo": "demo/repo",
+                    "requested_issue_id": 7,
+                },
+                "summary": {
+                    "status": "attention",
+                    "message": "branch policy: default branch main is not protected",
+                    "open_issue_count": 2,
+                    "sampled_issue_id": 7,
+                    "auth_status": "ok",
+                    "repo_access_status": "ok",
+                    "branch_policy_status": "warn",
+                    "publish_status": "warn",
+                },
+                "repo_access": {
+                    "status": "ok",
+                    "message": "loaded repo metadata for demo/repo",
+                    "full_name": "demo/repo",
+                    "default_branch": "main",
+                },
+                "branch_policy": {
+                    "status": "warn",
+                    "message": "default branch main is not protected",
+                    "warnings": [
+                        "default branch main is not protected",
+                        "default branch main does not require pull request reviews",
+                    ],
+                },
+                "publish": {
+                    "status": "warn",
+                    "message": "branch policy: default branch main is not protected",
+                    "warnings": [
+                        "branch policy: default branch main is not protected",
+                        "branch policy: default branch main does not require pull request reviews",
+                    ],
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (reports_dir / "github-smoke.md").write_text("# GitHub smoke report\n", encoding="utf-8")
+
+
 def _write_ops_snapshot_index(repo_root: Path) -> None:
     ops_root = repo_root / ".ai-republic" / "reports" / "ops"
     ops_root.mkdir(parents=True, exist_ok=True)
@@ -1210,6 +1301,10 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
     previous_bundle_dir = ops_root / "20260309T100000Z"
     latest_bundle_dir.mkdir(parents=True, exist_ok=True)
     previous_bundle_dir.mkdir(parents=True, exist_ok=True)
+    (latest_bundle_dir / "index.html").write_text("<html>latest</html>\n", encoding="utf-8")
+    (latest_bundle_dir / "README.md").write_text("# Latest landing\n", encoding="utf-8")
+    (previous_bundle_dir / "index.html").write_text("<html>previous</html>\n", encoding="utf-8")
+    (previous_bundle_dir / "README.md").write_text("# Previous landing\n", encoding="utf-8")
     latest_bundle_manifest = {
         "meta": {
             "rendered_at": "2026-03-09T10:15:00+00:00",
@@ -1223,9 +1318,16 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "component_statuses": {
                 "dashboard": "clean",
                 "doctor": "clean",
+                "ops_brief": "attention",
                 "status": "clean",
                 "sync_audit": "attention",
             },
+        },
+        "landing": {
+            "html_path": str(latest_bundle_dir / "index.html"),
+            "markdown_path": str(latest_bundle_dir / "README.md"),
+            "bundle_json_path": str(latest_bundle_dir / "bundle.json"),
+            "bundle_markdown_path": str(latest_bundle_dir / "bundle.md"),
         },
         "components": {
             "dashboard": {
@@ -1247,6 +1349,16 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 },
                 "diagnostic_count": 5,
                 "exit_code": 0,
+            },
+            "ops_brief": {
+                "status": "attention",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "ops-brief.json"),
+                    "markdown": str(latest_bundle_dir / "ops-brief.md"),
+                },
+                "headline": "Sync audit still needs follow-up.",
+                "top_finding_count": 1,
+                "next_action_count": 2,
             },
             "status": {
                 "status": "clean",
@@ -1301,6 +1413,12 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "doctor": "clean",
             },
         },
+        "landing": {
+            "html_path": str(previous_bundle_dir / "index.html"),
+            "markdown_path": str(previous_bundle_dir / "README.md"),
+            "bundle_json_path": str(previous_bundle_dir / "bundle.json"),
+            "bundle_markdown_path": str(previous_bundle_dir / "bundle.md"),
+        },
         "components": {
             "dashboard": {
                 "status": "issues",
@@ -1349,6 +1467,14 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "bundle_relative_dir": "20260309T101500Z",
             "bundle_json": str(ops_root / "20260309T101500Z" / "bundle.json"),
             "bundle_markdown": str(ops_root / "20260309T101500Z" / "bundle.md"),
+            "landing_html": str(ops_root / "20260309T101500Z" / "index.html"),
+            "landing_markdown": str(ops_root / "20260309T101500Z" / "README.md"),
+            "brief_json": str(ops_root / "20260309T101500Z" / "ops-brief.json"),
+            "brief_markdown": str(ops_root / "20260309T101500Z" / "ops-brief.md"),
+            "brief_severity": "attention",
+            "brief_headline": "Sync audit still needs follow-up.",
+            "brief_top_finding_count": 1,
+            "brief_next_action_count": 2,
             "archive": {
                 "path": str(ops_root / "20260309T101500Z.tar.gz"),
                 "relative_path": "20260309T101500Z.tar.gz",
@@ -1357,7 +1483,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "file_count": 8,
                 "member_count": 10,
             },
-            "component_statuses": {"doctor": "clean", "dashboard": "clean", "sync_audit": "attention"},
+            "component_statuses": {"doctor": "clean", "dashboard": "clean", "ops_brief": "attention", "sync_audit": "attention"},
         },
     }
     history_payload = {
@@ -1379,6 +1505,8 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "bundle_relative_dir": "20260309T100000Z",
                 "bundle_json": str(ops_root / "20260309T100000Z" / "bundle.json"),
                 "bundle_markdown": str(ops_root / "20260309T100000Z" / "bundle.md"),
+                "landing_html": str(ops_root / "20260309T100000Z" / "index.html"),
+                "landing_markdown": str(ops_root / "20260309T100000Z" / "README.md"),
                 "archive": None,
                 "component_statuses": {"doctor": "clean", "dashboard": "issues"},
             },

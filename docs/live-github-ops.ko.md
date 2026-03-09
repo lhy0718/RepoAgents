@@ -35,6 +35,8 @@ live 청사진 예제는 아래에 있습니다.
 - [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
 - [../examples/live-github-ops/ops/preflight.md](../examples/live-github-ops/ops/preflight.md)
 - [../examples/live-github-ops/ops/republic.env.example](../examples/live-github-ops/ops/republic.env.example)
+- [../examples/live-github-ops/ops/build-handoff.sh](../examples/live-github-ops/ops/build-handoff.sh)
+- [../examples/live-github-ops/ops/handoff-order.md](../examples/live-github-ops/ops/handoff-order.md)
 - [../examples/live-github-ops/ops/run-loop.sh](../examples/live-github-ops/ops/run-loop.sh)
 - [../examples/live-github-ops/ops/render-dashboard.sh](../examples/live-github-ops/ops/render-dashboard.sh)
 
@@ -147,7 +149,36 @@ uv run --project /path/to/RepoRepublic republic doctor
 
 `doctor`가 깨끗하지 않으면, 경고가 왜 나는지 이해하기 전까지 live 실행으로 넘어가지 않는 편이 안전합니다.
 
-## 6단계. 먼저 단일 issue dry-run을 본다
+## 6단계. 먼저 handoff bundle을 오프라인으로 rehearsal한다
+
+실제 GitHub API를 치기 전에 handoff bundle 모양을 로컬에서 먼저 rehearsal해 두는 편이 좋습니다.
+
+예제 저장소에는 이를 위한 `ops/github-smoke.fixture.json`이 포함되어 있습니다. 잠시 아래 값을 추가합니다.
+
+```yaml
+tracker:
+  smoke_fixture_path: ops/github-smoke.fixture.json
+```
+
+그 다음 handoff bundle을 생성합니다.
+
+```bash
+bash /path/to/RepoRepublic/examples/live-github-ops/ops/build-handoff.sh
+```
+
+이 단계에서 다음이 생성됩니다.
+
+- root `.ai-republic/reports/github-smoke.json|md`
+- root `.ai-republic/reports/ops-status.json|md`
+- root `.ai-republic/reports/ops-brief.json|md`
+- bundle-local `github-smoke.json|md`, `ops-status.json|md`, `ops-brief.json|md`
+- bundle landing 파일 `index.html`, `README.md`
+
+어떤 파일부터 열어야 하는지는 [../examples/live-github-ops/ops/handoff-order.md](../examples/live-github-ops/ops/handoff-order.md)에 고정해 둡니다.
+
+실제 live rollout에 들어가기 전에는 `tracker.smoke_fixture_path`를 다시 제거합니다.
+
+## 7단계. 먼저 단일 issue dry-run을 본다
 
 polling loop를 켜기 전에 표적 dry-run을 실행합니다.
 
@@ -165,7 +196,7 @@ uv run --project /path/to/RepoRepublic republic trigger 123 --dry-run
 
 특정 issue 번호를 아직 고르기 어렵다면, 다음 poll cycle을 보기 위해 `republic run --dry-run --once`도 유용합니다.
 
-## 7단계. polling loop 전에 issue 하나만 실행한다
+## 8단계. polling loop 전에 issue 하나만 실행한다
 
 dry-run이 깨끗하면 issue 하나만 실제 실행합니다.
 
@@ -183,7 +214,7 @@ uv run --project /path/to/RepoRepublic republic status --issue 123
 
 reviewer나 policy guardrail이 `request_changes`를 반환해도, rollout 단계에서는 그 자체가 정상적인 안전장치 동작일 수 있습니다.
 
-## 8단계. 장기 실행 loop를 시작한다
+## 9단계. 장기 실행 loop를 시작한다
 
 단일 issue 동작이 예상대로 보이면 loop를 시작합니다.
 
@@ -199,7 +230,7 @@ uv run republic run
 
 실운영에서는 `systemd`, `launchd`, container runtime, 또는 스케줄러가 있는 CI runner 같은 supervisor 아래에서 돌리는 편이 좋습니다.
 
-## 9단계. 대시보드를 렌더링하고 본다
+## 10단계. 대시보드를 렌더링하고 본다
 
 운영 대시보드는 주기적으로 다시 생성합니다.
 
@@ -219,7 +250,7 @@ uv run republic dashboard --refresh-seconds 30
 - status filter로 failure/retry만 보기
 - 운영 중 페이지를 띄워둘 때 timed refresh 사용하기
 
-## 10단계. 실패를 안전하게 다룬다
+## 11단계. 실패를 안전하게 다룬다
 
 가장 덜 파괴적인 복구 경로부터 사용합니다.
 
@@ -241,7 +272,7 @@ uv run republic clean
 
 문제가 GitHub auth, Codex login, rate limit, dirty worktree에 있다면 그 원인을 먼저 해결한 뒤 issue를 다시 실행합니다.
 
-## 11단계. write path는 천천히 연다
+## 12단계. write path는 천천히 연다
 
 첫날부터 comment나 draft PR을 열 필요는 없습니다.
 

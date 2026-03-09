@@ -32,6 +32,7 @@ from reporepublic.github_health import (
     build_github_smoke_exports,
     build_github_smoke_snapshot,
     collect_github_auth_snapshot,
+    collect_github_live_repo_snapshots,
     collect_github_origin_snapshot,
     collect_github_publish_readiness,
     normalize_github_smoke_formats,
@@ -50,6 +51,11 @@ from reporepublic.ops_bundle import (
     build_ops_snapshot_archive,
     default_ops_snapshot_bundle_dir,
     prune_ops_snapshot_history,
+)
+from reporepublic.ops_brief import (
+    OpsBriefBuildResult,
+    build_ops_brief_exports,
+    build_ops_brief_snapshot,
 )
 from reporepublic.ops_status import (
     OpsStatusBuildResult,
@@ -1036,6 +1042,12 @@ def ops_snapshot_command(
             cleanup_keep_groups=cleanup_keep_groups,
         )
     )
+    github_smoke_artifacts = _build_ops_snapshot_github_smoke_artifacts(
+        loaded=loaded,
+        bundle_root=bundle_root,
+        issue_filter=issue,
+        issue_limit=min(sync_limit, 10),
+    )
 
     dashboard_result = build_dashboard(
         loaded,
@@ -1051,6 +1063,20 @@ def ops_snapshot_command(
         issue_id=issue,
         tracker=tracker,
         limit=sync_limit,
+    )
+    bundle_ops_brief_result, root_ops_brief_result, ops_brief_component = (
+        _build_ops_snapshot_ops_brief_artifacts(
+            loaded=loaded,
+            bundle_root=bundle_root,
+            issue_filter=issue,
+            tracker_filter=tracker,
+            doctor_snapshot=doctor_snapshot,
+            status_snapshot=status_snapshot,
+            dashboard_snapshot=_load_report_json_payload(dashboard_result.exported_paths["json"]),
+            sync_audit_snapshot=_load_report_json_payload(sync_result.output_paths["json"]),
+            sync_health_snapshot=sync_health_result.snapshot,
+            github_smoke_snapshot=github_smoke_artifacts[0].snapshot if github_smoke_artifacts else None,
+        )
     )
     extra_components = _build_ops_snapshot_cleanup_components(
         loaded=loaded,
@@ -1073,6 +1099,10 @@ def ops_snapshot_command(
         )
     )
     extra_components["sync_health"] = sync_health_component
+    if github_smoke_artifacts is not None:
+        _, _, github_smoke_component = github_smoke_artifacts
+        extra_components["github_smoke"] = github_smoke_component
+    extra_components["ops_brief"] = ops_brief_component
     bundle_result = build_ops_snapshot_bundle(
         bundle_dir=bundle_root,
         repo_root=loaded.repo_root,
@@ -1168,10 +1198,20 @@ def ops_snapshot_command(
     typer.echo(f"- latest_index_markdown: {index_result.latest_markdown}")
     typer.echo(f"- history_index_json: {index_result.history_json}")
     typer.echo(f"- history_index_markdown: {index_result.history_markdown}")
+    typer.echo(f"- bundle_ops_brief_json: {bundle_ops_brief_result.output_paths['json']}")
+    typer.echo(f"- bundle_ops_brief_markdown: {bundle_ops_brief_result.output_paths['markdown']}")
+    typer.echo(f"- root_ops_brief_json: {root_ops_brief_result.output_paths['json']}")
+    typer.echo(f"- root_ops_brief_markdown: {root_ops_brief_result.output_paths['markdown']}")
     typer.echo(f"- bundle_sync_health_json: {sync_health_result.output_paths['json']}")
     typer.echo(f"- bundle_sync_health_markdown: {sync_health_result.output_paths['markdown']}")
     typer.echo(f"- root_sync_health_json: {root_sync_health_paths['json']}")
     typer.echo(f"- root_sync_health_markdown: {root_sync_health_paths['markdown']}")
+    if github_smoke_artifacts is not None:
+        bundle_github_smoke_result, root_github_smoke_result, _ = github_smoke_artifacts
+        typer.echo(f"- bundle_github_smoke_json: {bundle_github_smoke_result.output_paths['json']}")
+        typer.echo(f"- bundle_github_smoke_markdown: {bundle_github_smoke_result.output_paths['markdown']}")
+        typer.echo(f"- root_github_smoke_json: {root_github_smoke_result.output_paths['json']}")
+        typer.echo(f"- root_github_smoke_markdown: {root_github_smoke_result.output_paths['markdown']}")
     typer.echo(f"- root_ops_status_json: {root_ops_status_result.output_paths['json']}")
     typer.echo(f"- root_ops_status_markdown: {root_ops_status_result.output_paths['markdown']}")
     typer.echo(f"- history_limit: {index_result.history_limit}")
@@ -2887,6 +2927,122 @@ def _build_ops_snapshot_sync_health_artifacts(
     return bundle_result, root_paths, component
 
 
+def _build_ops_snapshot_github_smoke_artifacts(
+    *,
+    loaded: LoadedConfig,
+    bundle_root: Path,
+    issue_filter: int | None,
+    issue_limit: int,
+) -> tuple[GitHubSmokeBuildResult, GitHubSmokeBuildResult, dict[str, object]] | None:
+    if loaded.data.tracker.kind.value != "github" or loaded.data.tracker.mode.value != "rest":
+        return None
+
+    tracker = build_tracker(loaded, dry_run=False)
+    try:
+        snapshot = asyncio.run(
+            build_github_smoke_snapshot(
+                loaded=loaded,
+                tracker=tracker,
+                issue_id=issue_filter,
+                issue_limit=max(1, issue_limit),
+            )
+        )
+    finally:
+        asyncio.run(tracker.aclose())
+
+    bundle_result = build_github_smoke_exports(
+        snapshot=snapshot,
+        output_path=bundle_root / "github-smoke.json",
+        formats=("json", "markdown"),
+    )
+    root_result = build_github_smoke_exports(
+        snapshot=snapshot,
+        output_path=loaded.reports_dir / "github-smoke.json",
+        formats=("json", "markdown"),
+    )
+    summary = snapshot.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    repo_access = snapshot.get("repo_access")
+    if not isinstance(repo_access, dict):
+        repo_access = {}
+    branch_policy = snapshot.get("branch_policy")
+    if not isinstance(branch_policy, dict):
+        branch_policy = {}
+    publish = snapshot.get("publish")
+    if not isinstance(publish, dict):
+        publish = {}
+    component = {
+        "status": summary.get("status", "attention"),
+        "label": "GitHub smoke",
+        "reason": "generated GitHub smoke report in ops snapshot bundle",
+        "output_paths": bundle_result.output_paths,
+        "open_issue_count": summary.get("open_issue_count", 0),
+        "sampled_issue_id": summary.get("sampled_issue_id"),
+        "repo_access_status": repo_access.get("status", "unknown"),
+        "default_branch": repo_access.get("default_branch"),
+        "branch_policy_status": branch_policy.get("status", "unknown"),
+        "publish_status": publish.get("status", "unknown"),
+        "link_targets": ("ops_brief", "ops_status"),
+    }
+    return bundle_result, root_result, component
+
+
+def _build_ops_snapshot_ops_brief_artifacts(
+    *,
+    loaded: LoadedConfig,
+    bundle_root: Path,
+    issue_filter: int | None,
+    tracker_filter: str | None,
+    doctor_snapshot: dict[str, Any],
+    status_snapshot: dict[str, Any],
+    dashboard_snapshot: dict[str, Any],
+    sync_audit_snapshot: dict[str, Any],
+    sync_health_snapshot: dict[str, Any],
+    github_smoke_snapshot: dict[str, Any] | None = None,
+) -> tuple[OpsBriefBuildResult, OpsBriefBuildResult, dict[str, object]]:
+    snapshot = build_ops_brief_snapshot(
+        repo_root=loaded.repo_root,
+        config_path=loaded.config_path,
+        issue_filter=issue_filter,
+        tracker_filter=tracker_filter,
+        doctor_snapshot=doctor_snapshot,
+        status_snapshot=status_snapshot,
+        dashboard_snapshot=dashboard_snapshot,
+        sync_audit_snapshot=sync_audit_snapshot,
+        sync_health_snapshot=sync_health_snapshot,
+        github_smoke_snapshot=github_smoke_snapshot,
+    )
+    bundle_result = build_ops_brief_exports(
+        snapshot=snapshot,
+        output_path=bundle_root / "ops-brief.json",
+        formats=("json", "markdown"),
+    )
+    root_result = build_ops_brief_exports(
+        snapshot=snapshot,
+        output_path=loaded.reports_dir / "ops-brief.json",
+        formats=("json", "markdown"),
+    )
+    component = {
+        "status": bundle_result.severity,
+        "label": "Ops brief",
+        "reason": "generated operator-facing handoff brief in ops snapshot bundle",
+        "output_paths": bundle_result.output_paths,
+        "headline": bundle_result.headline,
+        "top_finding_count": bundle_result.top_finding_count,
+        "next_action_count": bundle_result.next_action_count,
+        "top_findings": bundle_result.snapshot.get("top_findings", []),
+        "next_actions": bundle_result.snapshot.get("next_actions", []),
+        "github_smoke_status": (
+            bundle_result.snapshot.get("summary", {}).get("github_smoke_status", "not_applicable")
+            if isinstance(bundle_result.snapshot.get("summary"), dict)
+            else "not_applicable"
+        ),
+        "link_targets": ("status", "sync_audit", "sync_health", "ops_status", "github_smoke"),
+    }
+    return bundle_result, root_result, component
+
+
 def _build_ops_snapshot_ops_status_artifacts(
     *,
     loaded: LoadedConfig,
@@ -2913,6 +3069,8 @@ def _build_ops_snapshot_ops_status_artifacts(
     raw_related_entries = related_reports.get("entries")
     related_entries = raw_related_entries if isinstance(raw_related_entries, list) else []
     report_key_to_component = {
+        "ops-brief": "ops_brief",
+        "github-smoke": "github_smoke",
         "sync-audit": "sync_audit",
         "sync-health": "sync_health",
         "cleanup-preview": "cleanup_preview",
@@ -2961,14 +3119,27 @@ def _collect_doctor_checks(loaded: LoadedConfig) -> list[DiagnosticCheck]:
     if loaded.data.tracker.kind.value == "github":
         auth_snapshot = collect_github_auth_snapshot(loaded)
         origin_snapshot = collect_github_origin_snapshot(loaded)
+        repo_access_snapshot, branch_policy_snapshot = asyncio.run(
+            collect_github_live_repo_snapshots(loaded)
+        )
         checks = [
             _probe_github_auth(loaded, auth_snapshot=auth_snapshot),
             _probe_github_network(loaded),
-            _probe_github_repo_access(loaded, auth_snapshot=auth_snapshot),
+            _probe_github_repo_access(
+                loaded,
+                auth_snapshot=auth_snapshot,
+                snapshot=repo_access_snapshot,
+            ),
+            _probe_github_branch_policy(
+                loaded,
+                snapshot=branch_policy_snapshot,
+            ),
             _probe_github_publish_readiness(
                 loaded,
                 auth_snapshot=auth_snapshot,
                 origin_snapshot=origin_snapshot,
+                repo_access_snapshot=repo_access_snapshot,
+                branch_policy_snapshot=branch_policy_snapshot,
             ),
         ]
     else:
@@ -3022,6 +3193,12 @@ def _probe_github_network(loaded: LoadedConfig) -> DiagnosticCheck:
             status="NOT_APPLICABLE",
             message="fixture tracker mode does not contact the GitHub API",
         )
+    if loaded.data.tracker.smoke_fixture_path:
+        return DiagnosticCheck(
+            name="GitHub network",
+            status="NOT_APPLICABLE",
+            message="configured GitHub smoke fixture bypasses live GitHub network probes",
+        )
     headers = {"Accept": "application/vnd.github+json"}
     token = os.getenv(loaded.data.tracker.token_env)
     if token:
@@ -3052,7 +3229,32 @@ def _probe_github_repo_access(
     loaded: LoadedConfig,
     *,
     auth_snapshot: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
 ) -> DiagnosticCheck:
+    if snapshot is not None:
+        status = str(snapshot.get("status") or "warn")
+        normalized_status = {
+            "ok": "OK",
+            "warn": "WARN",
+            "issues": "ERROR",
+            "not_applicable": "NOT_APPLICABLE",
+        }.get(status, "WARN")
+        hint: str | None = None
+        if normalized_status == "ERROR":
+            auth = auth_snapshot or collect_github_auth_snapshot(loaded)
+            token_env = loaded.data.tracker.token_env
+            hint = (
+                f"Set {token_env} for private repos or verify tracker.repo is readable."
+                if not auth.get("token_present")
+                else "Verify tracker.repo and token permissions."
+            )
+        return DiagnosticCheck(
+            name="GitHub repo access",
+            status=normalized_status,
+            message=str(snapshot.get("message") or "unknown GitHub repo access state"),
+            hint=hint,
+        )
+
     if loaded.data.tracker.mode.value == "fixture":
         return DiagnosticCheck(
             name="GitHub repo access",
@@ -3103,16 +3305,55 @@ def _probe_github_repo_access(
     )
 
 
+def _probe_github_branch_policy(
+    loaded: LoadedConfig,
+    *,
+    snapshot: dict[str, Any] | None = None,
+) -> DiagnosticCheck:
+    branch_policy = snapshot
+    if branch_policy is None:
+        _, branch_policy = asyncio.run(collect_github_live_repo_snapshots(loaded))
+    status = str(branch_policy.get("status") or "warn")
+    normalized_status = {
+        "ok": "OK",
+        "warn": "WARN",
+        "issues": "ERROR",
+        "not_applicable": "NOT_APPLICABLE",
+    }.get(status, "WARN")
+    warnings = branch_policy.get("warnings")
+    notes = branch_policy.get("notes")
+    detail_lines: tuple[str, ...] = ()
+    if isinstance(warnings, tuple) and warnings:
+        detail_lines = tuple(
+            [f"  - {warning}" for warning in warnings if isinstance(warning, str)]
+        )
+    if isinstance(notes, tuple) and notes:
+        detail_lines = detail_lines + tuple(
+            f"  note: {note}" for note in notes if isinstance(note, str)
+        )
+    return DiagnosticCheck(
+        name="GitHub branch policy",
+        status=normalized_status,
+        message=str(branch_policy.get("message") or "unknown default-branch policy"),
+        hint=branch_policy.get("hint") if isinstance(branch_policy.get("hint"), str) else None,
+        detail_lines=detail_lines,
+    )
+
+
 def _probe_github_publish_readiness(
     loaded: LoadedConfig,
     *,
     auth_snapshot: dict[str, Any] | None = None,
     origin_snapshot: dict[str, Any] | None = None,
+    repo_access_snapshot: dict[str, Any] | None = None,
+    branch_policy_snapshot: dict[str, Any] | None = None,
 ) -> DiagnosticCheck:
     snapshot = collect_github_publish_readiness(
         loaded,
         auth_snapshot=auth_snapshot,
         origin_snapshot=origin_snapshot,
+        repo_access_snapshot=repo_access_snapshot,
+        branch_policy_snapshot=branch_policy_snapshot,
     )
     status = str(snapshot.get("status") or "warn")
     normalized_status = {

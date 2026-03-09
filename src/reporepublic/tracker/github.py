@@ -6,6 +6,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -97,6 +98,28 @@ class GitHubTracker(Tracker):
             return payload
         return {}
 
+    async def get_branch_info(self, branch: str) -> dict[str, Any]:
+        if self.mode == TrackerMode.FIXTURE:
+            return {
+                "name": branch,
+                "protected": False,
+                "protection_url": None,
+            }
+        response = await self._request("GET", f"/repos/{self.repo}/branches/{branch}")
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
+    async def get_branch_protection(self, branch: str) -> dict[str, Any]:
+        if self.mode == TrackerMode.FIXTURE:
+            return {}
+        response = await self._request("GET", f"/repos/{self.repo}/branches/{branch}/protection")
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
     async def post_comment(self, issue_id: int, body: str) -> ExternalActionResult:
         if self.dry_run:
             return ExternalActionResult(
@@ -125,7 +148,10 @@ class GitHubTracker(Tracker):
             action="post_comment",
             executed=True,
             reason="Comment posted to GitHub issue.",
-            payload={"url": response.json().get("html_url")},
+            payload={
+                "url": response.json().get("html_url"),
+                "comment_id": response.json().get("id"),
+            },
         )
 
     async def create_branch(
@@ -172,10 +198,9 @@ class GitHubTracker(Tracker):
         ensure_dir(stage_root.parent)
 
         origin_url = run_git(["remote", "get-url", "origin"], self.repo_root)
-        base_branch = run_git(["branch", "--show-current"], self.repo_root)
-        if not base_branch:
-            repo_info = await self._request("GET", f"/repos/{self.repo}")
-            base_branch = repo_info.json().get("default_branch") or "main"
+        repo_info = await self.get_repo_info()
+        local_branch = run_git(["branch", "--show-current"], self.repo_root)
+        base_branch = str(repo_info.get("default_branch") or "").strip() or local_branch or "main"
 
         run_git(["clone", "--local", str(self.repo_root), str(stage_root)], self.repo_root)
         run_git(["remote", "set-url", "origin", origin_url], stage_root)
@@ -193,6 +218,7 @@ class GitHubTracker(Tracker):
                     "issue_id": issue_id,
                     "branch_name": branch_name,
                     "base_branch": base_branch,
+                    "local_branch": local_branch or None,
                     "stage_path": str(stage_root),
                 },
             )
@@ -218,7 +244,8 @@ class GitHubTracker(Tracker):
                 "issue_id": issue_id,
                 "branch_name": branch_name,
                 "base_branch": base_branch,
-                "origin_url": origin_url,
+                "local_branch": local_branch or None,
+                "origin_url": _redact_remote_url(origin_url),
                 "stage_path": str(stage_root),
             },
         )
@@ -478,3 +505,16 @@ class GitHubTracker(Tracker):
 
     async def _sleep(self, delay_seconds: float) -> None:
         await asyncio.sleep(delay_seconds)
+
+
+def _redact_remote_url(remote_url: str) -> str:
+    try:
+        parsed = urlsplit(remote_url)
+    except ValueError:
+        return remote_url
+    if not parsed.scheme or "@" not in parsed.netloc:
+        return remote_url
+    hostname = parsed.hostname or ""
+    if parsed.port is not None:
+        hostname = f"{hostname}:{parsed.port}"
+    return urlunsplit((parsed.scheme, hostname, parsed.path, parsed.query, parsed.fragment))

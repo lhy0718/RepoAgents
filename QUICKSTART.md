@@ -18,6 +18,8 @@ Optional live smoke test:
 ```bash
 CODEX_E2E=1 uv run pytest tests/test_codex_backend.py -k live_smoke -rs
 GITHUB_E2E=1 REPOREPUBLIC_GITHUB_TEST_REPO=owner/name uv run pytest tests/test_tracker.py -k live_read_only -rs
+REPOREPUBLIC_GITHUB_WRITE_E2E=1 REPOREPUBLIC_GITHUB_WRITE_TEST_REPO=owner/name REPOREPUBLIC_GITHUB_WRITE_TEST_ISSUE=123 uv run pytest tests/test_tracker.py -k live_comment_write -rs
+REPOREPUBLIC_GITHUB_PR_E2E=1 REPOREPUBLIC_GITHUB_PR_TEST_REPO=owner/name REPOREPUBLIC_GITHUB_PR_TEST_ISSUE=123 uv run pytest tests/test_tracker.py -k live_draft_pr_publish -rs
 ```
 
 ## 2. Initialize a target repo
@@ -71,6 +73,8 @@ bash scripts/demo_live_ops.sh
 
 These scripts copy the example repos into temporary workspaces so the checked-in examples stay untouched.
 
+`bash scripts/demo_live_ops.sh` now goes beyond a blueprint-only setup: it rehearses `github smoke`, generates an `ops snapshot` handoff bundle plus archive, refreshes `ops-status`, and leaves the reading order pinned inside `examples/live-github-ops/ops/handoff-order.md`.
+
 ```bash
 cd examples/python-lib
 uv run republic init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
@@ -90,7 +94,7 @@ cat .ai-republic/reports/ops/history.json
 ```
 
 `ops snapshot` history retention defaults to `cleanup.ops_snapshot_keep_entries`. Add `--prune-history` only when you want RepoRepublic to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`.
-Use `ops status` when you want one CLI/export surface that includes the latest indexed handoff bundle, recent history, and the latest bundle's linked `sync-health` / `sync-audit` posture without opening the dashboard.
+Use `ops status` when you want one CLI/export surface that includes the latest indexed handoff bundle, recent history, the current handoff brief headline, landing paths, and the latest bundle's linked `sync-health` / `sync-audit` posture, plus `github-smoke` for live GitHub REST trackers, without opening the dashboard.
 
 What happens:
 
@@ -188,6 +192,8 @@ uv run republic github smoke --require-write-ready
 uv run republic run
 ```
 
+`github smoke --require-write-ready` now checks default-branch protection, PR review requirements, required status checks, and repo metadata push permission before you enable unattended draft-PR publish.
+
 For event-driven execution instead of polling:
 
 ```bash
@@ -206,6 +212,8 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
+- ops brief snapshots: `.ai-republic/reports/ops-brief.json`, `.ai-republic/reports/ops-brief.md`
+- bundle landing files: `.ai-republic/reports/ops/<timestamp>/index.html`, `.ai-republic/reports/ops/<timestamp>/README.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - optional JSONL logs: `.ai-republic/logs/reporepublic.jsonl`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`

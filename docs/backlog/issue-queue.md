@@ -1968,6 +1968,108 @@
   - [x] `bundle.json`과 `ops-status` snapshot이 `sync_health` component / related report link를 기록함
   - [x] dashboard `Reports`가 `sync-health` export를 card로 렌더링하고 related cleanup/sync-audit card와 연결함
 
+### RR-130. `ops snapshot` handoff summary를 operator-facing incident brief로 강화하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Handoff / Incident Summary
+- Problem: `ops snapshot` bundle은 풍부한 운영 artifact를 담고 있었지만, operator가 bundle을 열었을 때 바로 읽을 landing summary가 없어 `bundle.json`, `ops-status`, `sync-health`, `sync-audit`를 다시 열어 top finding과 next action을 조합해야 했다.
+- Scope:
+  - bundle-local `ops-brief.json|md`와 root `.ai-republic/reports/ops-brief.json|md` export 추가
+  - `sync health`, `report health`, `doctor/status`, latest ops history를 합친 operator-facing brief snapshot builder 추가
+  - bundle manifest / latest-history index / `ops status`가 같은 brief severity/headline/top findings/next actions를 함께 노출
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `ops snapshot` bundle directory에 `ops-brief.json|md`가 포함됨
+  - [x] root `.ai-republic/reports/ops-brief.json|md`가 함께 갱신됨
+  - [x] `bundle.json`, ops history index, `ops status` snapshot이 같은 brief severity/headline을 기록함
+
 ## 권장 다음 순서
 
-1. `ops snapshot` handoff summary를 operator-facing incident brief로 강화하기
+### RR-131. `ops brief`를 dashboard/report flow와 handoff archive landing page에 노출하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Handoff / Reporting
+- Problem: `ops-brief` export는 생성됐지만 dashboard `Reports`, `Ops snapshots`, handoff bundle landing surface가 이를 직접적으로 드러내지 못해 operator가 brief를 다시 파일 경로에서 찾아야 했다.
+- Scope:
+  - dashboard `Reports`가 `ops-brief` export를 card로 렌더링
+  - `ops snapshot` bundle이 landing artifact `index.html`, `README.md`를 생성하고 bundle/index에 기록
+  - `ops status`가 latest landing path와 `ops-brief` related report posture를 함께 노출
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] dashboard `Reports`가 `ops-brief` export를 card로 렌더링함
+  - [x] `ops snapshot` bundle directory에 `index.html`, `README.md` landing artifact가 포함됨
+  - [x] `ops status` snapshot/export가 landing path와 `ops-brief` related report를 기록함
+
+## 권장 다음 순서
+
+### RR-132. live GitHub integration test 범위를 publish path까지 넓히기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Live Ops / Testing
+- Problem: live GitHub path는 read-only smoke와 local mock write test까지만 커버되어, 실제 comment write와 draft PR publish 경로를 sandbox repo에서 end-to-end로 검증하는 opt-in path가 부족했다.
+- Scope:
+  - live tracker test를 read-only / comment write / draft PR publish opt-in 경로로 분리
+  - comment write test cleanup에서 test comment 삭제
+  - draft PR test cleanup에서 PR close와 branch delete 수행
+  - publish readiness가 repo metadata `permissions.push`도 반영하도록 보강
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] read-only live GitHub test와 별도로 comment write opt-in live test가 존재함
+  - [x] draft PR publish opt-in live test가 branch push, PR create, cleanup까지 다룸
+  - [x] GitHub smoke/publish readiness가 `permissions.push=false`를 warning으로 반영함
+
+### RR-133. live GitHub smoke/readiness에 branch protection과 default-branch policy를 반영하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Live Ops / Guardrails
+- Problem: live GitHub smoke/readiness는 token, origin, `permissions.push`까지는 점검하지만, default branch protection과 publish baseline branch policy를 surface에 반영하지 않아 unattended draft PR publish의 실제 guardrail posture를 충분히 설명하지 못했다.
+- Scope:
+  - GitHub smoke/report에 default branch policy snapshot 추가
+  - `doctor`에 GitHub branch policy 진단 추가
+  - publish readiness가 protected default branch / PR review requirement / required status check / default branch probe 결과를 warning으로 반영
+  - live publish branch staging이 repo default branch를 우선 기준으로 삼도록 정리
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `republic github smoke`가 default branch policy를 report/export에 포함함
+  - [x] `doctor`가 GitHub branch policy를 별도 진단함
+  - [x] draft PR publish readiness가 branch protection posture를 반영함
+  - [x] GitHub branch staging이 repo default branch를 우선 사용함
+
+### RR-134. `github smoke`/`github-smoke.*`를 `ops snapshot` bundle과 dashboard/report flow에 포함하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Ops UX / Handoff
+- Problem: `republic github smoke`는 live readiness를 잘 보여주지만, incident handoff용 `ops snapshot` bundle과 dashboard/report flow는 이 신호를 별도 surface로 취급해서 operator가 latest bundle, ops brief, dashboard report card 사이에서 live publish posture를 자연스럽게 따라가기 어려웠다.
+- Scope:
+  - live GitHub REST tracker에서 `ops snapshot`이 bundle-local/root `github-smoke.json|md`를 함께 생성
+  - bundle manifest, landing page, `ops status`, `ops brief`, dashboard `Reports`에서 같은 artifact graph로 노출
+  - live GitHub handoff runbook/README 갱신
+- Acceptance criteria:
+  - [x] live GitHub REST tracker에서 `ops snapshot` bundle directory에 `github-smoke.json|md`가 포함됨
+  - [x] dashboard `Reports`가 `github-smoke` card를 렌더링함
+  - [x] `ops status`와 `ops brief`가 `github-smoke` related report를 surface에 포함함
+  - [x] handoff landing/문서가 같은 artifact graph를 설명함
+
+### RR-135. `ops snapshot`과 `github smoke`를 결합한 live rollout/handoff 예제를 추가하기
+
+- Status: done
+- Priority: P2
+- Area: GitHub / Examples / Handoff
+- Problem: live GitHub smoke와 `ops snapshot` handoff surface는 구현됐지만, operator가 이를 실제 rollout에서 어떤 순서로 rehearse하고 어떤 파일부터 열어야 하는지 보여주는 runnable example이 부족했다.
+- Scope:
+  - `examples/live-github-ops`에 offline `github smoke` rehearsal fixture와 handoff helper 추가
+  - `scripts/demo_live_ops.sh`를 handoff bundle/archive 생성까지 확장
+  - live GitHub walkthrough, quickstart, example README에 artifact open order를 고정
+- Acceptance criteria:
+  - [x] live GitHub example이 `github-smoke`, `ops-brief`, `ops-status`, landing page를 함께 생성하는 handoff rehearsal 경로를 가짐
+  - [x] `demo_live_ops.sh`가 handoff bundle/archive까지 포함한 end-to-end rehearsal을 수행함
+  - [x] operator가 어떤 파일을 먼저 열어야 하는지 example/문서에 명시됨
+
+## 권장 다음 순서
+
+1. publish-enabled sandbox rollout 예제를 추가하기

@@ -44,9 +44,11 @@ VALID_DASHBOARD_FORMATS = ("html", "json", "markdown")
 REPORT_EXPORTS = (
     ("sync-audit", "Sync audit", "sync-audit.json", "sync-audit.md"),
     ("sync-health", "Sync health", "sync-health.json", "sync-health.md"),
+    ("github-smoke", "GitHub smoke", "github-smoke.json", "github-smoke.md"),
     ("cleanup-preview", "Cleanup preview", "cleanup-preview.json", "cleanup-preview.md"),
     ("cleanup-result", "Cleanup result", "cleanup-result.json", "cleanup-result.md"),
     ("ops-status", "Ops status", "ops-status.json", "ops-status.md"),
+    ("ops-brief", "Ops brief", "ops-brief.json", "ops-brief.md"),
 )
 OPS_SNAPSHOT_ENTRY_PREVIEW_LIMIT = 5
 SEVERITY_ORDER = {
@@ -1185,6 +1187,10 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
                 f"  - age_human: {latest_ops.get('age_human', '-')}",
                 f"  - bundle_dir: {latest_ops.get('bundle_dir', '-')}",
                 f"  - archive_path: {latest_ops.get('archive_path', '-')}",
+                f"  - brief_severity: {latest_ops.get('brief_severity', '-')}",
+                f"  - brief_headline: {latest_ops.get('brief_headline', '-')}",
+                f"  - landing_html: {latest_ops.get('landing_html', '-')}",
+                f"  - brief_json: {latest_ops.get('brief_json', '-')}",
             ]
         )
     ops_entries = _list_of_dicts(ops_snapshots.get("entries"))
@@ -1193,6 +1199,7 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
         for entry in ops_entries:
             lines.append(
                 f"  - {entry.get('entry_id', '-')}: status={entry.get('overall_status', '-')} "
+                f"brief={entry.get('brief_severity', '-')} "
                 f"age={entry.get('age_human', '-')} archive={entry.get('has_archive', False)}"
             )
     lines.extend(
@@ -1604,6 +1611,18 @@ def _render_ops_snapshot_section(snapshot: dict[str, object]) -> str:
         _render_token_link("history json", _string_or_none(snapshot.get("history_json_href"))),
         _render_token_link("history markdown", _string_or_none(snapshot.get("history_markdown_href"))),
     ]
+    landing_html_href = _string_or_none(latest.get("landing_html_href"))
+    if landing_html_href:
+        latest_links.append(_render_token_link("landing html", landing_html_href))
+    landing_markdown_href = _string_or_none(latest.get("landing_markdown_href"))
+    if landing_markdown_href:
+        latest_links.append(_render_token_link("landing md", landing_markdown_href))
+    brief_json_href = _string_or_none(latest.get("brief_json_href"))
+    if brief_json_href:
+        latest_links.append(_render_token_link("brief json", brief_json_href))
+    brief_markdown_href = _string_or_none(latest.get("brief_markdown_href"))
+    if brief_markdown_href:
+        latest_links.append(_render_token_link("brief md", brief_markdown_href))
     archive_href = _string_or_none(latest.get("archive_href"))
     if archive_href:
         latest_links.append(_render_token_link("archive", archive_href))
@@ -1626,8 +1645,10 @@ def _render_ops_snapshot_section(snapshot: dict[str, object]) -> str:
             "<li>"
             f"<strong>{escape(str(entry['entry_id']))}</strong> · "
             f"status {escape(str(entry['overall_status']))} · "
+            f"brief {escape(str(entry.get('brief_severity', 'unknown')))} · "
             f"age {escape(str(entry['age_human']))} · "
             f"archive {'yes' if entry['has_archive'] else 'no'}"
+            f'<p class="copy" style="margin-top: 0.5rem;">{escape(str(entry.get("brief_headline", "n/a")))}</p>'
             f'<div class="token-row" style="margin-top: 0.5rem;">{"".join(links)}</div>'
             "</li>"
         )
@@ -1650,6 +1671,8 @@ def _render_ops_snapshot_section(snapshot: dict[str, object]) -> str:
             <li><strong>age:</strong> {escape(str(latest.get('age_human', '-')))}</li>
             <li><strong>bundle_dir:</strong> {escape(str(latest.get('bundle_dir', '-')))}</li>
             <li><strong>archive:</strong> {escape(str(latest.get('archive_path', '-')))}</li>
+            <li><strong>brief:</strong> {escape(str(latest.get('brief_headline', '-')))}</li>
+            <li><strong>brief status:</strong> {escape(str(latest.get('brief_severity', '-')))}</li>
           </ul>
           <div class="token-row" style="margin-top: 0.7rem;">
             {"".join(latest_links)}
@@ -2015,18 +2038,34 @@ def _serialize_ops_snapshot_entry(
         archive_path = _string_or_none(archive.get("path"))
     bundle_json = _string_or_none(entry.get("bundle_json"))
     bundle_markdown = _string_or_none(entry.get("bundle_markdown"))
+    landing_html = _string_or_none(entry.get("landing_html"))
+    landing_markdown = _string_or_none(entry.get("landing_markdown"))
+    brief_json = _string_or_none(entry.get("brief_json"))
+    brief_markdown = _string_or_none(entry.get("brief_markdown"))
     return {
         "entry_id": _string_or_none(entry.get("entry_id")) or "unknown",
         "rendered_at": rendered_value or "n/a",
         "age_seconds": age_seconds,
         "age_human": age_human,
         "overall_status": _string_or_none(entry.get("overall_status")) or "attention",
+        "brief_severity": _string_or_none(entry.get("brief_severity")) or "unknown",
+        "brief_headline": _string_or_none(entry.get("brief_headline")) or "n/a",
+        "brief_top_finding_count": int(entry.get("brief_top_finding_count", 0) or 0),
+        "brief_next_action_count": int(entry.get("brief_next_action_count", 0) or 0),
         "bundle_dir": _string_or_none(entry.get("bundle_dir")) or "n/a",
         "bundle_relative_dir": _string_or_none(entry.get("bundle_relative_dir")) or "n/a",
         "bundle_json": bundle_json,
         "bundle_json_href": _payload_href(output_path, bundle_json) if bundle_json else None,
         "bundle_markdown": bundle_markdown,
         "bundle_markdown_href": _payload_href(output_path, bundle_markdown) if bundle_markdown else None,
+        "landing_html": landing_html,
+        "landing_html_href": _payload_href(output_path, landing_html) if landing_html else None,
+        "landing_markdown": landing_markdown,
+        "landing_markdown_href": _payload_href(output_path, landing_markdown) if landing_markdown else None,
+        "brief_json": brief_json,
+        "brief_json_href": _payload_href(output_path, brief_json) if brief_json else None,
+        "brief_markdown": brief_markdown,
+        "brief_markdown_href": _payload_href(output_path, brief_markdown) if brief_markdown else None,
         "archive_path": archive_path,
         "archive_href": _payload_href(output_path, archive_path) if archive_path else None,
         "has_archive": bool(archive_path),
@@ -2166,6 +2205,20 @@ def _report_summary_details(
     key: str,
     report_summary: dict[str, object],
 ) -> tuple[str, str, dict[str, object]]:
+    if key == "ops-brief":
+        status = _string_or_none(report_summary.get("severity")) or "available"
+        headline = _string_or_none(report_summary.get("headline")) or "ops brief available"
+        summary = headline
+        metrics = {
+            "top_finding_count": int(report_summary.get("top_finding_count", 0) or 0),
+            "next_action_count": int(report_summary.get("next_action_count", 0) or 0),
+            "selected_runs": report_summary.get("selected_runs", 0),
+            "report_health_severity": report_summary.get("report_health_severity", "unknown"),
+            "sync_audit_status": report_summary.get("sync_audit_status", "unknown"),
+            "sync_health_status": report_summary.get("sync_health_status", "unknown"),
+            "github_smoke_status": report_summary.get("github_smoke_status", "not_applicable"),
+        }
+        return status, summary, metrics
     if key == "sync-health":
         status = _string_or_none(report_summary.get("overall_status")) or "available"
         pending = report_summary.get("pending_artifacts", 0)
@@ -2191,6 +2244,24 @@ def _report_summary_details(
             "related_report_mismatches": report_summary.get("related_report_mismatches", 0),
             "related_report_policy_drifts": report_summary.get("related_report_policy_drifts", 0),
             "next_action_count": len(_list_of_strings(report_summary.get("next_actions"))),
+        }
+        return status, summary, metrics
+    if key == "github-smoke":
+        status = _string_or_none(report_summary.get("status")) or "available"
+        open_issue_count = report_summary.get("open_issue_count", 0)
+        sampled_issue_id = report_summary.get("sampled_issue_id")
+        summary = (
+            f"open_issues={open_issue_count} "
+            f"publish={report_summary.get('publish_status', 'unknown')} "
+            f"branch_policy={report_summary.get('branch_policy_status', 'unknown')}"
+        )
+        metrics = {
+            "open_issue_count": open_issue_count,
+            "sampled_issue_id": sampled_issue_id,
+            "repo_access_status": report_summary.get("repo_access_status", "unknown"),
+            "branch_policy_status": report_summary.get("branch_policy_status", "unknown"),
+            "publish_status": report_summary.get("publish_status", "unknown"),
+            "auth_status": report_summary.get("auth_status", "unknown"),
         }
         return status, summary, metrics
     if key == "ops-status":
@@ -2315,6 +2386,45 @@ def _report_details(key: str, payload: dict[str, object]) -> dict[str, object]:
             if isinstance(related_reports, dict)
             else 0,
         }
+    if key == "github-smoke":
+        summary = _dict_value(payload, "summary")
+        repo_access = _dict_value(payload, "repo_access")
+        branch_policy = _dict_value(payload, "branch_policy")
+        publish = _dict_value(payload, "publish")
+        branch_policy_warnings = branch_policy.get("warnings")
+        publish_warnings = publish.get("warnings")
+        return {
+            "tracker_repo": _dict_value(payload, "meta").get("tracker_repo"),
+            "repo_access_message": repo_access.get("message"),
+            "full_name": repo_access.get("full_name"),
+            "default_branch": repo_access.get("default_branch"),
+            "branch_policy_message": branch_policy.get("message"),
+            "branch_policy_warning_count": (
+                len([item for item in branch_policy_warnings if isinstance(item, str) and item])
+                if isinstance(branch_policy_warnings, (list, tuple))
+                else 0
+            ),
+            "publish_message": publish.get("message"),
+            "publish_warning_count": (
+                len([item for item in publish_warnings if isinstance(item, str) and item])
+                if isinstance(publish_warnings, (list, tuple))
+                else 0
+            ),
+            "sampled_issue_id": summary.get("sampled_issue_id"),
+        }
+    if key == "ops-brief":
+        sources = _dict_value(payload, "sources")
+        return {
+            "top_findings": _list_of_strings(payload.get("top_findings")),
+            "next_actions": _list_of_strings(payload.get("next_actions")),
+            "doctor_status": _dict_value(sources, "doctor").get("overall_status"),
+            "report_health_title": _dict_value(sources, "report_health").get("title"),
+            "sync_audit_pending": _dict_value(sources, "sync_audit").get("pending_artifacts", 0),
+            "sync_health_integrity_issue_count": _dict_value(sources, "sync_health").get("integrity_issue_count", 0),
+            "github_smoke_status": _dict_value(sources, "github_smoke").get("status"),
+            "github_smoke_publish_status": _dict_value(sources, "github_smoke").get("publish_status"),
+            "github_smoke_branch_policy_status": _dict_value(sources, "github_smoke").get("branch_policy_status"),
+        }
     if key != "sync-audit":
         details: dict[str, object] = {}
         if related_mismatch_warnings:
@@ -2414,6 +2524,14 @@ def _integrity_action_hints(finding_counts: dict[str, object]) -> list[str]:
 
 
 def _report_relation_specs(key: str, payload: dict[str, object]) -> list[dict[str, object]]:
+    if key == "ops-brief":
+        related_reports = payload.get("related_reports")
+        if not isinstance(related_reports, dict):
+            return []
+        entries = related_reports.get("entries")
+        if not isinstance(entries, list):
+            return []
+        return [entry for entry in entries if isinstance(entry, dict)]
     if key == "sync-health":
         related_reports = payload.get("related_reports")
         if not isinstance(related_reports, dict):

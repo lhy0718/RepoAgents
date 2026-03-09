@@ -40,6 +40,7 @@ class TrackerSettings(BaseModel):
     api_url: str = "https://api.github.com"
     token_env: str = "GITHUB_TOKEN"
     fixtures_path: str | None = None
+    smoke_fixture_path: str | None = None
 
     @field_validator("repo")
     @classmethod
@@ -60,6 +61,10 @@ class TrackerSettings(BaseModel):
                 raise ValueError("tracker.fixtures_path is required when tracker.mode=fixture")
             return self
 
+        if self.smoke_fixture_path:
+            raise ValueError(
+                f"tracker.smoke_fixture_path is only supported when tracker.kind={TrackerKind.GITHUB.value}"
+            )
         if not self.path:
             if self.fixtures_path:
                 self.path = self.fixtures_path

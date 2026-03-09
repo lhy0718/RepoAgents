@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from reporepublic.config import LoadedConfig
 from reporepublic.models import IssueRef
 from reporepublic.models.domain import utc_now
+from reporepublic.tracker import build_tracker
 from reporepublic.tracker.github import GitHubTracker
 from reporepublic.utils.git import GitCommandError, is_git_repository, run_git
 from reporepublic.utils.files import write_text_file
@@ -157,6 +158,91 @@ def collect_github_auth_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
     }
 
 
+def _load_github_smoke_fixture_snapshot(
+    loaded: LoadedConfig,
+    *,
+    rendered_at: str,
+    issue_id: int | None,
+    issue_limit: int,
+) -> dict[str, Any] | None:
+    raw_path = loaded.data.tracker.smoke_fixture_path
+    if not raw_path:
+        return None
+    fixture_path = loaded.resolve(raw_path)
+    try:
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"GitHub smoke fixture not found at {fixture_path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"GitHub smoke fixture at {fixture_path} is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"GitHub smoke fixture at {fixture_path} must contain a JSON object"
+        )
+
+    auth = _mapping(payload.get("auth"))
+    repo_access = _mapping(payload.get("repo_access"))
+    branch_policy = _mapping(payload.get("branch_policy"))
+    origin = _mapping(payload.get("origin"))
+    publish = _mapping(payload.get("publish"))
+    issues = _mapping(payload.get("issues"))
+    sampled_issue = _mapping(payload.get("sampled_issue"))
+    summary = _mapping(payload.get("summary"))
+    meta = _mapping(payload.get("meta"))
+
+    return {
+        "meta": {
+            **meta,
+            "kind": "github_smoke",
+            "rendered_at": rendered_at,
+            "repo_root": str(loaded.repo_root),
+            "tracker_repo": loaded.data.tracker.repo,
+            "issue_limit": max(1, issue_limit),
+            "requested_issue_id": issue_id,
+            "fixture_path": str(fixture_path),
+            "source": "fixture",
+        },
+        "summary": {
+            "status": summary.get("status", "attention"),
+            "message": (
+                summary.get("message")
+                or publish.get("message")
+                or repo_access.get("message")
+                or "loaded GitHub smoke snapshot from fixture"
+            ),
+            "open_issue_count": int(summary.get("open_issue_count", issues.get("count", 0)) or 0),
+            "sampled_issue_id": (
+                summary.get("sampled_issue_id")
+                if summary.get("sampled_issue_id") is not None
+                else sampled_issue.get("issue_id")
+            ),
+            "write_comments_enabled": bool(
+                summary.get("write_comments_enabled", publish.get("write_comments_enabled", False))
+            ),
+            "open_pr_enabled": bool(
+                summary.get("open_pr_enabled", publish.get("open_pr_enabled", False))
+            ),
+            "auth_status": summary.get("auth_status", auth.get("status", "unknown")),
+            "repo_access_status": summary.get("repo_access_status", repo_access.get("status", "unknown")),
+            "branch_policy_status": summary.get(
+                "branch_policy_status", branch_policy.get("status", "unknown")
+            ),
+            "publish_status": summary.get("publish_status", publish.get("status", "unknown")),
+        },
+        "auth": auth,
+        "repo_access": repo_access,
+        "branch_policy": branch_policy,
+        "origin": origin,
+        "publish": publish,
+        "issues": issues,
+        "sampled_issue": sampled_issue or None,
+    }
+
+
 def collect_github_origin_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
     tracker = loaded.data.tracker
     if tracker.mode.value == "fixture":
@@ -218,11 +304,304 @@ def collect_github_origin_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
     }
 
 
+async def collect_github_live_repo_snapshots(
+    loaded: LoadedConfig,
+    *,
+    tracker: GitHubTracker | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    fixture_snapshot = _load_github_smoke_fixture_snapshot(
+        loaded,
+        rendered_at=utc_now().isoformat(),
+        issue_id=None,
+        issue_limit=5,
+    )
+    if fixture_snapshot is not None:
+        return (
+            _mapping(fixture_snapshot.get("repo_access")),
+            _mapping(fixture_snapshot.get("branch_policy")),
+        )
+    managed_tracker = tracker
+    should_close = False
+    if managed_tracker is None:
+        managed_tracker = _build_github_tracker(loaded)
+        should_close = True
+    try:
+        repo_access = await collect_github_repo_access_snapshot(loaded, tracker=managed_tracker)
+        branch_policy = await collect_github_branch_policy_snapshot(
+            loaded,
+            tracker=managed_tracker,
+            repo_access_snapshot=repo_access,
+        )
+        return repo_access, branch_policy
+    finally:
+        if should_close and managed_tracker is not None:
+            await managed_tracker.aclose()
+
+
+async def collect_github_repo_access_snapshot(
+    loaded: LoadedConfig,
+    *,
+    tracker: GitHubTracker | None = None,
+) -> dict[str, Any]:
+    if loaded.data.tracker.mode.value == "fixture":
+        return {
+            "status": "not_applicable",
+            "message": "fixture tracker mode does not probe live repo metadata",
+            "full_name": loaded.data.tracker.repo,
+            "default_branch": None,
+            "private": None,
+            "permissions": {},
+        }
+
+    managed_tracker = tracker
+    should_close = False
+    if managed_tracker is None:
+        managed_tracker = _build_github_tracker(loaded)
+        should_close = True
+    try:
+        repo_info = await managed_tracker.get_repo_info()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "issues",
+            "message": f"could not load repo metadata: {exc}",
+            "full_name": loaded.data.tracker.repo,
+            "default_branch": None,
+            "private": None,
+            "permissions": {},
+        }
+    finally:
+        if should_close and managed_tracker is not None:
+            await managed_tracker.aclose()
+
+    return {
+        "status": "ok",
+        "message": (
+            f"loaded repo metadata for {repo_info.get('full_name') or loaded.data.tracker.repo}"
+        ),
+        "full_name": repo_info.get("full_name") or loaded.data.tracker.repo,
+        "default_branch": repo_info.get("default_branch"),
+        "private": repo_info.get("private"),
+        "permissions": _mapping(repo_info.get("permissions")),
+    }
+
+
+async def collect_github_branch_policy_snapshot(
+    loaded: LoadedConfig,
+    *,
+    tracker: GitHubTracker | None = None,
+    repo_access_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if loaded.data.tracker.mode.value == "fixture":
+        return {
+            "status": "not_applicable",
+            "message": "fixture tracker mode does not inspect default-branch policy",
+            "hint": None,
+            "default_branch": None,
+            "local_branch": None,
+            "local_matches_default_branch": None,
+            "protected": None,
+            "protection_details_status": "not_applicable",
+            "required_pull_request_reviews": None,
+            "required_approving_review_count": None,
+            "required_status_checks": None,
+            "required_status_check_context_count": 0,
+            "enforce_admins": None,
+            "warnings": (),
+            "notes": (),
+        }
+
+    managed_tracker = tracker
+    should_close = False
+    if managed_tracker is None:
+        managed_tracker = _build_github_tracker(loaded)
+        should_close = True
+
+    try:
+        repo_access = repo_access_snapshot or await collect_github_repo_access_snapshot(
+            loaded,
+            tracker=managed_tracker,
+        )
+        if repo_access.get("status") != "ok":
+            return {
+                "status": "not_applicable",
+                "message": "repo metadata probe failed before default-branch policy inspection",
+                "hint": None,
+                "default_branch": None,
+                "local_branch": _read_local_git_branch(loaded.repo_root),
+                "local_matches_default_branch": None,
+                "protected": None,
+                "protection_details_status": "not_applicable",
+                "required_pull_request_reviews": None,
+                "required_approving_review_count": None,
+                "required_status_checks": None,
+                "required_status_check_context_count": 0,
+                "enforce_admins": None,
+                "warnings": (),
+                "notes": (),
+            }
+
+        default_branch = str(repo_access.get("default_branch") or "").strip()
+        local_branch = _read_local_git_branch(loaded.repo_root)
+        local_matches_default = (
+            None
+            if not local_branch or not default_branch
+            else local_branch == default_branch
+        )
+        if not default_branch:
+            return {
+                "status": "warn",
+                "message": "repo metadata did not report a default branch",
+                "hint": "Verify the repository default branch before enabling unattended PR publish.",
+                "default_branch": None,
+                "local_branch": local_branch,
+                "local_matches_default_branch": None,
+                "protected": None,
+                "protection_details_status": "not_applicable",
+                "required_pull_request_reviews": None,
+                "required_approving_review_count": None,
+                "required_status_checks": None,
+                "required_status_check_context_count": 0,
+                "enforce_admins": None,
+                "warnings": ("repo metadata did not report a default branch",),
+                "notes": (),
+            }
+
+        try:
+            branch_info = await managed_tracker.get_branch_info(default_branch)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "status": "warn",
+                "message": f"could not inspect default branch {default_branch}: {exc}",
+                "hint": "Verify tracker.repo and token permissions, then retry the branch policy probe.",
+                "default_branch": default_branch,
+                "local_branch": local_branch,
+                "local_matches_default_branch": local_matches_default,
+                "protected": None,
+                "protection_details_status": "warn",
+                "required_pull_request_reviews": None,
+                "required_approving_review_count": None,
+                "required_status_checks": None,
+                "required_status_check_context_count": 0,
+                "enforce_admins": None,
+                "warnings": (f"could not inspect default branch {default_branch}",),
+                "notes": _build_branch_policy_notes(local_branch, default_branch, local_matches_default),
+            }
+
+        protected = bool(branch_info.get("protected"))
+        protection_details_status = "not_applicable"
+        protection_payload: dict[str, Any] = {}
+        warnings: list[str] = []
+        notes = list(
+            _build_branch_policy_notes(
+                local_branch,
+                default_branch,
+                local_matches_default,
+            )
+        )
+
+        if not protected:
+            warnings.append(f"default branch {default_branch} is not protected")
+        else:
+            try:
+                protection_payload = await managed_tracker.get_branch_protection(default_branch)
+            except Exception:  # noqa: BLE001
+                protection_details_status = "warn"
+                warnings.append(
+                    f"could not read detailed protection policy for default branch {default_branch}"
+                )
+            else:
+                protection_details_status = "ok"
+
+        review_policy = _mapping(protection_payload.get("required_pull_request_reviews"))
+        required_status_checks_payload = _mapping(protection_payload.get("required_status_checks"))
+        status_check_contexts = _collect_status_check_contexts(required_status_checks_payload)
+        required_pull_request_reviews = bool(review_policy) if protection_details_status == "ok" else None
+        required_approving_review_count = (
+            review_policy.get("required_approving_review_count")
+            if protection_details_status == "ok"
+            else None
+        )
+        required_status_checks = (
+            bool(status_check_contexts or required_status_checks_payload.get("checks"))
+            if protection_details_status == "ok"
+            else None
+        )
+        enforce_admins = (
+            _mapping(protection_payload.get("enforce_admins")).get("enabled")
+            if protection_details_status == "ok"
+            else None
+        )
+
+        if protection_details_status == "ok":
+            if not required_pull_request_reviews or required_approving_review_count in (None, 0):
+                warnings.append(
+                    f"default branch {default_branch} does not require pull request reviews"
+                )
+            if not required_status_checks:
+                warnings.append(
+                    f"default branch {default_branch} has no required status checks"
+                )
+            if enforce_admins is False:
+                notes.append(
+                    f"default branch {default_branch} does not enforce protections for admins"
+                )
+
+        message = (
+            "; ".join(warnings)
+            if warnings
+            else (
+                f"default branch {default_branch} is protected; "
+                f"reviews_required={bool(required_pull_request_reviews)} "
+                f"status_checks_required={bool(required_status_checks)}"
+            )
+        )
+        hint = None
+        if warnings:
+            if any("not protected" in warning for warning in warnings):
+                hint = (
+                    "Protect the default branch or enable equivalent repository rulesets "
+                    "before unattended live PR publish."
+                )
+            elif any("could not read detailed protection policy" in warning for warning in warnings):
+                hint = (
+                    "Use a token that can read branch protection or verify repository rulesets "
+                    "manually before unattended live PR publish."
+                )
+            else:
+                hint = (
+                    "Require pull request reviews and status checks on the default branch "
+                    "before unattended live PR publish."
+                )
+
+        return {
+            "status": "warn" if warnings else "ok",
+            "message": message,
+            "hint": hint,
+            "default_branch": default_branch,
+            "local_branch": local_branch,
+            "local_matches_default_branch": local_matches_default,
+            "protected": protected,
+            "protection_details_status": protection_details_status,
+            "required_pull_request_reviews": required_pull_request_reviews,
+            "required_approving_review_count": required_approving_review_count,
+            "required_status_checks": required_status_checks,
+            "required_status_check_context_count": len(status_check_contexts),
+            "enforce_admins": enforce_admins,
+            "warnings": tuple(warnings),
+            "notes": tuple(notes),
+        }
+    finally:
+        if should_close and managed_tracker is not None:
+            await managed_tracker.aclose()
+
+
 def collect_github_publish_readiness(
     loaded: LoadedConfig,
     *,
     auth_snapshot: dict[str, Any] | None = None,
     origin_snapshot: dict[str, Any] | None = None,
+    repo_access_snapshot: dict[str, Any] | None = None,
+    branch_policy_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tracker = loaded.data.tracker
     if tracker.mode.value == "fixture":
@@ -239,6 +618,8 @@ def collect_github_publish_readiness(
 
     auth = auth_snapshot or collect_github_auth_snapshot(loaded)
     origin = origin_snapshot or collect_github_origin_snapshot(loaded)
+    repo_access = repo_access_snapshot or {}
+    branch_policy = branch_policy_snapshot or {}
     write_comments_enabled = loaded.data.safety.allow_write_comments
     open_pr_enabled = loaded.data.safety.allow_open_pr
 
@@ -271,6 +652,22 @@ def collect_github_publish_readiness(
         if origin_status != "ok":
             pr_writes_ready = False
             warnings.append(str(origin.get("message") or "git origin preflight failed"))
+        permissions = _mapping(repo_access.get("permissions"))
+        if repo_access.get("status") == "ok" and permissions.get("push") is False:
+            pr_writes_ready = False
+            warnings.append("repo metadata reports push permission=false")
+        if repo_access.get("status") == "ok" and not repo_access.get("default_branch"):
+            pr_writes_ready = False
+            warnings.append("repo metadata did not report a default branch")
+        if branch_policy.get("status") == "warn":
+            pr_writes_ready = False
+            branch_warnings = branch_policy.get("warnings")
+            if isinstance(branch_warnings, tuple):
+                warnings.extend(
+                    f"branch policy: {warning}"
+                    for warning in branch_warnings
+                    if isinstance(warning, str)
+                )
 
     if warnings:
         return {
@@ -310,29 +707,26 @@ async def build_github_smoke_snapshot(
     issue_limit: int = 5,
 ) -> dict[str, Any]:
     rendered_at = utc_now().isoformat()
+    fixture_snapshot = _load_github_smoke_fixture_snapshot(
+        loaded,
+        rendered_at=rendered_at,
+        issue_id=issue_id,
+        issue_limit=issue_limit,
+    )
+    if fixture_snapshot is not None:
+        return fixture_snapshot
     auth = collect_github_auth_snapshot(loaded)
     origin = collect_github_origin_snapshot(loaded)
-    publish = collect_github_publish_readiness(
-        loaded,
-        auth_snapshot=auth,
-        origin_snapshot=origin,
-    )
-
     repo_access: dict[str, Any]
+    branch_policy: dict[str, Any]
     issues_section: dict[str, Any]
     sampled_issue: dict[str, Any] | None = None
 
-    try:
-        repo_info = await tracker.get_repo_info()
-    except Exception as exc:  # noqa: BLE001
-        repo_access = {
-            "status": "issues",
-            "message": f"could not load repo metadata: {exc}",
-            "full_name": loaded.data.tracker.repo,
-            "default_branch": None,
-            "private": None,
-            "permissions": {},
-        }
+    repo_access, branch_policy = await collect_github_live_repo_snapshots(
+        loaded,
+        tracker=tracker,
+    )
+    if repo_access.get("status") != "ok":
         issues_section = {
             "status": "not_applicable",
             "message": "repo metadata probe failed before issue sampling",
@@ -340,16 +734,6 @@ async def build_github_smoke_snapshot(
             "sampled": [],
         }
     else:
-        repo_access = {
-            "status": "ok",
-            "message": (
-                f"loaded repo metadata for {repo_info.get('full_name') or loaded.data.tracker.repo}"
-            ),
-            "full_name": repo_info.get("full_name") or loaded.data.tracker.repo,
-            "default_branch": repo_info.get("default_branch"),
-            "private": repo_info.get("private"),
-            "permissions": _mapping(repo_info.get("permissions")),
-        }
         try:
             issues = await tracker.list_open_issues()
         except Exception as exc:  # noqa: BLE001
@@ -389,9 +773,18 @@ async def build_github_smoke_snapshot(
                 else:
                     sampled_issue = _serialize_issue_snapshot(issue)
 
+    publish = collect_github_publish_readiness(
+        loaded,
+        auth_snapshot=auth,
+        origin_snapshot=origin,
+        repo_access_snapshot=repo_access,
+        branch_policy_snapshot=branch_policy,
+    )
+
     overall_status = "clean"
     for status in (
         repo_access.get("status"),
+        branch_policy.get("status"),
         issues_section.get("status"),
         auth.get("status"),
         publish.get("status"),
@@ -424,9 +817,14 @@ async def build_github_smoke_snapshot(
             "sampled_issue_id": sampled_issue.get("issue_id") if isinstance(sampled_issue, dict) else None,
             "write_comments_enabled": publish.get("write_comments_enabled", False),
             "open_pr_enabled": publish.get("open_pr_enabled", False),
+            "auth_status": auth.get("status", "unknown"),
+            "repo_access_status": repo_access.get("status", "unknown"),
+            "branch_policy_status": branch_policy.get("status", "unknown"),
+            "publish_status": publish.get("status", "unknown"),
         },
         "auth": auth,
         "repo_access": repo_access,
+        "branch_policy": branch_policy,
         "origin": origin,
         "publish": publish,
         "issues": issues_section,
@@ -438,6 +836,7 @@ def render_github_smoke_text(snapshot: dict[str, Any]) -> str:
     summary = _mapping(snapshot.get("summary"))
     auth = _mapping(snapshot.get("auth"))
     repo_access = _mapping(snapshot.get("repo_access"))
+    branch_policy = _mapping(snapshot.get("branch_policy"))
     origin = _mapping(snapshot.get("origin"))
     publish = _mapping(snapshot.get("publish"))
     issues = _mapping(snapshot.get("issues"))
@@ -451,6 +850,7 @@ def render_github_smoke_text(snapshot: dict[str, Any]) -> str:
         f"Summary: {summary.get('message', 'n/a')}",
         f"Auth: {auth.get('status', 'unknown')} ({auth.get('message', 'n/a')})",
         f"Repo access: {repo_access.get('status', 'unknown')} ({repo_access.get('message', 'n/a')})",
+        f"Branch policy: {branch_policy.get('status', 'unknown')} ({branch_policy.get('message', 'n/a')})",
         f"Origin: {origin.get('status', 'unknown')} ({origin.get('message', 'n/a')})",
         f"Publish readiness: {publish.get('status', 'unknown')} ({publish.get('message', 'n/a')})",
     ]
@@ -475,6 +875,7 @@ def render_github_smoke_markdown(snapshot: dict[str, Any]) -> str:
     summary = _mapping(snapshot.get("summary"))
     auth = _mapping(snapshot.get("auth"))
     repo_access = _mapping(snapshot.get("repo_access"))
+    branch_policy = _mapping(snapshot.get("branch_policy"))
     origin = _mapping(snapshot.get("origin"))
     publish = _mapping(snapshot.get("publish"))
     issues = _mapping(snapshot.get("issues"))
@@ -508,6 +909,16 @@ def render_github_smoke_markdown(snapshot: dict[str, Any]) -> str:
         f"- default_branch: {repo_access.get('default_branch', '-')}",
         f"- private: {repo_access.get('private', '-')}",
         "",
+        "## Branch policy",
+        f"- status: {branch_policy.get('status', '-')}",
+        f"- message: {branch_policy.get('message', '-')}",
+        f"- default_branch: {branch_policy.get('default_branch', '-')}",
+        f"- local_branch: {branch_policy.get('local_branch', '-')}",
+        f"- protected: {branch_policy.get('protected', '-')}",
+        f"- required_pull_request_reviews: {branch_policy.get('required_pull_request_reviews', '-')}",
+        f"- required_status_checks: {branch_policy.get('required_status_checks', '-')}",
+        f"- required_status_check_context_count: {branch_policy.get('required_status_check_context_count', 0)}",
+        "",
         "## Origin",
         f"- status: {origin.get('status', '-')}",
         f"- message: {origin.get('message', '-')}",
@@ -532,6 +943,18 @@ def render_github_smoke_markdown(snapshot: dict[str, Any]) -> str:
             if not isinstance(entry, dict):
                 continue
             lines.append(f"  - #{entry.get('id', '-')} {entry.get('title', '-')}")
+    branch_warnings = branch_policy.get("warnings")
+    if isinstance(branch_warnings, tuple) and branch_warnings:
+        lines.extend(["", "## Branch policy warnings"])
+        for warning in branch_warnings:
+            if isinstance(warning, str):
+                lines.append(f"- {warning}")
+    branch_notes = branch_policy.get("notes")
+    if isinstance(branch_notes, tuple) and branch_notes:
+        lines.extend(["", "## Branch policy notes"])
+        for note in branch_notes:
+            if isinstance(note, str):
+                lines.append(f"- {note}")
     lines.extend(["", "## Sampled issue"])
     if not sampled_issue:
         lines.append("- none")
@@ -589,3 +1012,49 @@ def _mapping(value: object) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _build_github_tracker(loaded: LoadedConfig) -> GitHubTracker:
+    tracker = build_tracker(loaded, dry_run=False)
+    if not isinstance(tracker, GitHubTracker):
+        raise TypeError("GitHub health checks require a GitHub tracker instance")
+    return tracker
+
+
+def _read_local_git_branch(repo_root: Path) -> str | None:
+    if not is_git_repository(repo_root):
+        return None
+    try:
+        branch = run_git(["branch", "--show-current"], repo_root)
+    except GitCommandError:
+        return None
+    return branch or None
+
+
+def _build_branch_policy_notes(
+    local_branch: str | None,
+    default_branch: str,
+    local_matches_default: bool | None,
+) -> tuple[str, ...]:
+    notes: list[str] = []
+    if local_branch and local_matches_default is False:
+        notes.append(
+            f"local HEAD is {local_branch}; staged publish will still target default branch {default_branch}"
+        )
+    return tuple(notes)
+
+
+def _collect_status_check_contexts(required_status_checks_payload: dict[str, Any]) -> tuple[str, ...]:
+    contexts = required_status_checks_payload.get("contexts")
+    if isinstance(contexts, list):
+        return tuple(str(item) for item in contexts if str(item).strip())
+    checks = required_status_checks_payload.get("checks")
+    if isinstance(checks, list):
+        names: list[str] = []
+        for item in checks:
+            if isinstance(item, dict):
+                name = str(item.get("context") or item.get("name") or "").strip()
+                if name:
+                    names.append(name)
+        return tuple(names)
+    return ()

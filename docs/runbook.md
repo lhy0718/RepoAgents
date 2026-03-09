@@ -51,6 +51,8 @@ The command also refreshes:
 - `.ai-republic/reports/ops/history.md`
 - `.ai-republic/reports/ops-status.json`
 - `.ai-republic/reports/ops-status.md`
+- `.ai-republic/reports/ops-brief.json`
+- `.ai-republic/reports/ops-brief.md`
 
 Use `--prune-history` only for bundle/archive paths managed under `.ai-republic/reports/ops/`. External custom output directories remain indexed but are not deleted by ops history pruning.
 uv run republic sync ls
@@ -91,10 +93,10 @@ uv run republic dashboard --format all
 
 ## Dashboard sync handoffs and retention
 
-The dashboard now includes `Sync handoffs` and `Sync retention` sourced from `.ai-republic/sync-applied/**/manifest.json`, an `Ops snapshots` section sourced from `.ai-republic/reports/ops/latest.*` and `history.*`, plus direct `Reports` links for sync audit and cleanup exports under `.ai-republic/reports/`.
+The dashboard now includes `Sync handoffs` and `Sync retention` sourced from `.ai-republic/sync-applied/**/manifest.json`, an `Ops snapshots` section sourced from `.ai-republic/reports/ops/latest.*` and `history.*`, plus direct `Reports` links for sync audit, sync health, GitHub smoke, ops status, ops brief, and cleanup exports under `.ai-republic/reports/`.
 
-Use `republic ops status` when you want the same ops index posture in one CLI/export surface, but with the latest bundle manifest component summaries and recent history preview included directly in the output.
-When `ops-status.json` exists, the dashboard `Reports` section also renders an `Ops status` card and cross-links it to related report exports referenced by the latest bundle. `republic ops snapshot` now writes the same `ops-status.json|md` inside the handoff bundle and refreshes `sync-health.json|md` at the repo root, so both the handoff bundle and dashboard/report surfaces can follow the latest sync posture without a separate command.
+Use `republic ops status` when you want the same ops index posture in one CLI/export surface, but with the latest bundle manifest component summaries, current handoff brief headline/severity, landing paths, and recent history preview included directly in the output.
+When `ops-status.json` or `ops-brief.json` exists, the dashboard `Reports` section renders matching cards and cross-links them to related report exports referenced by the latest bundle. `republic ops snapshot` now writes `ops-status.json|md`, `ops-brief.json|md`, and, for live GitHub REST trackers, `github-smoke.json|md`, plus bundle landing files `index.html`, `README.md` inside the handoff bundle, and refreshes root `ops-status.json|md`, `ops-brief.json|md`, `sync-health.json|md`, and live `github-smoke.json|md` at the repo root, so both the handoff bundle and dashboard/report surfaces can follow the latest sync posture, landing summary, and GitHub publish readiness without a separate command.
 
 Use it when you need to:
 
@@ -118,6 +120,8 @@ Before starting live runs:
 - confirm `GITHUB_TOKEN` if the tracker is in live GitHub REST mode
 - run `uv run republic doctor`
 - run `uv run republic github smoke --require-write-ready` before enabling unattended live writes
+- the smoke gate now expects default-branch protection, PR review requirements, required status checks, and readable GitHub repo permissions for draft-PR publish
+- use a dedicated sandbox repo/issue for `REPOREPUBLIC_GITHUB_WRITE_E2E=1` and `REPOREPUBLIC_GITHUB_PR_E2E=1` tests; the comment test deletes its comment and the draft PR test closes the PR and deletes the branch during cleanup
 - if the repo uses `workspace.strategy: worktree`, confirm the target repo is a valid Git work tree
 - inspect `workspace.dirty_policy` before running against a locally modified repository
 

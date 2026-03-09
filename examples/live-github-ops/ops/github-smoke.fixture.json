@@ -1,0 +1,118 @@
+{
+  "auth": {
+    "gh_authenticated": false,
+    "gh_path": "/opt/homebrew/bin/gh",
+    "hint": null,
+    "message": "GITHUB_TOKEN is set",
+    "requires_token": true,
+    "source": "token_env",
+    "status": "ok",
+    "token_env": "GITHUB_TOKEN",
+    "token_present": true
+  },
+  "branch_policy": {
+    "default_branch": "main",
+    "enforce_admins": true,
+    "hint": "Add the missing required status check before enabling unattended draft PR publish.",
+    "local_branch": "main",
+    "local_matches_default_branch": true,
+    "message": "default branch main is protected but missing one required status check context",
+    "notes": [
+      "local branch matches the repository default branch"
+    ],
+    "protected": true,
+    "protection_details_status": "ok",
+    "required_approving_review_count": 1,
+    "required_pull_request_reviews": true,
+    "required_status_check_context_count": 1,
+    "required_status_checks": true,
+    "status": "warn",
+    "warnings": [
+      "default branch main is missing required status check context ci/smoke"
+    ]
+  },
+  "issues": {
+    "count": 3,
+    "message": "loaded 3 open issue(s)",
+    "sampled": [
+      {
+        "id": 7,
+        "labels": [
+          "ops",
+          "release"
+        ],
+        "title": "Improve release automation rollout",
+        "url": "https://github.com/acme/example-repo/issues/7"
+      },
+      {
+        "id": 11,
+        "labels": [
+          "docs"
+        ],
+        "title": "Clarify rollout handoff checklist",
+        "url": "https://github.com/acme/example-repo/issues/11"
+      }
+    ],
+    "status": "ok"
+  },
+  "meta": {
+    "fixture_name": "live-github-handoff-rehearsal"
+  },
+  "origin": {
+    "matches_tracker_repo": true,
+    "message": "origin remote matches tracker.repo (acme/example-repo)",
+    "remote_url": "git@github.com:acme/example-repo.git",
+    "repo_slug": "acme/example-repo",
+    "status": "ok"
+  },
+  "publish": {
+    "comment_writes_ready": false,
+    "comment_writes_requested": false,
+    "hint": "Keep comment and draft PR writes disabled until the missing status check is required by policy and validated in rehearsal.",
+    "message": "default branch main is protected but missing one required status check context before unattended draft PR publish",
+    "open_pr_enabled": false,
+    "pr_writes_ready": false,
+    "pr_writes_requested": false,
+    "status": "warn",
+    "write_comments_enabled": false
+  },
+  "repo_access": {
+    "default_branch": "main",
+    "full_name": "acme/example-repo",
+    "message": "loaded repo metadata for acme/example-repo",
+    "permissions": {
+      "pull": true,
+      "push": true
+    },
+    "private": true,
+    "status": "ok"
+  },
+  "sampled_issue": {
+    "comment_count": 2,
+    "issue_id": 7,
+    "labels": [
+      "ops",
+      "release"
+    ],
+    "message": "loaded issue #7",
+    "recent_comments": [
+      "Please capture the rollout handoff artifact order in the next ops bundle.",
+      "Need one more required status check before enabling unattended PR publish."
+    ],
+    "status": "ok",
+    "title": "Improve release automation rollout",
+    "url": "https://github.com/acme/example-repo/issues/7"
+  },
+  "summary": {
+    "auth_status": "ok",
+    "branch_policy_status": "warn",
+    "message": "default branch main is protected but missing one required status check context before unattended draft PR publish",
+    "open_issue_count": 3,
+    "open_pr_enabled": false,
+    "publish_status": "warn",
+    "repo_access_status": "ok",
+    "sampled_issue_id": 7,
+    "status": "attention",
+    "write_comments_enabled": false
+  }
+}

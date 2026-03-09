@@ -88,6 +88,8 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
 
     manifest_json = bundle_dir / "bundle.json"
     manifest_md = bundle_dir / "bundle.md"
+    landing_html = bundle_dir / "index.html"
+    landing_markdown = bundle_dir / "README.md"
     payload = json.loads(manifest_json.read_text(encoding="utf-8"))
 
     assert result.overall_status == "issues"
@@ -99,12 +101,18 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
     }
     assert manifest_json.exists()
     assert manifest_md.exists()
+    assert landing_html.exists()
+    assert landing_markdown.exists()
     assert payload["summary"]["overall_status"] == "issues"
+    assert payload["landing"]["html_path"].endswith("index.html")
+    assert payload["landing"]["markdown_path"].endswith("README.md")
     assert payload["summary"]["component_statuses"]["dashboard"] == "attention"
     assert payload["components"]["sync_audit"]["integrity_issue_count"] == 1
     assert payload["components"]["status"]["selected_runs"] == 1
     assert payload["components"]["dashboard"]["available_reports"] == 3
     assert "# RepoRepublic Ops Snapshot Bundle" in manifest_md.read_text(encoding="utf-8")
+    assert "# RepoRepublic Ops Handoff" in landing_markdown.read_text(encoding="utf-8")
+    assert "<title>RepoRepublic Ops Handoff</title>" in landing_html.read_text(encoding="utf-8")
 
 
 def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp_path: Path) -> None:
@@ -124,6 +132,8 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     cleanup_result_md = bundle_dir / "cleanup-result.md"
     sync_health_json = bundle_dir / "sync-health.json"
     sync_health_md = bundle_dir / "sync-health.md"
+    ops_brief_json = bundle_dir / "ops-brief.json"
+    ops_brief_md = bundle_dir / "ops-brief.md"
     ops_status_json = bundle_dir / "ops-status.json"
     ops_status_md = bundle_dir / "ops-status.md"
 
@@ -143,6 +153,8 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
         cleanup_result_md,
         sync_health_json,
         sync_health_md,
+        ops_brief_json,
+        ops_brief_md,
         ops_status_json,
         ops_status_md,
     ):
@@ -224,6 +236,22 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
                 "next_action_count": 3,
                 "link_targets": ("sync_audit", "cleanup_preview", "cleanup_result"),
             },
+            "ops_brief": {
+                "status": "attention",
+                "reason": "generated operator-facing handoff brief in ops snapshot bundle",
+                "output_paths": {"json": ops_brief_json, "markdown": ops_brief_md},
+                "headline": "Sync health found 1 applied manifest integrity issue(s).",
+                "top_finding_count": 2,
+                "next_action_count": 3,
+                "top_findings": [
+                    "Sync health found 1 applied manifest integrity issue(s).",
+                    "Cleanup preview would remove 2 stale runtime path(s).",
+                ],
+                "next_actions": [
+                    "Run `republic sync repair --dry-run --issue 1`.",
+                ],
+                "link_targets": ("status", "sync_audit", "sync_health", "ops_status"),
+            },
             "ops_status": {
                 "status": "clean",
                 "reason": "generated ops status report in ops snapshot bundle",
@@ -240,12 +268,17 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     assert result.component_statuses["cleanup_preview"] == "attention"
     assert result.component_statuses["cleanup_result"] == "clean"
     assert result.component_statuses["sync_health"] == "attention"
+    assert result.component_statuses["ops_brief"] == "attention"
     assert result.component_statuses["ops_status"] == "clean"
+    assert payload["handoff_brief"]["headline"] == "Sync health found 1 applied manifest integrity issue(s)."
     assert payload["components"]["cleanup_preview"]["mode"] == "preview"
     assert payload["components"]["cleanup_result"]["mode"] == "applied"
     assert payload["components"]["sync_health"]["repair_changed_reports"] == 1
+    assert payload["components"]["ops_brief"]["headline"] == "Sync health found 1 applied manifest integrity issue(s)."
     assert payload["components"]["ops_status"]["related_report_count"] == 1
-    assert len(payload["cross_links"]) == 14
+    assert len(payload["cross_links"]) == 20
+    assert payload["landing"]["html_path"].endswith("index.html")
+    assert payload["landing"]["markdown_path"].endswith("README.md")
     assert ("sync_audit", "cleanup_preview") in pairs
     assert ("cleanup_preview", "sync_audit") in pairs
     assert ("sync_audit", "cleanup_result") in pairs
@@ -253,13 +286,18 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     assert ("sync_health", "sync_audit") in pairs
     assert ("sync_health", "cleanup_preview") in pairs
     assert ("sync_health", "cleanup_result") in pairs
+    assert ("ops_brief", "sync_health") in pairs
+    assert ("ops_brief", "ops_status") in pairs
     assert ("ops_status", "sync_audit") in pairs
     assert ("sync_audit", "ops_status") in pairs
     assert ("ops_status", "cleanup_preview") in pairs
     assert ("cleanup_preview", "ops_status") in pairs
     assert "cleanup-preview.json" in payload["components"]["cleanup_preview"]["output_paths"]["json"]
     assert "sync-health.json" in payload["components"]["sync_health"]["output_paths"]["json"]
+    assert "ops-brief.json" in payload["components"]["ops_brief"]["output_paths"]["json"]
     assert "ops-status.json" in payload["components"]["ops_status"]["output_paths"]["json"]
+    assert "landing_html" in result.output_paths
+    assert "landing_markdown" in result.output_paths
 
 
 def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_path: Path) -> None:
@@ -376,6 +414,137 @@ def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_
     assert ("sync_check", "sync_repair_preview") in pairs
     assert ("sync_repair_preview", "sync_check") in pairs
     assert len(payload["cross_links"]) == len(pairs)
+
+
+def test_build_ops_snapshot_bundle_includes_github_smoke_component_and_links(tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "ops-bundle"
+    doctor_json = bundle_dir / "doctor.json"
+    doctor_md = bundle_dir / "doctor.md"
+    status_json = bundle_dir / "status.json"
+    status_md = bundle_dir / "status.md"
+    dashboard_html = bundle_dir / "dashboard.html"
+    dashboard_json = bundle_dir / "dashboard.json"
+    dashboard_md = bundle_dir / "dashboard.md"
+    sync_json = bundle_dir / "sync-audit.json"
+    sync_md = bundle_dir / "sync-audit.md"
+    github_smoke_json = bundle_dir / "github-smoke.json"
+    github_smoke_md = bundle_dir / "github-smoke.md"
+    ops_brief_json = bundle_dir / "ops-brief.json"
+    ops_brief_md = bundle_dir / "ops-brief.md"
+    ops_status_json = bundle_dir / "ops-status.json"
+    ops_status_md = bundle_dir / "ops-status.md"
+
+    for path in (
+        doctor_json,
+        doctor_md,
+        status_json,
+        status_md,
+        dashboard_html,
+        dashboard_json,
+        dashboard_md,
+        sync_json,
+        sync_md,
+        github_smoke_json,
+        github_smoke_md,
+        ops_brief_json,
+        ops_brief_md,
+        ops_status_json,
+        ops_status_md,
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".json":
+            path.write_text("{}", encoding="utf-8")
+        else:
+            path.write_text("ok\n", encoding="utf-8")
+
+    build_ops_snapshot_bundle(
+        bundle_dir=bundle_dir,
+        repo_root=tmp_path,
+        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        issue_filter=3,
+        tracker_filter=None,
+        dashboard_limit=10,
+        sync_limit=10,
+        refresh_seconds=0,
+        doctor_snapshot={"summary": {"overall_status": "clean", "diagnostic_count": 1, "exit_code": 0}},
+        doctor_result=OperatorReportBuildResult(
+            output_paths={"json": doctor_json, "markdown": doctor_md},
+            kind="doctor",
+        ),
+        status_snapshot={
+            "summary": {"total_runs": 1, "selected_runs": 1},
+            "report_health": {"hero": {"severity": "clean"}},
+        },
+        status_result=OperatorReportBuildResult(
+            output_paths={"json": status_json, "markdown": status_md},
+            kind="status",
+        ),
+        dashboard_result=DashboardBuildResult(
+            output_path=dashboard_html,
+            total_runs=1,
+            visible_runs=1,
+            exported_paths={"html": dashboard_html, "json": dashboard_json, "markdown": dashboard_md},
+        ),
+        sync_result=SyncAuditBuildResult(
+            output_paths={"json": sync_json, "markdown": sync_md},
+            overall_status="ok",
+            pending_artifacts=0,
+            integrity_issue_count=0,
+            prunable_groups=0,
+            related_cleanup_reports=0,
+            cleanup_report_mismatches=0,
+            cleanup_mismatch_warnings=(),
+            related_cleanup_policy_drifts=0,
+            cleanup_policy_drift_warnings=(),
+            policy_drift_guidance=None,
+        ),
+        extra_components={
+            "github_smoke": {
+                "status": "attention",
+                "reason": "generated GitHub smoke report in ops snapshot bundle",
+                "output_paths": {"json": github_smoke_json, "markdown": github_smoke_md},
+                "open_issue_count": 2,
+                "sampled_issue_id": 3,
+                "repo_access_status": "ok",
+                "default_branch": "main",
+                "branch_policy_status": "warn",
+                "publish_status": "warn",
+                "link_targets": ("ops_brief", "ops_status"),
+            },
+            "ops_brief": {
+                "status": "attention",
+                "reason": "generated operator-facing handoff brief in ops snapshot bundle",
+                "output_paths": {"json": ops_brief_json, "markdown": ops_brief_md},
+                "headline": "GitHub publish readiness: default branch main is not protected.",
+                "top_finding_count": 1,
+                "next_action_count": 1,
+                "github_smoke_status": "attention",
+                "link_targets": ("ops_status", "github_smoke"),
+            },
+            "ops_status": {
+                "status": "attention",
+                "reason": "generated ops status report in ops snapshot bundle",
+                "output_paths": {"json": ops_status_json, "markdown": ops_status_md},
+                "history_entry_count": 1,
+                "related_report_count": 2,
+                "link_targets": ("github_smoke",),
+            },
+        },
+    )
+
+    payload = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    pairs = {(entry["source"], entry["target"]) for entry in payload["cross_links"]}
+    landing_markdown = (bundle_dir / "README.md").read_text(encoding="utf-8")
+    landing_html = (bundle_dir / "index.html").read_text(encoding="utf-8")
+
+    assert payload["components"]["github_smoke"]["output_paths"]["json"].endswith("github-smoke.json")
+    assert payload["components"]["github_smoke"]["branch_policy_status"] == "warn"
+    assert ("github_smoke", "ops_brief") in pairs
+    assert ("ops_brief", "github_smoke") in pairs
+    assert ("github_smoke", "ops_status") in pairs
+    assert ("ops_status", "github_smoke") in pairs
+    assert "github_smoke_json" in landing_markdown
+    assert "github-smoke.json" in landing_html
 
 
 def test_build_ops_snapshot_archive_creates_tarball_with_bundle_contents(tmp_path: Path) -> None:
@@ -504,6 +673,8 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
     assert second_index.history_limit == 2
     assert second_index.dropped_entries == ()
     assert latest_payload["latest"]["entry_id"] == "20260309T101500Z"
+    assert latest_payload["latest"]["landing_html"].endswith("index.html")
+    assert latest_payload["latest"]["landing_markdown"].endswith("README.md")
     assert latest_payload["meta"]["history_limit"] == 2
     assert latest_payload["meta"]["dropped_entry_count"] == 0
     assert latest_payload["latest"]["archive"]["sha256"] == archive_result.sha256
@@ -514,6 +685,7 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
         "20260309T100000Z",
     ]
     assert "## Entry 1" in history_markdown
+    assert "landing_html:" in history_markdown
     assert "archive:" in history_markdown
 
 

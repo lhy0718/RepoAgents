@@ -20,6 +20,8 @@ codex login
 ```bash
 CODEX_E2E=1 uv run pytest tests/test_codex_backend.py -k live_smoke -rs
 GITHUB_E2E=1 REPOREPUBLIC_GITHUB_TEST_REPO=owner/name uv run pytest tests/test_tracker.py -k live_read_only -rs
+REPOREPUBLIC_GITHUB_WRITE_E2E=1 REPOREPUBLIC_GITHUB_WRITE_TEST_REPO=owner/name REPOREPUBLIC_GITHUB_WRITE_TEST_ISSUE=123 uv run pytest tests/test_tracker.py -k live_comment_write -rs
+REPOREPUBLIC_GITHUB_PR_E2E=1 REPOREPUBLIC_GITHUB_PR_TEST_REPO=owner/name REPOREPUBLIC_GITHUB_PR_TEST_ISSUE=123 uv run pytest tests/test_tracker.py -k live_draft_pr_publish -rs
 ```
 
 ## 2. 대상 저장소 초기화
@@ -73,6 +75,8 @@ bash scripts/demo_live_ops.sh
 
 이 스크립트들은 예제 저장소를 임시 작업 디렉터리로 복사해서, 체크인된 예제 파일을 건드리지 않고 데모를 재현합니다.
 
+`bash scripts/demo_live_ops.sh`는 이제 청사진만 준비하는 수준을 넘어서 `github smoke`를 rehearse하고, `ops snapshot` handoff bundle과 archive를 만들고, `ops-status`를 갱신하며, 읽기 순서는 `examples/live-github-ops/ops/handoff-order.md`에 고정해 둡니다.
+
 ```bash
 cd examples/python-lib
 uv run republic init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
@@ -92,7 +96,7 @@ cat .ai-republic/reports/ops/history.json
 ```
 
 `ops snapshot` history retention 기본값은 `cleanup.ops_snapshot_keep_entries`입니다. dropped managed bundle/archive를 `.ai-republic/reports/ops/` 아래에서 함께 정리하고 싶을 때만 `--prune-history`를 사용하면 됩니다.
-dashboard를 열지 않고 최신 indexed handoff bundle, recent history, 그리고 최신 bundle이 참조한 `sync-health` / `sync-audit` posture를 한 번에 확인하려면 `ops status`를 사용하면 됩니다.
+dashboard를 열지 않고 최신 indexed handoff bundle, recent history, 현재 handoff brief headline, landing path, 그리고 최신 bundle이 참조한 `sync-health` / `sync-audit` posture와 live GitHub REST tracker일 때의 `github-smoke` posture까지 한 번에 확인하려면 `ops status`를 사용하면 됩니다.
 
 optional role pack 동작을 보려면 아래 예제를 사용하면 됩니다.
 
@@ -190,6 +194,8 @@ uv run republic github smoke --require-write-ready
 uv run republic run
 ```
 
+이제 `github smoke --require-write-ready`는 unattended draft PR publish를 켜기 전에 default branch protection, PR review requirement, required status check, repo metadata push permission까지 함께 확인합니다.
+
 polling 대신 event-driven으로 실행하려면:
 
 ```bash
@@ -208,6 +214,8 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
+- ops brief snapshots: `.ai-republic/reports/ops-brief.json`, `.ai-republic/reports/ops-brief.md`
+- bundle landing files: `.ai-republic/reports/ops/<timestamp>/index.html`, `.ai-republic/reports/ops/<timestamp>/README.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
 - status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`

@@ -221,6 +221,10 @@ def render_ops_status_markdown(snapshot: dict[str, Any]) -> str:
             f"- status: {latest_bundle.get('status', '-')}",
             f"- path: {latest_bundle.get('path', '-')}",
             f"- markdown_path: {latest_bundle.get('markdown_path', '-')}",
+            f"- landing_html_path: {latest_bundle.get('landing_html_path', '-')}",
+            f"- landing_markdown_path: {latest_bundle.get('landing_markdown_path', '-')}",
+            f"- brief_json_path: {latest_bundle.get('brief_json_path', '-')}",
+            f"- brief_markdown_path: {latest_bundle.get('brief_markdown_path', '-')}",
             f"- overall_status: {latest_bundle.get('overall_status', '-')}",
             f"- component_count: {latest_bundle.get('component_count', 0)}",
             f"- cross_link_count: {latest_bundle.get('cross_link_count', 0)}",
@@ -324,9 +328,15 @@ def render_ops_status_text(snapshot: dict[str, Any]) -> str:
             "Latest index entry: "
             f"{latest.get('entry_id', 'n/a')} "
             f"overall={latest.get('overall_status', 'unknown')} "
+            f"brief={latest.get('brief_severity', 'unknown')} "
             f"age={latest.get('age_human', 'n/a')}"
         )
         lines.append(f"  bundle: {latest.get('bundle_dir', 'n/a')}")
+        lines.append(f"  brief: {latest.get('brief_headline', 'n/a')}")
+        if latest.get("landing_html"):
+            lines.append(f"  landing html: {latest['landing_html']}")
+        if latest.get("brief_json"):
+            lines.append(f"  brief json: {latest['brief_json']}")
         if latest.get("archive_path"):
             lines.append(f"  archive: {latest['archive_path']}")
     else:
@@ -357,6 +367,7 @@ def render_ops_status_text(snapshot: dict[str, Any]) -> str:
                 "  - "
                 f"{entry.get('entry_id', 'n/a')} | "
                 f"{entry.get('overall_status', 'unknown')} | "
+                f"brief={entry.get('brief_severity', 'unknown')} | "
                 f"age={entry.get('age_human', 'n/a')} | "
                 f"archive={'yes' if entry.get('has_archive') else 'no'}"
             )
@@ -435,6 +446,8 @@ def _build_policy_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
 
 def _build_related_report_snapshot(latest_bundle: dict[str, Any]) -> dict[str, Any]:
     relation_map = {
+        "ops_brief": ("ops-brief", "Ops brief"),
+        "github_smoke": ("github-smoke", "GitHub smoke"),
         "sync_audit": ("sync-audit", "Sync audit"),
         "sync_health": ("sync-health", "Sync health"),
         "cleanup_preview": ("cleanup-preview", "Cleanup preview"),
@@ -477,6 +490,10 @@ def _load_latest_bundle_snapshot(
             "status": "not_applicable",
             "path": None,
             "markdown_path": None,
+            "landing_html_path": None,
+            "landing_markdown_path": None,
+            "brief_json_path": None,
+            "brief_markdown_path": None,
             "overall_status": None,
             "component_count": 0,
             "cross_link_count": 0,
@@ -495,12 +512,28 @@ def _load_latest_bundle_snapshot(
     bundle_markdown_path = _coerce_path(latest_entry_raw.get("bundle_markdown"))
     if bundle_markdown_path is None and bundle_dir is not None:
         bundle_markdown_path = bundle_dir / "bundle.md"
+    landing_html_path = _coerce_path(latest_entry_raw.get("landing_html"))
+    if landing_html_path is None and bundle_dir is not None:
+        landing_html_path = bundle_dir / "index.html"
+    landing_markdown_path = _coerce_path(latest_entry_raw.get("landing_markdown"))
+    if landing_markdown_path is None and bundle_dir is not None:
+        landing_markdown_path = bundle_dir / "README.md"
+    brief_json_path = _coerce_path(latest_entry_raw.get("brief_json"))
+    if brief_json_path is None and bundle_dir is not None:
+        brief_json_path = bundle_dir / "ops-brief.json"
+    brief_markdown_path = _coerce_path(latest_entry_raw.get("brief_markdown"))
+    if brief_markdown_path is None and bundle_dir is not None:
+        brief_markdown_path = bundle_dir / "ops-brief.md"
 
     if bundle_json_path is None:
         return {
             "status": "missing",
             "path": None,
             "markdown_path": str(bundle_markdown_path) if bundle_markdown_path else None,
+            "landing_html_path": str(landing_html_path) if landing_html_path else None,
+            "landing_markdown_path": str(landing_markdown_path) if landing_markdown_path else None,
+            "brief_json_path": str(brief_json_path) if brief_json_path else None,
+            "brief_markdown_path": str(brief_markdown_path) if brief_markdown_path else None,
             "overall_status": None,
             "component_count": 0,
             "cross_link_count": 0,
@@ -516,6 +549,10 @@ def _load_latest_bundle_snapshot(
             "status": "missing",
             "path": str(bundle_json_path),
             "markdown_path": str(bundle_markdown_path) if bundle_markdown_path else None,
+            "landing_html_path": str(landing_html_path) if landing_html_path else None,
+            "landing_markdown_path": str(landing_markdown_path) if landing_markdown_path else None,
+            "brief_json_path": str(brief_json_path) if brief_json_path else None,
+            "brief_markdown_path": str(brief_markdown_path) if brief_markdown_path else None,
             "overall_status": None,
             "component_count": 0,
             "cross_link_count": 0,
@@ -533,6 +570,10 @@ def _load_latest_bundle_snapshot(
             "status": "invalid",
             "path": str(bundle_json_path),
             "markdown_path": str(bundle_markdown_path) if bundle_markdown_path else None,
+            "landing_html_path": str(landing_html_path) if landing_html_path else None,
+            "landing_markdown_path": str(landing_markdown_path) if landing_markdown_path else None,
+            "brief_json_path": str(brief_json_path) if brief_json_path else None,
+            "brief_markdown_path": str(brief_markdown_path) if brief_markdown_path else None,
             "overall_status": None,
             "component_count": 0,
             "cross_link_count": 0,
@@ -547,6 +588,7 @@ def _load_latest_bundle_snapshot(
     payload = loaded_bundle["payload"]
     meta = _mapping(payload, "meta")
     summary = _mapping(payload, "summary")
+    landing = _mapping(payload, "landing")
     components = _mapping(payload, "components")
     cross_links = [entry for entry in _list(payload.get("cross_links")) if isinstance(entry, dict)]
     age_seconds, age_human = _report_age_snapshot(
@@ -562,6 +604,12 @@ def _load_latest_bundle_snapshot(
         "status": "available",
         "path": str(bundle_json_path),
         "markdown_path": str(bundle_markdown_path) if bundle_markdown_path else None,
+        "landing_html_path": _string_or_none(landing.get("html_path"))
+        or (str(landing_html_path) if landing_html_path else None),
+        "landing_markdown_path": _string_or_none(landing.get("markdown_path"))
+        or (str(landing_markdown_path) if landing_markdown_path else None),
+        "brief_json_path": str(brief_json_path) if brief_json_path else None,
+        "brief_markdown_path": str(brief_markdown_path) if brief_markdown_path else None,
         "overall_status": _string_or_none(summary.get("overall_status")),
         "component_count": len(component_entries),
         "cross_link_count": len(cross_links),
@@ -645,12 +693,20 @@ def _serialize_index_entry(entry: dict[str, Any], *, rendered_at: str) -> dict[s
         "age_seconds": age_seconds,
         "age_human": age_human,
         "overall_status": _string_or_none(entry.get("overall_status")) or "unknown",
+        "brief_severity": _string_or_none(entry.get("brief_severity")) or "unknown",
+        "brief_headline": _string_or_none(entry.get("brief_headline")) or "n/a",
+        "brief_top_finding_count": int(entry.get("brief_top_finding_count", 0) or 0),
+        "brief_next_action_count": int(entry.get("brief_next_action_count", 0) or 0),
         "issue_filter": entry.get("issue_filter"),
         "tracker_filter": entry.get("tracker_filter"),
         "bundle_dir": _string_or_none(entry.get("bundle_dir")) or "n/a",
         "bundle_relative_dir": _string_or_none(entry.get("bundle_relative_dir")) or "n/a",
         "bundle_json": _string_or_none(entry.get("bundle_json")),
         "bundle_markdown": _string_or_none(entry.get("bundle_markdown")),
+        "landing_html": _string_or_none(entry.get("landing_html")),
+        "landing_markdown": _string_or_none(entry.get("landing_markdown")),
+        "brief_json": _string_or_none(entry.get("brief_json")),
+        "brief_markdown": _string_or_none(entry.get("brief_markdown")),
         "archive_path": archive_path,
         "has_archive": bool(archive_path),
         "archive": archive if archive else None,
@@ -664,12 +720,20 @@ def _render_index_entry_markdown(entry: dict[str, Any]) -> list[str]:
         f"- rendered_at: {entry.get('rendered_at', '-')}",
         f"- age_human: {entry.get('age_human', '-')}",
         f"- overall_status: {entry.get('overall_status', '-')}",
+        f"- brief_severity: {entry.get('brief_severity', '-')}",
+        f"- brief_headline: {entry.get('brief_headline', '-')}",
+        f"- brief_top_finding_count: {entry.get('brief_top_finding_count', 0)}",
+        f"- brief_next_action_count: {entry.get('brief_next_action_count', 0)}",
         f"- issue_filter: {entry.get('issue_filter', '-')}",
         f"- tracker_filter: {entry.get('tracker_filter', '-')}",
         f"- bundle_dir: {entry.get('bundle_dir', '-')}",
         f"- bundle_relative_dir: {entry.get('bundle_relative_dir', '-')}",
         f"- bundle_json: {entry.get('bundle_json', '-')}",
         f"- bundle_markdown: {entry.get('bundle_markdown', '-')}",
+        f"- landing_html: {entry.get('landing_html', '-')}",
+        f"- landing_markdown: {entry.get('landing_markdown', '-')}",
+        f"- brief_json: {entry.get('brief_json', '-')}",
+        f"- brief_markdown: {entry.get('brief_markdown', '-')}",
         f"- archive_path: {entry.get('archive_path', '-')}",
     ]
     component_statuses = _mapping(entry, "component_statuses")

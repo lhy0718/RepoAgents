@@ -547,15 +547,22 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
 
     manifest_json = output_dir / "bundle.json"
     manifest_markdown = output_dir / "bundle.md"
+    bundle_ops_brief_json = output_dir / "ops-brief.json"
+    bundle_ops_brief_markdown = output_dir / "ops-brief.md"
     bundle_ops_status_json = output_dir / "ops-status.json"
     bundle_ops_status_markdown = output_dir / "ops-status.md"
+    bundle_landing_html = output_dir / "index.html"
+    bundle_landing_markdown = output_dir / "README.md"
     bundle_sync_health_json = output_dir / "sync-health.json"
     bundle_sync_health_markdown = output_dir / "sync-health.md"
+    ops_brief_json = demo_repo / ".ai-republic" / "reports" / "ops-brief.json"
+    ops_brief_markdown = demo_repo / ".ai-republic" / "reports" / "ops-brief.md"
     ops_status_json = demo_repo / ".ai-republic" / "reports" / "ops-status.json"
     ops_status_markdown = demo_repo / ".ai-republic" / "reports" / "ops-status.md"
     sync_health_json = demo_repo / ".ai-republic" / "reports" / "sync-health.json"
     sync_health_markdown = demo_repo / ".ai-republic" / "reports" / "sync-health.md"
     payload = json.loads(manifest_json.read_text(encoding="utf-8"))
+    ops_brief_payload = json.loads(ops_brief_json.read_text(encoding="utf-8"))
     ops_status_payload = json.loads(ops_status_json.read_text(encoding="utf-8"))
     sync_health_payload = json.loads(sync_health_json.read_text(encoding="utf-8"))
     bundle_pairs = {(entry["source"], entry["target"]) for entry in payload["cross_links"]}
@@ -563,6 +570,12 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Ops snapshot bundle:" in result.stdout
     assert f"- bundle_dir: {output_dir}" in result.stdout
+    assert f"- bundle_ops_brief_json: {bundle_ops_brief_json}" in result.stdout
+    assert f"- bundle_ops_brief_markdown: {bundle_ops_brief_markdown}" in result.stdout
+    assert f"- landing_html: {bundle_landing_html}" in result.stdout
+    assert f"- landing_markdown: {bundle_landing_markdown}" in result.stdout
+    assert f"- root_ops_brief_json: {ops_brief_json}" in result.stdout
+    assert f"- root_ops_brief_markdown: {ops_brief_markdown}" in result.stdout
     assert f"- bundle_sync_health_json: {bundle_sync_health_json}" in result.stdout
     assert f"- bundle_sync_health_markdown: {bundle_sync_health_markdown}" in result.stdout
     assert f"- root_sync_health_json: {sync_health_json}" in result.stdout
@@ -573,33 +586,168 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     assert f"- root_ops_status_markdown: {ops_status_markdown}" in result.stdout
     assert manifest_json.exists()
     assert manifest_markdown.exists()
+    assert bundle_ops_brief_json.exists()
+    assert bundle_ops_brief_markdown.exists()
+    assert bundle_landing_html.exists()
+    assert bundle_landing_markdown.exists()
     assert bundle_sync_health_json.exists()
     assert bundle_sync_health_markdown.exists()
     assert bundle_ops_status_json.exists()
     assert bundle_ops_status_markdown.exists()
+    assert ops_brief_json.exists()
+    assert ops_brief_markdown.exists()
     assert sync_health_json.exists()
     assert sync_health_markdown.exists()
     assert ops_status_json.exists()
     assert ops_status_markdown.exists()
     assert payload["summary"]["overall_status"] == "clean"
+    assert payload["handoff_brief"]["severity"] == "clean"
     assert payload["components"]["doctor"]["status"] == "clean"
     assert payload["components"]["status"]["selected_runs"] == 1
     assert payload["components"]["dashboard"]["output_paths"]["html"].endswith("dashboard.html")
     assert payload["components"]["sync_audit"]["status"] == "clean"
+    assert payload["landing"]["html_path"].endswith("index.html")
+    assert payload["landing"]["markdown_path"].endswith("README.md")
+    assert payload["components"]["ops_brief"]["output_paths"]["json"].endswith("ops-brief.json")
+    assert payload["components"]["ops_brief"]["top_finding_count"] == 0
     assert payload["components"]["sync_health"]["output_paths"]["json"].endswith("sync-health.json")
     assert payload["components"]["sync_health"]["next_action_count"] == 0
     assert payload["components"]["ops_status"]["output_paths"]["json"].endswith("ops-status.json")
-    assert payload["components"]["ops_status"]["related_report_count"] == 2
+    assert payload["components"]["ops_status"]["related_report_count"] == 3
+    assert ("ops_brief", "sync_health") in bundle_pairs
+    assert ("sync_health", "ops_brief") in bundle_pairs
     assert ("sync_health", "sync_audit") in bundle_pairs
     assert ("sync_audit", "sync_health") in bundle_pairs
     assert ("ops_status", "sync_audit") in bundle_pairs
     assert ("sync_audit", "ops_status") in bundle_pairs
+    assert ops_brief_payload["summary"]["severity"] == "clean"
+    assert ops_brief_payload["summary"]["top_finding_count"] == 0
     assert sync_health_payload["summary"]["pending_artifacts"] == 0
     assert sync_health_payload["summary"]["next_actions"] == []
     assert ops_status_payload["latest"]["entry_id"] == output_dir.name
-    assert ops_status_payload["latest_bundle"]["component_count"] == 6
-    assert ops_status_payload["related_reports"]["entries"][0]["key"] == "sync-audit"
-    assert ops_status_payload["related_reports"]["entries"][1]["key"] == "sync-health"
+    assert ops_status_payload["latest"]["brief_headline"] == "Current ops snapshot is clean and ready to hand off."
+    assert ops_status_payload["latest"]["landing_html"].endswith("index.html")
+    assert ops_status_payload["latest_bundle"]["component_count"] == 7
+    assert ops_status_payload["related_reports"]["entries"][0]["key"] == "ops-brief"
+    assert ops_status_payload["related_reports"]["entries"][1]["key"] == "sync-audit"
+    assert ops_status_payload["related_reports"]["entries"][2]["key"] == "sync-health"
+
+
+def test_cli_ops_snapshot_exports_github_smoke_for_live_github_tracker(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        .replace("mode: fixture", "mode: rest"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
+    monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
+    monkeypatch.setattr(
+        app_module,
+        "_collect_doctor_checks",
+        lambda loaded: [
+            app_module.DiagnosticCheck(
+                name="GitHub auth",
+                status="OK",
+                message="GITHUB_TOKEN is set",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_network",
+        lambda loaded: app_module.DiagnosticCheck(
+            name="GitHub network",
+            status="OK",
+            message="https://api.github.com/rate_limit reachable (status 200)",
+        ),
+    )
+
+    class FakeTracker:
+        async def get_repo_info(self) -> dict[str, object]:
+            return {
+                "full_name": "demo/repo",
+                "default_branch": "main",
+                "private": False,
+                "permissions": {"pull": True, "push": True},
+            }
+
+        async def get_branch_info(self, branch: str) -> dict[str, object]:
+            return {
+                "name": branch,
+                "protected": True,
+                "protection_url": "https://api.github.com/repos/demo/repo/branches/main/protection",
+            }
+
+        async def get_branch_protection(self, branch: str) -> dict[str, object]:
+            return {
+                "required_pull_request_reviews": {"required_approving_review_count": 1},
+                "required_status_checks": {"strict": True, "contexts": ["pytest"]},
+                "enforce_admins": {"enabled": True},
+            }
+
+        async def list_open_issues(self) -> list[IssueRef]:
+            return [
+                IssueRef.model_validate(
+                    {
+                        "id": 7,
+                        "number": 7,
+                        "title": "Improve release automation",
+                        "labels": ["chore"],
+                    }
+                )
+            ]
+
+        async def get_issue(self, issue_id: int) -> IssueRef:
+            return IssueRef.model_validate(
+                {
+                    "id": issue_id,
+                    "number": issue_id,
+                    "title": "Improve release automation",
+                    "labels": ["chore"],
+                    "comments": [
+                        IssueComment.model_validate(
+                            {"author": "demo", "body": "Please tighten branch rules."}
+                        )
+                    ],
+                }
+            )
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(app_module, "build_tracker", lambda loaded, dry_run=False: FakeTracker())
+
+    output_dir = demo_git_repo / "tmp" / "ops-bundle-github"
+    result = runner.invoke(
+        app,
+        ["ops", "snapshot", "--output-dir", str(output_dir), "--issue", "7"],
+        catch_exceptions=False,
+    )
+
+    bundle_github_smoke_json = output_dir / "github-smoke.json"
+    root_github_smoke_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
+    manifest_payload = json.loads((output_dir / "bundle.json").read_text(encoding="utf-8"))
+    ops_status_payload = json.loads(
+        (demo_git_repo / ".ai-republic" / "reports" / "ops-status.json").read_text(encoding="utf-8")
+    )
+    github_smoke_payload = json.loads(root_github_smoke_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert f"- bundle_github_smoke_json: {bundle_github_smoke_json}" in result.stdout
+    assert f"- root_github_smoke_json: {root_github_smoke_json}" in result.stdout
+    assert bundle_github_smoke_json.exists()
+    assert root_github_smoke_json.exists()
+    assert manifest_payload["components"]["github_smoke"]["output_paths"]["json"].endswith("github-smoke.json")
+    assert manifest_payload["components"]["github_smoke"]["branch_policy_status"] == "ok"
+    assert github_smoke_payload["summary"]["status"] == "clean"
+    related_keys = [entry["key"] for entry in ops_status_payload["related_reports"]["entries"]]
+    assert "github-smoke" in related_keys
 
 
 def test_cli_ops_snapshot_returns_non_zero_when_sync_audit_has_issues(demo_repo: Path, monkeypatch) -> None:
@@ -826,9 +974,12 @@ def test_cli_ops_status_prints_latest_history_and_bundle_manifest(
         "Ops snapshot status: status=clean index=available entries=2/5 archives=1 dropped=1"
         in result.stdout
     )
-    assert "Latest index entry: 20260309T101500Z overall=clean age=1h 45m" in result.stdout
+    assert "Latest index entry: 20260309T101500Z overall=clean brief=attention age=1h 45m" in result.stdout
+    assert "  brief: Sync health found 1 applied manifest integrity issue(s)." in result.stdout
+    assert "  landing html: " in result.stdout
+    assert "  brief json: " in result.stdout
     assert (
-        "Latest bundle manifest: status=available overall=clean components=4 cross_links=2"
+        "Latest bundle manifest: status=available overall=clean components=6 cross_links=2"
         in result.stdout
     )
     assert "  manifest: " in result.stdout
@@ -838,7 +989,7 @@ def test_cli_ops_status_prints_latest_history_and_bundle_manifest(
         "total_runs=4, visible_runs=4"
     ) in result.stdout
     assert "History preview:" in result.stdout
-    assert "  - 20260309T100000Z | issues | age=2h 0m | archive=no" in result.stdout
+    assert "  - 20260309T100000Z | issues | brief=issues | age=2h 0m | archive=no" in result.stdout
 
 
 def test_cli_ops_status_exports_json_and_markdown(
@@ -866,13 +1017,16 @@ def test_cli_ops_status_exports_json_and_markdown(
     assert payload["summary"]["status"] == "clean"
     assert payload["summary"]["history_entry_count"] == 2
     assert payload["latest"]["entry_id"] == "20260309T101500Z"
+    assert payload["latest"]["landing_html"].endswith("index.html")
     assert payload["latest_bundle"]["status"] == "available"
-    assert payload["latest_bundle"]["component_count"] == 4
+    assert payload["latest_bundle"]["component_count"] == 6
     assert payload["latest_bundle"]["cross_link_count"] == 2
+    assert payload["summary"]["related_report_count"] == 3
     assert payload["latest_bundle"]["components"][0]["key"] == "dashboard"
     markdown = report_markdown.read_text(encoding="utf-8")
     assert "# Ops snapshot status" in markdown
     assert "## Latest bundle manifest" in markdown
+    assert "- landing_html_path: " in markdown
     assert "## History preview" in markdown
 
 
@@ -895,6 +1049,20 @@ def test_cli_github_smoke_exports_json_and_markdown(
                 "default_branch": "main",
                 "private": False,
                 "permissions": {"pull": True, "push": False},
+            }
+
+        async def get_branch_info(self, branch: str) -> dict[str, object]:
+            return {
+                "name": branch,
+                "protected": True,
+                "protection_url": "https://api.github.com/repos/demo/repo/branches/main/protection",
+            }
+
+        async def get_branch_protection(self, branch: str) -> dict[str, object]:
+            return {
+                "required_pull_request_reviews": {"required_approving_review_count": 1},
+                "required_status_checks": {"strict": True, "contexts": ["pytest"]},
+                "enforce_admins": {"enabled": True},
             }
 
         async def list_open_issues(self) -> list[IssueRef]:
@@ -968,6 +1136,20 @@ def test_cli_github_smoke_requires_write_ready_when_requested(
         async def get_repo_info(self) -> dict[str, object]:
             return {"full_name": "demo/repo", "default_branch": "main", "private": False}
 
+        async def get_branch_info(self, branch: str) -> dict[str, object]:
+            return {
+                "name": branch,
+                "protected": True,
+                "protection_url": "https://api.github.com/repos/demo/repo/branches/main/protection",
+            }
+
+        async def get_branch_protection(self, branch: str) -> dict[str, object]:
+            return {
+                "required_pull_request_reviews": {"required_approving_review_count": 1},
+                "required_status_checks": {"strict": True, "contexts": ["pytest"]},
+                "enforce_admins": {"enabled": True},
+            }
+
         async def list_open_issues(self) -> list[IssueRef]:
             return []
 
@@ -987,6 +1169,90 @@ def test_cli_github_smoke_requires_write_ready_when_requested(
 
     assert result.exit_code == 1
     assert "publish readiness: warn" in result.stdout.lower()
+
+
+def test_cli_github_smoke_uses_configured_fixture_snapshot(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    fixture_path = demo_git_repo / "github-smoke.fixture.json"
+    fixture_path.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "status": "attention",
+                    "message": "fixture smoke captured publish warnings",
+                    "open_issue_count": 3,
+                    "sampled_issue_id": 9,
+                    "auth_status": "ok",
+                    "repo_access_status": "ok",
+                    "branch_policy_status": "warn",
+                    "publish_status": "warn",
+                },
+                "repo_access": {
+                    "status": "ok",
+                    "message": "loaded repo metadata for demo/repo",
+                    "full_name": "demo/repo",
+                    "default_branch": "main",
+                },
+                "branch_policy": {
+                    "status": "warn",
+                    "message": "default branch main is protected but missing one required status check context",
+                    "default_branch": "main",
+                },
+                "publish": {
+                    "status": "warn",
+                    "message": "publish warnings captured in fixture",
+                },
+                "issues": {
+                    "status": "ok",
+                    "message": "loaded 3 open issue(s)",
+                    "count": 3,
+                },
+                "sampled_issue": {
+                    "status": "ok",
+                    "message": "loaded issue #9",
+                    "issue_id": 9,
+                    "title": "Fixture issue",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        .replace("mode: fixture", "mode: rest")
+        .replace(
+            "poll_interval_seconds: 60",
+            "poll_interval_seconds: 60\n  smoke_fixture_path: github-smoke.fixture.json",
+        ),
+        encoding="utf-8",
+    )
+
+    class UnexpectedTracker:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(app_module, "build_tracker", lambda loaded, dry_run=False: UnexpectedTracker())
+
+    result = runner.invoke(
+        app,
+        ["github", "smoke", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    report_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert "GitHub smoke exports:" in result.stdout
+    assert "GitHub smoke summary: status=attention open_issues=3 sampled_issue=9" in result.stdout
+    assert payload["meta"]["fixture_path"] == str(fixture_path.resolve())
+    assert payload["summary"]["publish_status"] == "warn"
 
 
 def test_cli_ops_snapshot_can_prune_managed_history_entries(
@@ -3014,13 +3280,34 @@ def test_cli_doctor_reports_drift_and_hints(demo_git_repo: Path, monkeypatch) ->
     monkeypatch.setattr(
         app_module,
         "_probe_github_repo_access",
-        lambda loaded, auth_snapshot=None: app_module.DiagnosticCheck(
+        lambda loaded, auth_snapshot=None, snapshot=None: app_module.DiagnosticCheck(
             name="GitHub repo access",
             status="WARN",
             message="demo/repo metadata probe was skipped in test",
             hint="Set GITHUB_TOKEN for a live repo metadata probe.",
         ),
     )
+    async def fake_live_repo_snapshots(loaded):
+        return (
+            {
+                "status": "warn",
+                "message": "demo/repo metadata probe was skipped in test",
+                "full_name": "demo/repo",
+                "default_branch": "main",
+                "private": False,
+                "permissions": {},
+            },
+            {
+                "status": "warn",
+                "message": "default branch main is not protected",
+                "hint": "Protect the default branch before unattended live PR publish.",
+                "warnings": ("default branch main is not protected",),
+                "notes": (),
+                "default_branch": "main",
+            },
+        )
+
+    monkeypatch.setattr(app_module, "collect_github_live_repo_snapshots", fake_live_repo_snapshots)
 
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
 
@@ -3109,18 +3396,41 @@ def test_cli_doctor_reports_github_publish_readiness_warning(
     monkeypatch.setattr(
         app_module,
         "_probe_github_repo_access",
-        lambda loaded, auth_snapshot=None: app_module.DiagnosticCheck(
+        lambda loaded, auth_snapshot=None, snapshot=None: app_module.DiagnosticCheck(
             name="GitHub repo access",
             status="OK",
             message="demo/repo reachable (public; default_branch=main)",
         ),
     )
+    async def fake_live_repo_snapshots(loaded):
+        return (
+            {
+                "status": "ok",
+                "message": "loaded repo metadata for demo/repo",
+                "full_name": "demo/repo",
+                "default_branch": "main",
+                "private": False,
+                "permissions": {"pull": True, "push": True},
+            },
+            {
+                "status": "warn",
+                "message": "default branch main is not protected",
+                "hint": "Protect the default branch before unattended live PR publish.",
+                "warnings": ("default branch main is not protected",),
+                "notes": (),
+                "default_branch": "main",
+                "protected": False,
+            },
+        )
+
+    monkeypatch.setattr(app_module, "collect_github_live_repo_snapshots", fake_live_repo_snapshots)
 
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
 
     assert result.exit_code == 0
+    assert "GitHub branch policy: WARN (default branch main is not protected)" in result.stdout
     assert "GitHub publish readiness: WARN (" in result.stdout
-    assert "git remote origin is not configured" in result.stdout
+    assert "branch policy: default branch main is not protected" in result.stdout
 
 
 def test_cli_doctor_warns_on_report_policy_export_mismatch(demo_repo: Path, monkeypatch) -> None:
@@ -3309,6 +3619,10 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
     previous_bundle_dir = ops_root / "20260309T100000Z"
     latest_bundle_dir.mkdir(parents=True, exist_ok=True)
     previous_bundle_dir.mkdir(parents=True, exist_ok=True)
+    (latest_bundle_dir / "index.html").write_text("<html>latest</html>\n", encoding="utf-8")
+    (latest_bundle_dir / "README.md").write_text("# Latest landing\n", encoding="utf-8")
+    (previous_bundle_dir / "index.html").write_text("<html>previous</html>\n", encoding="utf-8")
+    (previous_bundle_dir / "README.md").write_text("# Previous landing\n", encoding="utf-8")
     latest_bundle_manifest = {
         "meta": {
             "rendered_at": "2026-03-09T10:15:00+00:00",
@@ -3324,7 +3638,15 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "doctor": "clean",
                 "status": "clean",
                 "sync_audit": "attention",
+                "sync_health": "attention",
+                "ops_brief": "attention",
             },
+        },
+        "landing": {
+            "html_path": str(latest_bundle_dir / "index.html"),
+            "markdown_path": str(latest_bundle_dir / "README.md"),
+            "bundle_json_path": str(latest_bundle_dir / "bundle.json"),
+            "bundle_markdown_path": str(latest_bundle_dir / "bundle.md"),
         },
         "components": {
             "dashboard": {
@@ -3369,6 +3691,29 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "prunable_groups": 0,
                 "related_cleanup_reports": 1,
             },
+            "sync_health": {
+                "status": "attention",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "sync-health.json"),
+                    "markdown": str(latest_bundle_dir / "sync-health.md"),
+                },
+                "pending_artifacts": 1,
+                "integrity_issue_count": 1,
+                "repair_changed_reports": 1,
+                "cleanup_action_count": 2,
+                "related_report_mismatches": 1,
+                "related_report_policy_drifts": 1,
+            },
+            "ops_brief": {
+                "status": "attention",
+                "output_paths": {
+                    "json": str(latest_bundle_dir / "ops-brief.json"),
+                    "markdown": str(latest_bundle_dir / "ops-brief.md"),
+                },
+                "headline": "Sync health found 1 applied manifest integrity issue(s).",
+                "top_finding_count": 2,
+                "next_action_count": 3,
+            },
         },
         "cross_links": [
             {
@@ -3399,6 +3744,12 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "dashboard": "issues",
                 "doctor": "clean",
             },
+        },
+        "landing": {
+            "html_path": str(previous_bundle_dir / "index.html"),
+            "markdown_path": str(previous_bundle_dir / "README.md"),
+            "bundle_json_path": str(previous_bundle_dir / "bundle.json"),
+            "bundle_markdown_path": str(previous_bundle_dir / "bundle.md"),
         },
         "components": {
             "dashboard": {
@@ -3448,6 +3799,10 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "bundle_relative_dir": "20260309T101500Z",
             "bundle_json": str(ops_root / "20260309T101500Z" / "bundle.json"),
             "bundle_markdown": str(ops_root / "20260309T101500Z" / "bundle.md"),
+            "landing_html": str(ops_root / "20260309T101500Z" / "index.html"),
+            "landing_markdown": str(ops_root / "20260309T101500Z" / "README.md"),
+            "brief_json": str(ops_root / "20260309T101500Z" / "ops-brief.json"),
+            "brief_markdown": str(ops_root / "20260309T101500Z" / "ops-brief.md"),
             "archive": {
                 "path": str(ops_root / "20260309T101500Z.tar.gz"),
                 "relative_path": "20260309T101500Z.tar.gz",
@@ -3456,7 +3811,17 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "file_count": 8,
                 "member_count": 10,
             },
-            "component_statuses": {"doctor": "clean", "dashboard": "clean", "sync_audit": "attention"},
+            "component_statuses": {
+                "doctor": "clean",
+                "dashboard": "clean",
+                "sync_audit": "attention",
+                "sync_health": "attention",
+                "ops_brief": "attention",
+            },
+            "brief_severity": "attention",
+            "brief_headline": "Sync health found 1 applied manifest integrity issue(s).",
+            "brief_top_finding_count": 2,
+            "brief_next_action_count": 3,
         },
     }
     history_payload = {
@@ -3478,8 +3843,14 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
                 "bundle_relative_dir": "20260309T100000Z",
                 "bundle_json": str(ops_root / "20260309T100000Z" / "bundle.json"),
                 "bundle_markdown": str(ops_root / "20260309T100000Z" / "bundle.md"),
+                "landing_html": str(ops_root / "20260309T100000Z" / "index.html"),
+                "landing_markdown": str(ops_root / "20260309T100000Z" / "README.md"),
                 "archive": None,
                 "component_statuses": {"doctor": "clean", "dashboard": "issues"},
+                "brief_severity": "issues",
+                "brief_headline": "Report health: Report freshness needs action.",
+                "brief_top_finding_count": 1,
+                "brief_next_action_count": 1,
             },
         ],
     }

@@ -5,6 +5,7 @@ import json
 import shutil
 import tarfile
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,7 @@ def build_ops_snapshot_bundle(
             "overall_status": overall_status,
             "component_statuses": component_statuses,
         },
+        "handoff_brief": _build_handoff_brief_snapshot(extra_components.get("ops_brief")),
         "components": {
             "doctor": {
                 "status": component_statuses["doctor"],
@@ -162,12 +164,24 @@ def build_ops_snapshot_bundle(
 
     manifest_json = bundle_dir / "bundle.json"
     manifest_markdown = bundle_dir / "bundle.md"
+    landing_html = bundle_dir / "index.html"
+    landing_markdown = bundle_dir / "README.md"
+    payload["landing"] = {
+        "html_path": str(landing_html),
+        "markdown_path": str(landing_markdown),
+        "bundle_json_path": str(manifest_json),
+        "bundle_markdown_path": str(manifest_markdown),
+    }
     write_text_file(manifest_json, json.dumps(payload, indent=2, sort_keys=True))
     write_text_file(manifest_markdown, render_ops_snapshot_bundle_markdown(payload))
+    write_text_file(landing_html, render_ops_snapshot_landing_html(payload))
+    write_text_file(landing_markdown, render_ops_snapshot_landing_markdown(payload))
 
     output_paths = {
         "bundle_json": manifest_json,
         "bundle_markdown": manifest_markdown,
+        "landing_html": landing_html,
+        "landing_markdown": landing_markdown,
         "doctor_json": doctor_result.output_paths.get("json"),
         "doctor_markdown": doctor_result.output_paths.get("markdown"),
         "status_json": status_result.output_paths.get("json"),
@@ -358,6 +372,8 @@ def prune_ops_snapshot_history(
 def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
     meta = _mapping(payload, "meta")
     summary = _mapping(payload, "summary")
+    handoff_brief = _mapping(payload, "handoff_brief")
+    landing = _mapping(payload, "landing")
     components = _mapping(payload, "components")
     cross_links = _list(payload.get("cross_links"))
     lines = [
@@ -380,8 +396,38 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
     if component_statuses:
         lines.append("- component_statuses:")
         lines.extend(f"  - {name}: {status}" for name, status in component_statuses.items())
+    if handoff_brief:
+        lines.extend(
+            [
+                "",
+                "## Handoff brief",
+                f"- severity: {handoff_brief.get('severity', '-')}",
+                f"- headline: {handoff_brief.get('headline', '-')}",
+                f"- top_finding_count: {handoff_brief.get('top_finding_count', 0)}",
+                f"- next_action_count: {handoff_brief.get('next_action_count', 0)}",
+            ]
+        )
+        top_findings = _list(handoff_brief.get("top_findings"))
+        if top_findings:
+            lines.append("- top_findings:")
+            lines.extend(f"  - {item}" for item in top_findings if isinstance(item, str))
+        next_actions = _list(handoff_brief.get("next_actions"))
+        if next_actions:
+            lines.append("- next_actions:")
+            lines.extend(f"  - {item}" for item in next_actions if isinstance(item, str))
+    if landing:
+        lines.extend(
+            [
+                "",
+                "## Landing",
+                f"- html_path: {landing.get('html_path', '-')}",
+                f"- markdown_path: {landing.get('markdown_path', '-')}",
+                f"- bundle_json_path: {landing.get('bundle_json_path', '-')}",
+                f"- bundle_markdown_path: {landing.get('bundle_markdown_path', '-')}",
+            ]
+        )
 
-    ordered_component_keys = ["doctor", "status", "dashboard", "sync_audit"]
+    ordered_component_keys = ["doctor", "status", "dashboard", "github_smoke", "sync_audit"]
     ordered_component_keys.extend(
         key for key in components.keys() if key not in ordered_component_keys
     )
@@ -410,12 +456,20 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
             "available_reports",
             "overall_status",
             "pending_artifacts",
+            "open_issue_count",
+            "sampled_issue_id",
+            "repo_access_status",
+            "default_branch",
+            "branch_policy_status",
+            "publish_status",
             "integrity_issue_count",
             "prunable_groups",
             "repair_needed_issues",
             "related_cleanup_reports",
             "related_report_mismatches",
             "related_report_policy_drifts",
+            "headline",
+            "top_finding_count",
             "mode",
             "action_count",
             "cleanup_action_count",
@@ -435,6 +489,8 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
             "related_sync_audit_reports",
             "sync_audit_policy_drifts",
             "next_action_count",
+            "top_findings",
+            "next_actions",
             "reason",
         ):
             if field in component:
@@ -461,6 +517,159 @@ def render_ops_snapshot_bundle_markdown(payload: dict[str, Any]) -> str:
                 lines.append("- target_paths:")
                 lines.extend(f"  - {name}: {path}" for name, path in target_paths.items())
     return "\n".join(lines) + "\n"
+
+
+def render_ops_snapshot_landing_markdown(payload: dict[str, Any]) -> str:
+    meta = _mapping(payload, "meta")
+    summary = _mapping(payload, "summary")
+    handoff_brief = _mapping(payload, "handoff_brief")
+    components = _mapping(payload, "components")
+    landing = _mapping(payload, "landing")
+    lines = [
+        "# RepoRepublic Ops Handoff",
+        "",
+        f"- rendered_at: {meta.get('rendered_at', '-')}",
+        f"- repo_root: {meta.get('repo_root', '-')}",
+        f"- bundle_dir: {meta.get('bundle_dir', '-')}",
+        f"- overall_status: {summary.get('overall_status', '-')}",
+        "",
+        "## Brief",
+        f"- severity: {handoff_brief.get('severity', '-')}",
+        f"- headline: {handoff_brief.get('headline', '-')}",
+        f"- top_finding_count: {handoff_brief.get('top_finding_count', 0)}",
+        f"- next_action_count: {handoff_brief.get('next_action_count', 0)}",
+    ]
+    top_findings = [item for item in _list(handoff_brief.get("top_findings")) if isinstance(item, str)]
+    if top_findings:
+        lines.append("- top_findings:")
+        lines.extend(f"  - {item}" for item in top_findings)
+    next_actions = [item for item in _list(handoff_brief.get("next_actions")) if isinstance(item, str)]
+    if next_actions:
+        lines.append("- next_actions:")
+        lines.extend(f"  - {item}" for item in next_actions)
+    lines.extend(["", "## Quick links"])
+    link_items = [
+        ("landing_html", landing.get("html_path")),
+        ("bundle_json", landing.get("bundle_json_path")),
+        ("bundle_markdown", landing.get("bundle_markdown_path")),
+    ]
+    for component_key in ("ops_brief", "ops_status", "dashboard", "github_smoke", "sync_health", "sync_audit", "doctor", "status"):
+        component = _mapping(components, component_key)
+        output_paths = _mapping(component, "output_paths")
+        for name, path in output_paths.items():
+            link_items.append((f"{component_key}_{name}", path))
+    seen_links: set[tuple[str, str]] = set()
+    for label, path in link_items:
+        if not isinstance(path, str) or not path:
+            continue
+        dedupe_key = (label, path)
+        if dedupe_key in seen_links:
+            continue
+        seen_links.add(dedupe_key)
+        lines.append(f"- {label}: {path}")
+    lines.extend(["", "## Component summary"])
+    component_statuses = _mapping(summary, "component_statuses")
+    if component_statuses:
+        for name, status in component_statuses.items():
+            lines.append(f"- {name}: {status}")
+    else:
+        lines.append("- none")
+    return "\n".join(lines) + "\n"
+
+
+def render_ops_snapshot_landing_html(payload: dict[str, Any]) -> str:
+    meta = _mapping(payload, "meta")
+    summary = _mapping(payload, "summary")
+    handoff_brief = _mapping(payload, "handoff_brief")
+    components = _mapping(payload, "components")
+    landing = _mapping(payload, "landing")
+    top_findings = [item for item in _list(handoff_brief.get("top_findings")) if isinstance(item, str)]
+    next_actions = [item for item in _list(handoff_brief.get("next_actions")) if isinstance(item, str)]
+    component_statuses = _mapping(summary, "component_statuses")
+    quick_links: list[tuple[str, str]] = []
+    for label, path in (
+        ("bundle.json", landing.get("bundle_json_path")),
+        ("bundle.md", landing.get("bundle_markdown_path")),
+        ("ops-brief.json", _mapping(_mapping(components, "ops_brief"), "output_paths").get("json")),
+        ("ops-brief.md", _mapping(_mapping(components, "ops_brief"), "output_paths").get("markdown")),
+        ("ops-status.json", _mapping(_mapping(components, "ops_status"), "output_paths").get("json")),
+        ("ops-status.md", _mapping(_mapping(components, "ops_status"), "output_paths").get("markdown")),
+        ("dashboard.html", _mapping(_mapping(components, "dashboard"), "output_paths").get("html")),
+        ("github-smoke.json", _mapping(_mapping(components, "github_smoke"), "output_paths").get("json")),
+        ("github-smoke.md", _mapping(_mapping(components, "github_smoke"), "output_paths").get("markdown")),
+        ("sync-health.json", _mapping(_mapping(components, "sync_health"), "output_paths").get("json")),
+        ("sync-audit.json", _mapping(_mapping(components, "sync_audit"), "output_paths").get("json")),
+    ):
+        if isinstance(path, str) and path:
+            quick_links.append((label, Path(path).name))
+    quick_link_markup = "".join(
+        f'<li><a href="{escape(target)}">{escape(label)}</a></li>'
+        for label, target in quick_links
+    ) or "<li>none</li>"
+    finding_markup = "".join(f"<li>{escape(item)}</li>" for item in top_findings) or "<li>No notable findings.</li>"
+    action_markup = "".join(f"<li>{escape(item)}</li>" for item in next_actions) or "<li>No immediate follow-up actions.</li>"
+    component_markup = "".join(
+        f"<li><strong>{escape(str(name))}:</strong> {escape(str(status))}</li>"
+        for name, status in component_statuses.items()
+    ) or "<li>none</li>"
+    overall_status = str(summary.get("overall_status", "attention"))
+    return (
+        "<!doctype html>\n"
+        "<html lang=\"en\">\n"
+        "<head>\n"
+        "  <meta charset=\"utf-8\" />\n"
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
+        "  <title>RepoRepublic Ops Handoff</title>\n"
+        "  <style>\n"
+        "    body { font-family: Georgia, 'Times New Roman', serif; margin: 2rem auto; max-width: 56rem; padding: 0 1.25rem; color: #1e2230; background: #f7f4ee; }\n"
+        "    .hero { background: linear-gradient(135deg, #fbf0c7, #f2d2b2); border: 1px solid #c79c63; border-radius: 18px; padding: 1.5rem; }\n"
+        "    .status { display: inline-block; margin-top: 0.5rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: #1e2230; color: #fff; font-size: 0.85rem; }\n"
+        "    h1, h2 { margin-bottom: 0.4rem; }\n"
+        "    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); margin-top: 1rem; }\n"
+        "    .panel { background: #fffdfa; border: 1px solid #dbcbb4; border-radius: 14px; padding: 1rem; }\n"
+        "    code { background: #efe3d1; padding: 0.1rem 0.3rem; border-radius: 6px; }\n"
+        "    ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }\n"
+        "    a { color: #8a3d18; }\n"
+        "    .meta { color: #5d544b; }\n"
+        "  </style>\n"
+        "</head>\n"
+        "<body>\n"
+        f"  <section class=\"hero\">\n"
+        f"    <p class=\"meta\">RepoRepublic ops handoff</p>\n"
+        f"    <h1>{escape(str(handoff_brief.get('headline', 'Ops snapshot handoff available.')))}</h1>\n"
+        f"    <p>{escape(str(meta.get('repo_root', '-')))}</p>\n"
+        f"    <span class=\"status\">{escape(overall_status)}</span>\n"
+        "  </section>\n"
+        "  <div class=\"grid\">\n"
+        "    <section class=\"panel\">\n"
+        "      <h2>Bundle</h2>\n"
+        f"      <p><strong>rendered_at:</strong> {escape(str(meta.get('rendered_at', '-')))}</p>\n"
+        f"      <p><strong>bundle_dir:</strong> <code>{escape(str(meta.get('bundle_dir', '-')))}</code></p>\n"
+        f"      <p><strong>top_finding_count:</strong> {escape(str(handoff_brief.get('top_finding_count', 0)))}</p>\n"
+        f"      <p><strong>next_action_count:</strong> {escape(str(handoff_brief.get('next_action_count', 0)))}</p>\n"
+        "    </section>\n"
+        "    <section class=\"panel\">\n"
+        "      <h2>Quick links</h2>\n"
+        f"      <ul>{quick_link_markup}</ul>\n"
+        "    </section>\n"
+        "  </div>\n"
+        "  <div class=\"grid\">\n"
+        "    <section class=\"panel\">\n"
+        "      <h2>Top findings</h2>\n"
+        f"      <ul>{finding_markup}</ul>\n"
+        "    </section>\n"
+        "    <section class=\"panel\">\n"
+        "      <h2>Next actions</h2>\n"
+        f"      <ul>{action_markup}</ul>\n"
+        "    </section>\n"
+        "  </div>\n"
+        "  <section class=\"panel\" style=\"margin-top: 1rem;\">\n"
+        "    <h2>Component status</h2>\n"
+        f"    <ul>{component_markup}</ul>\n"
+        "  </section>\n"
+        "</body>\n"
+        "</html>\n"
+    )
 
 
 def render_ops_snapshot_latest_markdown(payload: dict[str, Any]) -> str:
@@ -559,6 +768,8 @@ def _build_ops_snapshot_index_entry(
 ) -> dict[str, Any]:
     bundle_manifest = _load_json_snapshot(bundle_result.output_paths.get("bundle_json"))
     meta = _mapping(bundle_manifest, "meta")
+    handoff_brief = _mapping(bundle_manifest, "handoff_brief")
+    landing = _mapping(bundle_manifest, "landing")
     return {
         "entry_id": bundle_result.bundle_dir.name,
         "rendered_at": meta.get("rendered_at") or utc_now().isoformat(),
@@ -569,6 +780,16 @@ def _build_ops_snapshot_index_entry(
         "bundle_relative_dir": _relative_to_root(bundle_result.bundle_dir, ops_root),
         "bundle_json": _stringify_optional_path(bundle_result.output_paths.get("bundle_json")),
         "bundle_markdown": _stringify_optional_path(bundle_result.output_paths.get("bundle_markdown")),
+        "landing_html": _stringify_optional_path(bundle_result.output_paths.get("landing_html"))
+        or _string_or_none(landing.get("html_path")),
+        "landing_markdown": _stringify_optional_path(bundle_result.output_paths.get("landing_markdown"))
+        or _string_or_none(landing.get("markdown_path")),
+        "brief_json": _stringify_optional_path(bundle_result.output_paths.get("ops_brief_json")),
+        "brief_markdown": _stringify_optional_path(bundle_result.output_paths.get("ops_brief_markdown")),
+        "brief_severity": handoff_brief.get("severity"),
+        "brief_headline": handoff_brief.get("headline"),
+        "brief_top_finding_count": handoff_brief.get("top_finding_count", 0),
+        "brief_next_action_count": handoff_brief.get("next_action_count", 0),
         "archive": (
             {
                 "path": str(archive_result.archive_path),
@@ -597,6 +818,14 @@ def _render_ops_snapshot_index_entry_markdown(title: str, entry: dict[str, Any])
         f"- bundle_relative_dir: {entry.get('bundle_relative_dir', '-')}",
         f"- bundle_json: {entry.get('bundle_json', '-')}",
         f"- bundle_markdown: {entry.get('bundle_markdown', '-')}",
+        f"- landing_html: {entry.get('landing_html', '-')}",
+        f"- landing_markdown: {entry.get('landing_markdown', '-')}",
+        f"- brief_json: {entry.get('brief_json', '-')}",
+        f"- brief_markdown: {entry.get('brief_markdown', '-')}",
+        f"- brief_severity: {entry.get('brief_severity', '-')}",
+        f"- brief_headline: {entry.get('brief_headline', '-')}",
+        f"- brief_top_finding_count: {entry.get('brief_top_finding_count', 0)}",
+        f"- brief_next_action_count: {entry.get('brief_next_action_count', 0)}",
     ]
     component_statuses = entry.get("component_statuses")
     if isinstance(component_statuses, dict) and component_statuses:
@@ -631,6 +860,31 @@ def _stringify_paths(paths: dict[str, Path]) -> dict[str, str]:
 
 def _stringify_optional_path(path: Path | None) -> str | None:
     return str(path) if isinstance(path, Path) else None
+
+
+def _string_or_none(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return None
+
+
+def _build_handoff_brief_snapshot(component: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(component, dict):
+        return {}
+    snapshot = {
+        "severity": component.get("status", "attention"),
+        "headline": component.get("headline"),
+        "top_finding_count": component.get("top_finding_count", 0),
+        "next_action_count": component.get("next_action_count", 0),
+    }
+    top_findings = component.get("top_findings")
+    if isinstance(top_findings, list):
+        snapshot["top_findings"] = [item for item in top_findings if isinstance(item, str)]
+    next_actions = component.get("next_actions")
+    if isinstance(next_actions, list):
+        snapshot["next_actions"] = [item for item in next_actions if isinstance(item, str)]
+    return snapshot
 
 
 def _serialize_extra_component(

@@ -19,6 +19,7 @@ pushd "$DEST_DIR" >/dev/null
 git init -q
 git config user.name "RepoRepublic Demo"
 git config user.email "demo@reporepublic.local"
+git remote add origin git@github.com:acme/example-repo.git
 git add .
 git commit -q -m "initial"
 
@@ -35,6 +36,7 @@ payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 payload["tracker"]["kind"] = "github"
 payload["tracker"]["repo"] = "acme/example-repo"
 payload["tracker"]["mode"] = "rest"
+payload["tracker"]["smoke_fixture_path"] = "ops/github-smoke.fixture.json"
 payload["tracker"]["poll_interval_seconds"] = 300
 payload["workspace"]["strategy"] = "worktree"
 payload["workspace"]["dirty_policy"] = "block"
@@ -48,7 +50,12 @@ PY
 
 mkdir -p .ai-republic/logs
 
-uv run --project "$ROOT_DIR" republic status || true
+export GITHUB_TOKEN="demo-live-token"
+uv run --project "$ROOT_DIR" republic github smoke --format all
+REPOREPUBLIC_PROJECT_ROOT="$ROOT_DIR" \
+REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-republic/reports/ops/live-handoff-demo" \
+  bash ops/build-handoff.sh
+uv run --project "$ROOT_DIR" republic ops status --format all
 uv run --project "$ROOT_DIR" republic dashboard --refresh-seconds 30 --format all
 
 popd >/dev/null

@@ -277,10 +277,22 @@ def test_demo_live_ops_script_prepares_live_blueprint(tmp_path: Path) -> None:
     assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
     assert (dest / ".ai-republic" / "dashboard" / "index.json").exists()
     assert (dest / ".ai-republic" / "dashboard" / "index.md").exists()
+    assert (dest / ".ai-republic" / "reports" / "github-smoke.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops-brief.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops-status.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "bundle.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "github-smoke.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "ops-brief.md").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "ops-status.json").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "README.md").exists()
+    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "index.html").exists()
+    assert list((dest / ".ai-republic" / "reports" / "ops").glob("live-handoff-demo*.tar.gz"))
     assert (dest / ".ai-republic" / "logs").exists()
     assert (dest / "ops" / "republic.env.example").exists()
+    assert (dest / "ops" / "handoff-order.md").exists()
     assert loaded.data.tracker.kind.value == "github"
     assert loaded.data.tracker.mode.value == "rest"
+    assert loaded.data.tracker.smoke_fixture_path == "ops/github-smoke.fixture.json"
     assert loaded.data.workspace.strategy == "worktree"
     assert loaded.data.workspace.dirty_policy.value == "block"
     assert loaded.data.logging.file_enabled is True

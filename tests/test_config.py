@@ -192,3 +192,25 @@ def test_load_config_accepts_dashboard_report_freshness_policy_override(tmp_path
 
     assert loaded.data.dashboard.report_freshness_policy.stale_issues_threshold == 2
     assert loaded.data.dashboard.report_freshness_policy.unknown_issues_threshold == 3
+
+
+def test_load_config_accepts_github_smoke_fixture_path(tmp_path: Path) -> None:
+    ai_root = tmp_path / ".ai-republic"
+    ai_root.mkdir(parents=True)
+    (ai_root / "reporepublic.yaml").write_text(
+        "\n".join(
+            [
+                "tracker:",
+                "  kind: github",
+                "  repo: demo/repo",
+                "  mode: rest",
+                "  smoke_fixture_path: ops/github-smoke.fixture.json",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(tmp_path)
+
+    assert loaded.data.tracker.smoke_fixture_path == "ops/github-smoke.fixture.json"

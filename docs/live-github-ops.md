@@ -35,6 +35,8 @@ The live blueprint example is here:
 - [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
 - [../examples/live-github-ops/ops/preflight.md](../examples/live-github-ops/ops/preflight.md)
 - [../examples/live-github-ops/ops/republic.env.example](../examples/live-github-ops/ops/republic.env.example)
+- [../examples/live-github-ops/ops/build-handoff.sh](../examples/live-github-ops/ops/build-handoff.sh)
+- [../examples/live-github-ops/ops/handoff-order.md](../examples/live-github-ops/ops/handoff-order.md)
 - [../examples/live-github-ops/ops/run-loop.sh](../examples/live-github-ops/ops/run-loop.sh)
 - [../examples/live-github-ops/ops/render-dashboard.sh](../examples/live-github-ops/ops/render-dashboard.sh)
 
@@ -147,7 +149,36 @@ The expected healthy path is:
 
 Do not continue to live execution until `doctor` is clean or the remaining warnings are understood.
 
-## Step 6. Dry-run one issue first
+## Step 6. Rehearse the handoff bundle offline first
+
+Before you run against the real GitHub API, it is useful to rehearse the handoff shape locally.
+
+The example repo ships with `ops/github-smoke.fixture.json` for this purpose. Temporarily set:
+
+```yaml
+tracker:
+  smoke_fixture_path: ops/github-smoke.fixture.json
+```
+
+Then generate the handoff bundle:
+
+```bash
+bash /path/to/RepoRepublic/examples/live-github-ops/ops/build-handoff.sh
+```
+
+This writes:
+
+- root `.ai-republic/reports/github-smoke.json|md`
+- root `.ai-republic/reports/ops-status.json|md`
+- root `.ai-republic/reports/ops-brief.json|md`
+- bundle-local `github-smoke.json|md`, `ops-status.json|md`, `ops-brief.json|md`
+- bundle landing files `index.html`, `README.md`
+
+Use [../examples/live-github-ops/ops/handoff-order.md](../examples/live-github-ops/ops/handoff-order.md) as the fixed open order.
+
+Remove `tracker.smoke_fixture_path` again before real live rollout.
+
+## Step 7. Dry-run one issue first
 
 Use a targeted dry-run before starting the polling loop.
 
@@ -165,7 +196,7 @@ Look for:
 
 If the repo is not ready for a specific issue number yet, `republic run --dry-run --once` is also useful for previewing the next poll cycle.
 
-## Step 7. Execute one issue before enabling the loop
+## Step 8. Execute one issue before enabling the loop
 
 After a clean dry-run, execute exactly one issue.
 
@@ -183,7 +214,7 @@ Inspect the produced data:
 
 If reviewer or policy guardrails request changes, treat that as the intended safety behavior during rollout.
 
-## Step 8. Start the long-running loop
+## Step 9. Start the long-running loop
 
 Once a single issue behaves as expected, start the loop.
 
@@ -199,7 +230,7 @@ uv run republic run
 
 Run it under a process supervisor for real operations, for example `systemd`, `launchd`, a container runtime, or a CI scheduled runner.
 
-## Step 9. Render and inspect the dashboard
+## Step 10. Render and inspect the dashboard
 
 Generate the operator dashboard regularly.
 
@@ -219,7 +250,7 @@ Open `.ai-republic/dashboard/index.html` in a browser and use:
 - the status filter to isolate failures or retries
 - timed refresh when the page stays open during active operations
 
-## Step 10. Handle failures safely
+## Step 11. Handle failures safely
 
 Use the least destructive recovery path first.
 
@@ -241,7 +272,7 @@ uv run republic clean
 
 If the problem is GitHub auth, Codex login, rate limiting, or dirty worktree state, fix that cause before re-running the issue.
 
-## Step 11. Open the write path gradually
+## Step 12. Open the write path gradually
 
 Do not enable comments or draft PRs on day 1 unless the repository is already well understood.
 
