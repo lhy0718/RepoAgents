@@ -228,7 +228,11 @@ The dashboard hero banner also mirrors the effective severity, title, and reason
 
 `republic doctor` now reports the effective `dashboard.report_freshness_policy` thresholds as well, warns when issue escalation is configured so loosely that stale or unknown reports may stay below `issues` longer than expected, flags raw `sync-audit.json` / `cleanup-*.json` exports whose embedded policy summary no longer matches the live config, and emits a combined `Report policy health` summary that rolls both signals into one operator-facing line. The alignment check now also emits the same related-report detail block shape used by `sync audit` / `clean --report`, so policy drift warnings and remediation read the same way across CLI surfaces.
 
+`republic doctor --format all` now exports the same operator health snapshot as JSON and Markdown under `.ai-republic/reports/doctor.json` and `.ai-republic/reports/doctor.md`, so CI or handoff automation can consume the same diagnostics without scraping terminal output.
+
 `republic status` now reuses the same report-health snapshot and prints the current report freshness severity, reason, cleanup report posture, active policy summary, and a combined `policy_health` line alongside persisted run state. When raw report exports still carry an older embedded policy summary, `status` also prints a `policy_warning` line followed by the same related-report detail block shape used by the sync/cleanup commands, including the mismatched file summaries and remediation guidance.
+
+`republic status --format all` exports JSON and Markdown status snapshots under `.ai-republic/reports/status.json` and `.ai-republic/reports/status.md`, including filtered run selection, report-health state, policy-alignment details, and persisted run metadata.
 
 `republic sync audit` now also prints linked cleanup policy drift counts in its CLI summary, and `republic clean --report` prints linked sync-audit policy drift counts next to the export paths so operators can spot cross-report drift without opening the raw JSON first. Add `--show-remediation` to either command when you also want the recommended re-export guidance inline. Add `--show-mismatches` when you also want linked issue-filter mismatch warnings printed inline in the same CLI summary. When both flags are enabled, the CLI emits one related-report detail block that groups mismatch warnings, policy-drift warnings, and remediation guidance together.
 
@@ -240,10 +244,15 @@ The dashboard also compares each report card's embedded raw `policy.summary` aga
 
 Dashboard Markdown snapshots now also mirror the CLI related-report detail block. Report entries keep their compact `details=` summary, but now also add a `related_report_details` block when linked mismatch warnings or related-report policy drifts exist, including the same remediation guidance text when drift is present.
 
+The HTML dashboard now mirrors those semantics in the `Cross references` panel too. Instead of showing only a flat related-note list, report cards now break related warnings into explicit `mismatches` and `policy drifts` sections, with the same remediation guidance text shown directly beneath policy drift findings.
+
+The dashboard JSON export now also carries a presentation-oriented `related_report_detail_summary` string on each report entry. It mirrors the same block semantics in plain text so downstream tools can surface the warning/remediation bundle without reconstructing it from structured arrays first.
+
 The raw `sync-audit.json` / `cleanup-*.json` exports now also carry that remediation guidance directly:
 
 - each related report `policy_alignment` block includes `remediation`
 - each related-report drift summary entry includes `remediation`
+- each raw export `related_reports` block now includes a plain-text `detail_summary` field that mirrors the same mismatch / policy drift / remediation bundle
 - Markdown exports include `policy_remediation` / `remediation` lines so operators can act without opening the JSON
 
 The dashboard `Cross references` panel now also carries related-report policy drift notes. If a linked cleanup export or sync audit export was rendered with an older embedded policy, the related card warns about that mismatch inline instead of hiding it only in the raw report JSON.

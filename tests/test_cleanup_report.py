@@ -33,6 +33,7 @@ def test_build_cleanup_report_writes_preview_exports(demo_repo: Path) -> None:
     assert payload["policy"]["summary"] == "unknown>=1 stale>=1 future>=1 aging>=1"
     assert payload["policy"]["report_freshness_policy"]["future_attention_threshold"] == 1
     assert payload["summary"]["overall_status"] == "clean"
+    assert payload["related_reports"]["detail_summary"] is None
     assert "# RepoRepublic Cleanup Report" in markdown
     assert "## Policy" in markdown
     assert "- report_freshness_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
@@ -118,6 +119,13 @@ def test_build_cleanup_report_cross_links_sync_audit_policy_drift(demo_repo: Pat
     assert (
         payload["related_reports"]["entries"][0]["policy_alignment"]["remediation"]
         == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+    )
+    assert (
+        payload["related_reports"]["detail_summary"]
+        == "related report details\n"
+        "policy drifts\n"
+        "- Sync audit: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)\n"
+        "remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert (
         payload["related_reports"]["entries"][0]["policy_alignment"]["embedded_summary"]

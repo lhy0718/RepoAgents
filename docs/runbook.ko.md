@@ -26,6 +26,7 @@
 
 ```bash
 uv run republic doctor
+uv run republic doctor --format all
 uv run republic run
 uv run republic run --once
 uv run republic run --dry-run
@@ -34,6 +35,21 @@ uv run republic trigger 123 --dry-run
 uv run republic webhook --event issues --payload webhook.json --dry-run
 uv run republic status
 uv run republic status --issue 123
+uv run republic status --format all
+uv run republic ops snapshot --archive
+uv run republic ops status
+uv run republic ops status --format all
+uv run republic ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
+uv run republic ops snapshot --archive --history-limit 10 --prune-history
+
+명령은 아래 latest/history index도 함께 갱신합니다.
+
+- `.ai-republic/reports/ops/latest.json`
+- `.ai-republic/reports/ops/latest.md`
+- `.ai-republic/reports/ops/history.json`
+- `.ai-republic/reports/ops/history.md`
+
+`--prune-history`는 `.ai-republic/reports/ops/` 아래에서 RepoRepublic가 관리하는 bundle/archive만 정리합니다. 외부 custom output directory는 index에는 남지만 ops history prune 대상으로 삭제되지는 않습니다.
 uv run republic sync ls
 uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
 uv run republic sync check --issue 1
@@ -58,6 +74,9 @@ uv run republic dashboard --format all
 - workspaces: `.ai-republic/workspaces/issue-<id>/<run-id>/repo/`
 - dashboard: `.ai-republic/dashboard/index.html`
 - dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
+- doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
+- status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
+- ops status snapshots: `.ai-republic/reports/ops-status.json`, `.ai-republic/reports/ops-status.md`
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
@@ -67,7 +86,9 @@ uv run republic dashboard --format all
 
 ## Dashboard의 sync handoff와 retention
 
-이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/` 아래 sync audit/cleanup export를 여는 `Reports` 링크도 제공합니다.
+이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/ops/latest.*`, `history.*`를 읽는 `Ops snapshots` 섹션과 `.ai-republic/reports/` 아래 sync audit/cleanup export를 여는 `Reports` 링크도 제공합니다.
+
+최신 bundle manifest component summary와 recent history preview까지 포함한 ops index posture를 CLI/export 한 화면에서 보고 싶을 때는 `republic ops status`를 사용하면 됩니다.
 
 다음 상황에서 이 섹션을 사용합니다.
 

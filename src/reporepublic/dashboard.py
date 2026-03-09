@@ -13,6 +13,16 @@ from reporepublic.config import LoadedConfig
 from reporepublic.models import RunRecord
 from reporepublic.models.domain import utc_now
 from reporepublic.orchestrator import RunStateStore
+from reporepublic._related_report_details.rendering import (
+    build_related_report_detail_block,
+    build_related_report_detail_html_layout,
+    build_related_report_detail_line_layout,
+    build_related_report_detail_summary,
+    collect_related_report_warning_lines,
+    format_related_report_detail_title,
+    render_related_report_detail_html_fragments,
+    render_related_report_detail_lines,
+)
 from reporepublic.report_policy import build_report_policy_drift_guidance
 from reporepublic.sync_artifacts import (
     SyncAppliedRetentionGroup,
@@ -36,6 +46,7 @@ REPORT_EXPORTS = (
     ("cleanup-preview", "Cleanup preview", "cleanup-preview.json", "cleanup-preview.md"),
     ("cleanup-result", "Cleanup result", "cleanup-result.json", "cleanup-result.md"),
 )
+OPS_SNAPSHOT_ENTRY_PREVIEW_LIMIT = 5
 SEVERITY_ORDER = {
     "clean": 0,
     "attention": 1,
@@ -157,6 +168,11 @@ def build_dashboard_snapshot(
         output_path=output_path,
         limit=sync_limit,
     )
+    ops_snapshots = _load_ops_snapshot_summaries(
+        loaded=loaded,
+        output_path=output_path,
+        rendered_at=rendered_at,
+    )
     reports = _load_report_summaries(
         loaded=loaded,
         output_path=output_path,
@@ -191,6 +207,9 @@ def build_dashboard_snapshot(
             "prunable_sync_groups": sync_retention["prunable_groups"],
             "prunable_sync_bytes": sync_retention["prunable_bytes"],
             "repair_needed_sync_issues": sync_retention["repair_needed_issues"],
+            "ops_snapshot_entries": ops_snapshots["history_entry_count"],
+            "ops_snapshot_archives": ops_snapshots["archive_entry_count"],
+            "ops_snapshot_dropped_entries": ops_snapshots["dropped_entry_count"],
             "available_reports": reports["total"],
             "aging_reports": reports["aging_total"],
             "future_reports": reports["future_total"],
@@ -211,6 +230,7 @@ def build_dashboard_snapshot(
         "runs": snapshot_runs,
         "sync_handoffs": sync_handoffs["entries"],
         "sync_retention": sync_retention,
+        "ops_snapshots": ops_snapshots,
         "reports": reports,
     }
 
@@ -230,6 +250,14 @@ def build_report_health_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
     }
 
 
+def build_ops_snapshot_status_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
+    return _load_ops_snapshot_summaries(
+        loaded=loaded,
+        output_path=loaded.ai_root / "dashboard" / "index.html",
+        rendered_at=utc_now().isoformat(),
+    )
+
+
 def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     meta = _snapshot_section(snapshot, "meta")
     runtime = _snapshot_section(snapshot, "runtime")
@@ -237,6 +265,7 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
     sync_retention = _snapshot_sync_retention(snapshot)
+    ops_snapshots = _snapshot_ops_snapshots(snapshot)
     reports = _snapshot_reports(snapshot)
     hero = _snapshot_section(snapshot, "hero")
     policy = _snapshot_section(snapshot, "policy")
@@ -263,6 +292,12 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
                 _relative_href(output_path, Path(logs_path)),
             )
         )
+    latest_ops_href = _string_or_none(ops_snapshots.get("latest_json_href"))
+    history_ops_href = _string_or_none(ops_snapshots.get("history_json_href"))
+    if latest_ops_href:
+        runtime_links.append(_render_link_chip("ops latest", latest_ops_href))
+    if history_ops_href:
+        runtime_links.append(_render_link_chip("ops history", history_ops_href))
 
     summary_cards = [
         _render_metric_card("Visible runs", str(visible_runs)),
@@ -315,6 +350,21 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
           <p>Apply staged tracker handoffs with <code>republic sync apply</code> to populate retention analysis.</p>
         </article>
         """
+    ops_summary_cards = [
+        _render_metric_card("Indexed ops snapshots", str(ops_snapshots["history_entry_count"])),
+        _render_metric_card("Ops archives", str(ops_snapshots["archive_entry_count"])),
+        _render_metric_card("Ops history limit", str(ops_snapshots["history_limit"])),
+    ]
+    if int(ops_snapshots["dropped_entry_count"]) > 0:
+        ops_summary_cards.append(
+            _render_metric_card(
+                "Dropped ops entries",
+                str(ops_snapshots["dropped_entry_count"]),
+                tone="attention",
+                note="Older managed bundles may be eligible for prune.",
+            )
+        )
+    ops_markup = _render_ops_snapshot_section(ops_snapshots)
     report_link_chips = [
         _render_link_chip(str(entry["label"]), _string_or_none(entry["json_href"]) or _string_or_none(entry["markdown_href"]))
         for entry in _list_of_dicts(reports["entries"])
@@ -840,6 +890,16 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
       </section>
 
       <section>
+        <h2 class="section-title">Ops snapshots</h2>
+        <div class="metrics">
+          {"".join(ops_summary_cards)}
+        </div>
+        <div class="reports" style="margin-top: 1rem;">
+          {ops_markup}
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title">Reports</h2>
         <div class="metrics">
           {"".join(report_summary_cards)}
@@ -941,6 +1001,7 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
     sync_retention = _snapshot_sync_retention(snapshot)
+    ops_snapshots = _snapshot_ops_snapshots(snapshot)
     reports = _snapshot_reports(snapshot)
     status_counts = _snapshot_mapping(counts, "by_status")
     lines = [
@@ -952,6 +1013,9 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
         f"- visible_runs: {counts['visible_runs']}",
         f"- total_sync_handoffs: {counts['total_sync_handoffs']}",
         f"- visible_sync_handoffs: {counts['visible_sync_handoffs']}",
+        f"- ops_snapshot_entries: {counts['ops_snapshot_entries']}",
+        f"- ops_snapshot_archives: {counts['ops_snapshot_archives']}",
+        f"- ops_snapshot_dropped_entries: {counts['ops_snapshot_dropped_entries']}",
         "",
         "## Policy",
         f"- report_freshness_policy: {policy['summary']}",
@@ -1097,6 +1161,38 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
                         f"{group['status']} key={group['group_key']} actions={','.join(group['actions']) or 'none'} "
                         f"size={group['total_bytes_human']} newest={group['newest_age_human']}"
                     )
+    lines.extend(
+        [
+            "",
+            "## Ops snapshots",
+            f"- status: {ops_snapshots['status']}",
+            f"- history_entry_count: {ops_snapshots['history_entry_count']}",
+            f"- history_limit: {ops_snapshots['history_limit']}",
+            f"- dropped_entry_count: {ops_snapshots['dropped_entry_count']}",
+            f"- archive_entry_count: {ops_snapshots['archive_entry_count']}",
+        ]
+    )
+    latest_ops = _snapshot_mapping(ops_snapshots, "latest")
+    if latest_ops:
+        lines.extend(
+            [
+                "- latest:",
+                f"  - entry_id: {latest_ops.get('entry_id', '-')}",
+                f"  - overall_status: {latest_ops.get('overall_status', '-')}",
+                f"  - rendered_at: {latest_ops.get('rendered_at', '-')}",
+                f"  - age_human: {latest_ops.get('age_human', '-')}",
+                f"  - bundle_dir: {latest_ops.get('bundle_dir', '-')}",
+                f"  - archive_path: {latest_ops.get('archive_path', '-')}",
+            ]
+        )
+    ops_entries = _list_of_dicts(ops_snapshots.get("entries"))
+    if ops_entries:
+        lines.append("- entries:")
+        for entry in ops_entries:
+            lines.append(
+                f"  - {entry.get('entry_id', '-')}: status={entry.get('overall_status', '-')} "
+                f"age={entry.get('age_human', '-')} archive={entry.get('has_archive', False)}"
+            )
     lines.extend(
         [
             "",
@@ -1423,16 +1519,11 @@ def _render_report_card(entry: dict[str, object]) -> str:
         _render_token_link(str(item["label"]), _string_or_none(item["card_href"]))
         for item in related_cards
     ]
-    related_notes = [
-        f"{item['label']}: {item['policy_alignment_warning']}"
-        for item in related_cards
-        if _string_or_none(item.get("policy_alignment_status")) == "drift"
-        and _string_or_none(item.get("policy_alignment_warning"))
-    ]
     referenced_links = [
         _render_token_link(str(item["label"]), _string_or_none(item["card_href"]))
         for item in referenced_by
     ]
+    related_detail_markup = _render_related_report_detail_html(details)
     freshness_line = (
         f'<p class="run-subtitle" style="margin-top: 0.35rem;">freshness {escape(str(entry["freshness_status"]))} · age {escape(str(entry["age_human"]))}</p>'
         if entry["freshness_status"] != "unknown"
@@ -1485,11 +1576,92 @@ def _render_report_card(entry: dict[str, object]) -> str:
         <div class="token-row">
           {"".join(related_links) if related_links else '<span class="token">none</span>'}
         </div>
-        {f'<ul class="list" style="margin-top: 0.8rem;">{"".join(f"<li>{escape(note)}</li>" for note in related_notes)}</ul>' if related_notes else ""}
+        {related_detail_markup}
         <p class="run-subtitle" style="margin-top: 0.8rem;">referenced by</p>
         <div class="token-row">
           {"".join(referenced_links) if referenced_links else '<span class="token">none</span>'}
         </div>
+      </section>
+    </article>
+    """
+
+
+def _render_ops_snapshot_section(snapshot: dict[str, object]) -> str:
+    if snapshot["status"] == "missing":
+        return """
+        <article class="empty-state">
+          <h2>No ops snapshots yet</h2>
+          <p>Run <code>republic ops snapshot</code> to publish latest/history bundle metadata into this dashboard.</p>
+        </article>
+        """
+    latest = _snapshot_mapping(snapshot, "latest")
+    entries = _list_of_dicts(snapshot.get("entries"))
+    latest_links = [
+        _render_token_link("latest json", _string_or_none(snapshot.get("latest_json_href"))),
+        _render_token_link("latest markdown", _string_or_none(snapshot.get("latest_markdown_href"))),
+        _render_token_link("history json", _string_or_none(snapshot.get("history_json_href"))),
+        _render_token_link("history markdown", _string_or_none(snapshot.get("history_markdown_href"))),
+    ]
+    archive_href = _string_or_none(latest.get("archive_href"))
+    if archive_href:
+        latest_links.append(_render_token_link("archive", archive_href))
+    component_statuses = latest.get("component_statuses")
+    if not isinstance(component_statuses, dict):
+        component_statuses = {}
+    component_items = [
+        f"<li><strong>{escape(str(name))}:</strong> {escape(str(status))}</li>"
+        for name, status in sorted(component_statuses.items())
+    ]
+    history_items = []
+    for entry in entries:
+        links = [
+            _render_token_link("bundle", _string_or_none(entry.get("bundle_json_href"))),
+        ]
+        archive_entry_href = _string_or_none(entry.get("archive_href"))
+        if archive_entry_href:
+            links.append(_render_token_link("archive", archive_entry_href))
+        history_items.append(
+            "<li>"
+            f"<strong>{escape(str(entry['entry_id']))}</strong> · "
+            f"status {escape(str(entry['overall_status']))} · "
+            f"age {escape(str(entry['age_human']))} · "
+            f"archive {'yes' if entry['has_archive'] else 'no'}"
+            f'<div class="token-row" style="margin-top: 0.5rem;">{"".join(links)}</div>'
+            "</li>"
+        )
+    latest_status = _string_or_none(latest.get("overall_status")) or "attention"
+    return f"""
+    <article class="report-card">
+      <div class="run-head">
+        <div>
+          <p class="run-subtitle">ops bundle index</p>
+          <h2 class="run-title">Latest ops snapshot</h2>
+        </div>
+        <span class="status status-{escape(latest_status)}">{escape(latest_status)}</span>
+      </div>
+      <div class="run-grid">
+        <section class="panel">
+          <h3>Latest</h3>
+          <ul class="list">
+            <li><strong>entry_id:</strong> {escape(str(latest.get('entry_id', '-')))}</li>
+            <li><strong>rendered_at:</strong> {escape(str(latest.get('rendered_at', '-')))}</li>
+            <li><strong>age:</strong> {escape(str(latest.get('age_human', '-')))}</li>
+            <li><strong>bundle_dir:</strong> {escape(str(latest.get('bundle_dir', '-')))}</li>
+            <li><strong>archive:</strong> {escape(str(latest.get('archive_path', '-')))}</li>
+          </ul>
+          <div class="token-row" style="margin-top: 0.7rem;">
+            {"".join(latest_links)}
+          </div>
+        </section>
+        <section class="panel">
+          <h3>Component statuses</h3>
+          {f'<ul class="list">{"".join(component_items)}</ul>' if component_items else '<p class="copy">No component statuses recorded.</p>'}
+        </section>
+      </div>
+      <section class="panel" style="margin-top: 1rem;">
+        <h3>Indexed history</h3>
+        <p class="copy">Showing {len(entries)} of {snapshot['history_entry_count']} indexed ops snapshots. History limit is {snapshot['history_limit']}.</p>
+        {f'<ul class="group-list">{"".join(history_items)}</ul>' if history_items else '<p class="copy">No indexed ops snapshot entries recorded.</p>'}
       </section>
     </article>
     """
@@ -1690,6 +1862,7 @@ def _load_report_summaries(
     _attach_report_cross_references(entries)
     policy_snapshot = _build_report_freshness_policy_snapshot(loaded)
     _attach_report_policy_context(entries, policy_snapshot)
+    _attach_related_report_detail_summaries(entries)
     report_freshness = _count_report_freshness(entries)
     cleanup_freshness = _count_report_freshness(entries, key_prefix="cleanup-")
     policy = loaded.data.dashboard.report_freshness_policy
@@ -1750,6 +1923,115 @@ def _load_report_summaries(
     }
 
 
+def _load_ops_snapshot_summaries(
+    *,
+    loaded: LoadedConfig,
+    output_path: Path,
+    rendered_at: str,
+) -> dict[str, object]:
+    ops_root = loaded.reports_dir / "ops"
+    latest_json = ops_root / "latest.json"
+    latest_markdown = ops_root / "latest.md"
+    history_json = ops_root / "history.json"
+    history_markdown = ops_root / "history.md"
+    latest_payload = _load_report_payload(latest_json) if latest_json.exists() else None
+    history_payload = _load_report_payload(history_json) if history_json.exists() else None
+    if latest_payload is None and history_payload is None:
+        return {
+            "status": "missing",
+            "history_entry_count": 0,
+            "history_limit": 0,
+            "dropped_entry_count": 0,
+            "archive_entry_count": 0,
+            "latest_json_path": None,
+            "latest_json_href": None,
+            "latest_markdown_path": None,
+            "latest_markdown_href": None,
+            "history_json_path": None,
+            "history_json_href": None,
+            "history_markdown_path": None,
+            "history_markdown_href": None,
+            "latest": {},
+            "entries": [],
+        }
+    latest_entry = _dict_value(latest_payload or {}, "latest")
+    history_meta = _dict_value(history_payload or {}, "meta")
+    raw_history_entries = (history_payload or {}).get("entries")
+    if not isinstance(raw_history_entries, list):
+        raw_history_entries = []
+    history_entries = [
+        _serialize_ops_snapshot_entry(
+            entry=entry,
+            output_path=output_path,
+            rendered_at=rendered_at,
+        )
+        for entry in raw_history_entries
+        if isinstance(entry, dict)
+    ]
+    latest = (
+        _serialize_ops_snapshot_entry(
+            entry=latest_entry,
+            output_path=output_path,
+            rendered_at=rendered_at,
+        )
+        if latest_entry
+        else {}
+    )
+    return {
+        "status": "available",
+        "history_entry_count": int(history_meta.get("entry_count", len(history_entries)) or 0),
+        "history_limit": int(history_meta.get("history_limit", 0) or 0),
+        "dropped_entry_count": int(history_meta.get("dropped_entry_count", 0) or 0),
+        "archive_entry_count": sum(1 for entry in history_entries if entry.get("has_archive")),
+        "latest_json_path": str(latest_json) if latest_json.exists() else None,
+        "latest_json_href": _relative_href(output_path, latest_json) if latest_json.exists() else None,
+        "latest_markdown_path": str(latest_markdown) if latest_markdown.exists() else None,
+        "latest_markdown_href": _relative_href(output_path, latest_markdown) if latest_markdown.exists() else None,
+        "history_json_path": str(history_json) if history_json.exists() else None,
+        "history_json_href": _relative_href(output_path, history_json) if history_json.exists() else None,
+        "history_markdown_path": str(history_markdown) if history_markdown.exists() else None,
+        "history_markdown_href": _relative_href(output_path, history_markdown) if history_markdown.exists() else None,
+        "latest": latest,
+        "entries": history_entries[:OPS_SNAPSHOT_ENTRY_PREVIEW_LIMIT],
+    }
+
+
+def _serialize_ops_snapshot_entry(
+    *,
+    entry: dict[str, object],
+    output_path: Path,
+    rendered_at: str,
+) -> dict[str, object]:
+    rendered_value = _string_or_none(entry.get("rendered_at"))
+    age_seconds, age_human, _ = _report_age_snapshot(
+        rendered_at=rendered_at,
+        generated_at=rendered_value,
+    )
+    archive = entry.get("archive")
+    archive_path = None
+    if isinstance(archive, dict):
+        archive_path = _string_or_none(archive.get("path"))
+    bundle_json = _string_or_none(entry.get("bundle_json"))
+    bundle_markdown = _string_or_none(entry.get("bundle_markdown"))
+    return {
+        "entry_id": _string_or_none(entry.get("entry_id")) or "unknown",
+        "rendered_at": rendered_value or "n/a",
+        "age_seconds": age_seconds,
+        "age_human": age_human,
+        "overall_status": _string_or_none(entry.get("overall_status")) or "attention",
+        "bundle_dir": _string_or_none(entry.get("bundle_dir")) or "n/a",
+        "bundle_relative_dir": _string_or_none(entry.get("bundle_relative_dir")) or "n/a",
+        "bundle_json": bundle_json,
+        "bundle_json_href": _payload_href(output_path, bundle_json) if bundle_json else None,
+        "bundle_markdown": bundle_markdown,
+        "bundle_markdown_href": _payload_href(output_path, bundle_markdown) if bundle_markdown else None,
+        "archive_path": archive_path,
+        "archive_href": _payload_href(output_path, archive_path) if archive_path else None,
+        "has_archive": bool(archive_path),
+        "component_statuses": dict(_dict_value(entry, "component_statuses")),
+    }
+
+
 def _load_report_payload(path: Path) -> dict[str, object] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1758,6 +2040,13 @@ def _load_report_payload(path: Path) -> dict[str, object] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _dict_value(payload: dict[str, object], key: str) -> dict[str, object]:
+    value = payload.get(key)
+    if isinstance(value, dict):
+        return value
+    return {}
 
 
 def _serialize_report_entry(
@@ -1825,6 +2114,7 @@ def _serialize_report_entry(
         "policy_alignment_status": "missing",
         "policy_alignment_note": "raw report export did not embed policy metadata",
         "policy_alignment_remediation": None,
+        "related_report_detail_summary": None,
         "json_path": str(json_path) if json_path else None,
         "json_href": _relative_href(output_path, json_path) if json_path else None,
         "markdown_path": str(markdown_path) if markdown_path else None,
@@ -1859,6 +2149,15 @@ def _attach_report_policy_context(
                 f"embedded policy differs from current config ({embedded_summary})"
             )
             entry["policy_alignment_remediation"] = remediation_detail
+
+
+def _attach_related_report_detail_summaries(entries: list[dict[str, object]]) -> None:
+    remediation_detail = _report_policy_drift_guidance_detail()
+    for entry in entries:
+        entry["related_report_detail_summary"] = _build_related_report_detail_summary(
+            entry.get("details"),
+            remediation=remediation_detail,
+        )
 
 
 def _report_summary_details(
@@ -2436,6 +2735,13 @@ def _snapshot_sync_retention(snapshot: dict[str, object]) -> dict[str, object]:
     return sync_retention
 
 
+def _snapshot_ops_snapshots(snapshot: dict[str, object]) -> dict[str, object]:
+    ops_snapshots = snapshot["ops_snapshots"]
+    if not isinstance(ops_snapshots, dict):
+        raise TypeError("Dashboard snapshot field 'ops_snapshots' must be a mapping.")
+    return ops_snapshots
+
+
 def _snapshot_reports(snapshot: dict[str, object]) -> dict[str, object]:
     reports = snapshot["reports"]
     if not isinstance(reports, dict):
@@ -2741,40 +3047,70 @@ def _render_related_report_detail_lines(
         return []
     mismatch_warnings = _related_report_warning_list(details_value, kind="mismatch")
     policy_drift_warnings = _related_report_warning_list(details_value, kind="policy_drift")
-    if not mismatch_warnings and not policy_drift_warnings:
-        return []
-    lines = [
-        "- related_report_details:",
-    ]
-    if mismatch_warnings:
-        lines.append("  - mismatches:")
-        lines.extend(f"    - {warning}" for warning in mismatch_warnings)
-    if policy_drift_warnings:
-        lines.append("  - policy_drifts:")
-        lines.extend(f"    - {warning}" for warning in policy_drift_warnings)
-    if remediation and policy_drift_warnings:
-        lines.append(f"  - remediation: {remediation}")
-    return lines
+    block = build_related_report_detail_block(
+        mismatch_warnings=mismatch_warnings,
+        policy_drift_warnings=policy_drift_warnings,
+        remediation=remediation,
+    )
+    return list(
+        render_related_report_detail_lines(
+            block,
+            title=f"{format_related_report_detail_title('machine')}:",
+            section_label_style="machine",
+            remediation_label_style="machine",
+            layout_policy=build_related_report_detail_line_layout("machine_markdown"),
+        )
+    )
+
+
+def _build_related_report_detail_summary(
+    details_value: object,
+    *,
+    remediation: str | None,
+) -> str | None:
+    if not isinstance(details_value, dict):
+        return None
+    mismatch_warnings = _related_report_warning_list(details_value, kind="mismatch")
+    policy_drift_warnings = _related_report_warning_list(details_value, kind="policy_drift")
+    return build_related_report_detail_summary(
+        mismatch_warnings=mismatch_warnings,
+        policy_drift_warnings=policy_drift_warnings,
+        remediation=remediation,
+    )
+
+
+def _render_related_report_detail_html(details_value: object) -> str:
+    if not isinstance(details_value, dict):
+        return ""
+    mismatch_warnings = _related_report_warning_list(details_value, kind="mismatch")
+    policy_drift_warnings = _related_report_warning_list(details_value, kind="policy_drift")
+    block = build_related_report_detail_block(
+        mismatch_warnings=mismatch_warnings,
+        policy_drift_warnings=policy_drift_warnings,
+        remediation=_report_policy_drift_guidance_detail(),
+    )
+    return "".join(
+        render_related_report_detail_html_fragments(
+            block,
+            title_style="display",
+            section_label_style="display",
+            remediation_label_style="display",
+            layout_policy=build_related_report_detail_html_layout(),
+        )
+    )
 
 
 def _related_report_warning_list(details_value: dict[str, object], *, kind: str) -> list[str]:
     if kind == "mismatch":
-        candidates = (
+        warnings = collect_related_report_warning_lines(
             details_value.get("cleanup_mismatch_warnings"),
             details_value.get("related_report_mismatch_warnings"),
         )
     else:
-        candidates = (
+        warnings = collect_related_report_warning_lines(
             details_value.get("related_report_policy_drift_warnings"),
         )
-    warnings: list[str] = []
-    for candidate in candidates:
-        if not isinstance(candidate, list):
-            continue
-        for entry in candidate:
-            if isinstance(entry, str) and entry:
-                warnings.append(entry)
-    return warnings
+    return list(warnings)
 
 
 def _list_of_dicts(items: object) -> list[dict[str, object]]:

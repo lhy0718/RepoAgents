@@ -399,6 +399,12 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert payload["reports"]["entries"][0]["details"]["cleanup_mismatch_warnings"] == [
         "Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7"
     ]
+    assert (
+        payload["reports"]["entries"][0]["related_report_detail_summary"]
+        == "related report details\n"
+        "mismatches\n"
+        "- Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7"
+    )
     assert payload["reports"]["entries"][0]["details"]["issues_with_findings"] == 1
     assert payload["reports"]["entries"][0]["details"]["finding_counts"]["missing_manifest"] == 1
     assert payload["reports"]["entries"][0]["details"]["sample_issue_ids"] == [7]
@@ -408,6 +414,8 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert payload["reports"]["entries"][1]["label"] == "Cleanup preview"
     assert payload["reports"]["entries"][1]["freshness_status"] == "stale"
     assert payload["reports"]["entries"][1]["age_seconds"] is not None
+    assert "related report details" in html
+    assert "mismatches" in html
     assert payload["reports"]["entries"][1]["metrics"]["action_count"] == 3
     assert payload["reports"]["entries"][1]["policy"]["stale_issues_threshold"] == 1
     assert payload["reports"]["entries"][1]["referenced_by"][0]["key"] == "sync-audit"
@@ -450,9 +458,48 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in markdown
     assert "orphan_archive (2): review the affected manifest entries and rerun `republic sync check` after repair" in markdown
     assert "sample_issue_ids=7" in markdown
-    assert "- freshness: stale" in markdown
-    assert "- related_cards: Cleanup preview" in markdown
-    assert "- referenced_by: Sync audit" in markdown
+
+
+def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatch) -> None:
+    loaded = load_config(demo_repo)
+    _write_ops_snapshot_index(demo_repo)
+    monkeypatch.setattr(
+        "reporepublic.dashboard.utc_now",
+        lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        formats=("html", "json", "markdown"),
+    )
+    html = result.output_path.read_text(encoding="utf-8")
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert "Ops snapshots" in html
+    assert "Latest ops snapshot" in html
+    assert "Indexed ops snapshots" in html
+    assert "ops latest" in html
+    assert "ops history" in html
+    assert "20260309T101500Z" in html
+    assert "Dropped ops entries" in html
+    assert payload["counts"]["ops_snapshot_entries"] == 2
+    assert payload["counts"]["ops_snapshot_archives"] == 1
+    assert payload["counts"]["ops_snapshot_dropped_entries"] == 1
+    assert payload["ops_snapshots"]["status"] == "available"
+    assert payload["ops_snapshots"]["history_limit"] == 5
+    assert payload["ops_snapshots"]["dropped_entry_count"] == 1
+    assert payload["ops_snapshots"]["latest"]["entry_id"] == "20260309T101500Z"
+    assert payload["ops_snapshots"]["latest"]["has_archive"] is True
+    assert payload["ops_snapshots"]["entries"][0]["entry_id"] == "20260309T101500Z"
+    assert "# RepoRepublic Dashboard Snapshot" in markdown
+    assert "## Ops snapshots" in markdown
+    assert "- history_entry_count: 2" in markdown
+    assert "- history_limit: 5" in markdown
+    assert "- dropped_entry_count: 1" in markdown
+    assert "  - entry_id: 20260309T101500Z" in markdown
+    assert "  - 20260309T101500Z: status=clean" in markdown
 
 
 def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path) -> None:
@@ -844,12 +891,24 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
 
     assert "Cleanup preview: embedded policy differs from current config" in html
     assert "Sync audit: embedded policy differs from current config" in html
+    assert "related report details" in html
+    assert "policy drifts" in html
+    assert "refresh raw report exports to align embedded policy metadata" in html
     assert payload["reports"]["entries"][0]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["details"]["related_report_policy_drifts"] == 1
     assert payload["reports"]["entries"][1]["details"]["related_report_policy_drift_warnings"] == [
         f"Sync audit: {warning}"
     ]
+    assert (
+        payload["reports"]["entries"][1]["related_report_detail_summary"]
+        == "related report details\n"
+        "policy drifts\n"
+        f"- Sync audit: {warning}\n"
+        "remediation: refresh raw report exports to align embedded policy metadata; "
+        "re-run `republic sync audit --format all` and `republic clean --report "
+        "--report-format all` after updating `dashboard.report_freshness_policy`"
+    )
     assert "related_report_policy_drift_warnings=Sync audit: embedded policy differs from current config" in markdown
     assert "- related_report_details:" in markdown
     assert "  - policy_drifts:" in markdown
@@ -987,3 +1046,63 @@ def _write_dashboard_reports(repo_root: Path) -> None:
         encoding="utf-8",
     )
     (reports_dir / "cleanup-preview.md").write_text("# Cleanup preview\n", encoding="utf-8")
+
+
+def _write_ops_snapshot_index(repo_root: Path) -> None:
+    ops_root = repo_root / ".ai-republic" / "reports" / "ops"
+    ops_root.mkdir(parents=True, exist_ok=True)
+    latest_payload = {
+        "meta": {
+            "generated_at": "2026-03-09T10:16:00+00:00",
+            "ops_root": str(ops_root),
+            "entry_count": 2,
+            "history_limit": 5,
+            "dropped_entry_count": 1,
+        },
+        "latest": {
+            "entry_id": "20260309T101500Z",
+            "rendered_at": "2026-03-09T10:15:00+00:00",
+            "overall_status": "clean",
+            "bundle_dir": str(ops_root / "20260309T101500Z"),
+            "bundle_relative_dir": "20260309T101500Z",
+            "bundle_json": str(ops_root / "20260309T101500Z" / "bundle.json"),
+            "bundle_markdown": str(ops_root / "20260309T101500Z" / "bundle.md"),
+            "archive": {
+                "path": str(ops_root / "20260309T101500Z.tar.gz"),
+                "relative_path": "20260309T101500Z.tar.gz",
+                "sha256": "a" * 64,
+                "size_bytes": 1234,
+                "file_count": 8,
+                "member_count": 10,
+            },
+            "component_statuses": {"doctor": "clean", "dashboard": "clean", "sync_audit": "attention"},
+        },
+    }
+    history_payload = {
+        "meta": {
+            "generated_at": "2026-03-09T10:16:00+00:00",
+            "ops_root": str(ops_root),
+            "history_limit": 5,
+            "entry_count": 2,
+            "dropped_entry_count": 1,
+        },
+        "latest_entry_id": "20260309T101500Z",
+        "entries": [
+            latest_payload["latest"],
+            {
+                "entry_id": "20260309T100000Z",
+                "rendered_at": "2026-03-09T10:00:00+00:00",
+                "overall_status": "issues",
+                "bundle_dir": str(ops_root / "20260309T100000Z"),
+                "bundle_relative_dir": "20260309T100000Z",
+                "bundle_json": str(ops_root / "20260309T100000Z" / "bundle.json"),
+                "bundle_markdown": str(ops_root / "20260309T100000Z" / "bundle.md"),
+                "archive": None,
+                "component_statuses": {"doctor": "clean", "dashboard": "issues"},
+            },
+        ],
+    }
+    (ops_root / "latest.json").write_text(json.dumps(latest_payload, indent=2, sort_keys=True), encoding="utf-8")
+    (ops_root / "latest.md").write_text("# Latest ops\n", encoding="utf-8")
+    (ops_root / "history.json").write_text(json.dumps(history_payload, indent=2, sort_keys=True), encoding="utf-8")
+    (ops_root / "history.md").write_text("# Ops history\n", encoding="utf-8")

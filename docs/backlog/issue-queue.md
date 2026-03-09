@@ -1396,10 +1396,486 @@
   - 테스트와 문서 반영
 - Acceptance criteria:
   - [x] dashboard Markdown snapshot이 `related_report_details` block을 출력함
-  - [x] mismatch warning과 policy drift warning이 CLI와 유사한 구조로 렌더링됨
-  - [x] remediation guidance가 block에 포함됨
-  - [x] 테스트와 문서가 추가됨
+- [x] mismatch warning과 policy drift warning이 CLI와 유사한 구조로 렌더링됨
+- [x] remediation guidance가 block에 포함됨
+- [x] 테스트와 문서가 추가됨
+
+### RR-095. dashboard HTML card의 Cross references 영역도 같은 block semantics를 더 직접적으로 드러내기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / HTML UX / Ops UX
+- Problem: Markdown snapshot은 related-report detail block을 갖게 됐지만, HTML dashboard의 `Cross references` 영역은 여전히 drift note를 평면 리스트로만 보여줘서 mismatch/drift/remediation 의미 단위가 약했다.
+- Scope:
+  - HTML `Cross references` 패널에 `related report details` 섹션 추가
+  - linked mismatch warning과 policy drift warning을 별도 subsection으로 렌더링
+  - policy drift가 있을 때 remediation guidance를 같은 패널에 추가
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] HTML report card가 `related report details`를 표시함
+- [x] `mismatches`와 `policy drifts`가 별도 semantic section으로 보임
+- [x] remediation guidance가 HTML에도 직접 노출됨
+- [x] 테스트와 문서가 추가됨
+
+### RR-096. dashboard JSON export에도 related-report detail block의 presentation-oriented summary string 추가하기
+
+- Status: done
+- Priority: P3
+- Area: Dashboard / JSON Export / Ops UX
+- Problem: HTML/Markdown은 related-report detail block을 직접 보여주지만, JSON export는 구조화 `details`만 있어 downstream consumer가 같은 표현을 다시 조립해야 했다.
+- Scope:
+  - report entry JSON payload에 `related_report_detail_summary` 추가
+  - mismatch/drift/remediation을 평문 block으로 조합
+  - 기존 structured `details`는 유지
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] dashboard JSON entry가 `related_report_detail_summary`를 포함함
+  - [x] mismatch-only와 drift+remediation 케이스가 테스트로 고정됨
+  - [x] 문서와 backlog가 갱신됨
+
+### RR-097. sync audit/cleanup raw export JSON에도 related-report detail summary string 추가하기
+
+- Status: done
+- Priority: P3
+- Area: Sync Reports / JSON Export / Ops UX
+- Problem: dashboard JSON에는 `related_report_detail_summary`가 생겼지만, raw `sync-audit.json` / `cleanup-*.json`은 linked mismatch/drift/remediation 묶음을 바로 표시할 평문 summary가 없어 downstream consumer가 다시 조립해야 했다.
+- Scope:
+  - raw `related_reports` payload에 `detail_summary` 추가
+  - mismatch-only와 drift+remediation 케이스를 같은 block semantics로 평문 조합
+  - 기존 structured `mismatches`, `policy_drifts`, `policy_alignment`는 유지
+  - 테스트와 문서 반영
+- Acceptance criteria:
+  - [x] raw `sync-audit.json` / `cleanup-*.json`의 `related_reports.detail_summary`가 추가됨
+  - [x] mismatch-only와 drift+remediation 케이스가 테스트로 고정됨
+  - [x] 문서와 backlog가 갱신됨
+
+### RR-098. related-report detail summary builder를 dashboard/raw export 경로 사이에서 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: dashboard와 raw report export가 같은 related-report detail summary 문자열을 각자 따로 조합하고 있어, 포맷 drift와 중복 유지보수 비용이 생긴다.
+- Scope:
+  - 공통 summary builder helper 추가
+  - dashboard와 raw export가 같은 helper를 사용하도록 정리
+  - 출력 포맷 회귀 테스트와 pure helper 테스트 추가
+- Acceptance criteria:
+  - [x] dashboard와 raw export가 같은 summary formatter를 사용함
+  - [x] 기존 summary 문자열 포맷이 유지됨
+  - [x] helper 단위 테스트가 추가됨
+
+### RR-099. related-report warning extraction helper도 dashboard/raw export 경로 사이에서 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: dashboard와 raw report export가 관련 warning을 각자 다른 helper로 추출하고 있어, string-list 경로와 structured-entry 경로의 formatting 규칙이 중복되어 있었다.
+- Scope:
+  - structured warning entry와 string warning list를 모두 처리하는 공통 extractor 추가
+  - dashboard와 raw export가 같은 extractor를 사용하도록 정리
+  - helper 단위 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] dashboard와 raw export가 같은 warning extractor를 사용함
+  - [x] warning 문자열 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-100. related-report detail block markdown/html renderer를 공통 semantic block 기반으로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: CLI, dashboard Markdown, dashboard HTML이 같은 related-report detail block을 각자 따로 렌더링하고 있어 section drift와 수정 비용이 남아 있었다.
+- Scope:
+  - 공통 semantic block builder를 renderer 입력으로 사용
+  - CLI와 dashboard Markdown이 같은 line renderer를 사용하도록 정리
+  - dashboard HTML도 같은 semantic block을 소비하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] CLI와 dashboard Markdown이 같은 line renderer를 사용함
+  - [x] dashboard HTML도 같은 block semantics를 사용함
+  - [x] 출력 포맷 회귀가 없고 테스트가 추가됨
+
+### RR-101. related-report detail block title/section label 정책을 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 title과 section label이 surface별로 흩어져 있어, `related report details` / `related_report_details`, `policy drifts` / `policy_drifts` 같은 표현 규칙이 코드 여러 군데에 중복돼 있었다.
+- Scope:
+  - `display`/`machine` 스타일 기반 title/section label helper 추가
+  - CLI, dashboard Markdown, dashboard HTML이 같은 label policy를 사용하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] title과 section label 규칙이 공통 helper로 이동함
+  - [x] surface별 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-102. related-report remediation label과 section ordering 정책을 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 remediation label과 section 순서가 구현 내부에 암묵적으로 박혀 있어, surface 간 drift를 추적하기 어려웠다.
+- Scope:
+  - section ordering을 공통 상수/정책으로 노출
+  - remediation label formatter 추가
+  - CLI, dashboard Markdown, dashboard HTML이 같은 remediation/ordering policy를 사용하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] remediation label과 section ordering 규칙이 공통 helper로 이동함
+  - [x] surface별 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-103. related-report detail block spacing/list marker 정책을 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 spacing/list marker 규칙이 renderer helper 밖의 호출부에 흩어져 있어, CLI와 dashboard Markdown 사이에서 indent/marker drift가 생길 수 있었다.
+- Scope:
+  - line layout policy helper 추가
+  - title prefix, section indent, item marker, remediation line prefix를 공통 정책으로 이동
+  - CLI와 dashboard Markdown이 같은 layout helper를 사용하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] spacing/list marker 규칙이 공통 helper로 이동함
+  - [x] surface별 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-104. related-report detail block HTML subtitle/spacing 정책을 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 HTML subtitle margin과 remediation copy spacing이 dashboard renderer 안에 하드코딩돼 있어, Markdown/CLI와는 다르게 HTML layout policy를 추적하기 어려웠다.
+- Scope:
+  - HTML layout policy helper 추가
+  - title/section/remediation subtitle margin과 remediation copy spacing을 공통 정책으로 이동
+  - dashboard HTML이 같은 helper를 사용하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] HTML subtitle/spacing 규칙이 공통 helper로 이동함
+  - [x] dashboard HTML의 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-105. related-report detail block HTML class/tag policy를 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 HTML renderer가 `p/ul/li/p` 태그와 class 선택을 직접 하드코딩하고 있어, subtitle/spacing helper가 있어도 HTML 표현 policy가 renderer 안에 남아 있었다.
+- Scope:
+  - HTML layout policy에 subtitle/list/item/copy tag와 class 선택 추가
+  - list/copy/subtitle HTML 조립 helper를 공통 policy 기반으로 정리
+  - dashboard HTML renderer가 직접 태그 문자열을 박지 않도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] HTML class/tag 규칙이 공통 helper로 이동함
+  - [x] dashboard HTML의 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-106. related-report detail block HTML inline-style formatter를 공통 helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 HTML renderer가 subtitle/copy의 `style="margin-top: ..."` 문자열을 직접 조립하고 있어, HTML policy가 늘어날수록 속성 포맷 drift가 생길 수 있었다.
+- Scope:
+  - inline-style attribute formatter helper 추가
+  - subtitle/copy renderer가 같은 style helper를 사용하도록 정리
+  - dashboard HTML의 기존 출력 포맷 유지
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] HTML inline-style 조립 규칙이 공통 helper로 이동함
+  - [x] dashboard HTML의 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-107. related-report detail block HTML escaping/attribute rendering helper를 공통화하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 HTML renderer가 escaping, `class`, `style` 속성 조립을 부분적으로 각 helper 안에서 직접 처리하고 있어, attribute policy drift와 escaping 중복이 남아 있었다.
+- Scope:
+  - HTML attribute formatter helper 추가
+  - escaped text element helper 추가
+  - subtitle/copy/item renderer가 같은 escaping/attribute helper를 사용하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] HTML escaping/attribute 조립 규칙이 공통 helper로 이동함
+  - [x] dashboard HTML의 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-108. related-report detail block HTML wrapper/list renderer를 더 generic helper로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Ops UX
+- Problem: related-report detail block의 HTML list renderer가 여전히 `<ul>...</ul>` wrapper를 직접 조립하고 있어, generic HTML wrapper policy와 text escaping 레이어가 완전히 분리되지는 않았다.
+- Scope:
+  - generic HTML wrapper helper 추가
+  - list renderer가 wrapper helper를 재사용하도록 정리
+  - text element helper는 wrapper helper 위에서 escaping만 담당하도록 정리
+  - helper 테스트와 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] HTML wrapper/list renderer 조립 규칙이 공통 helper로 이동함
+  - [x] dashboard HTML의 기존 출력 포맷이 유지됨
+  - [x] helper 테스트가 추가됨
+
+### RR-109. related-report detail block HTML helper를 private 내부 contract로 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / API Hygiene
+- Problem: HTML helper들이 점점 generic해지면서 외부 util contract처럼 보이기 시작했지만, 실제 소비자는 여전히 related-report detail renderer 내부에 한정돼 있어 공개 API로 취급할 이유가 약했다.
+- Scope:
+  - HTML helper 이름을 underscore private helper로 정리
+  - 테스트를 private internal contract 기준으로 갱신
+  - public 승격 기준은 backlog 메모로 남기고 현재는 내부 구현 세부사항으로 유지
+- Acceptance criteria:
+  - [x] HTML helper가 private internal contract로 정리됨
+  - [x] 기존 동작과 테스트 결과가 유지됨
+  - [x] backlog에 public 승격 판단 기준이 반영됨
+
+### RR-110. `report_policy.py` 내부 helper cluster를 섹션 주석으로 더 명확히 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Code Readability
+- Problem: `report_policy.py`가 커지면서 public policy helper, related-report builder, private HTML helper 경계가 파일만 읽어서는 바로 드러나지 않았다.
+- Scope:
+  - public policy snapshot/alignment helper 섹션 명시
+  - related-report builder/render policy 섹션 명시
+  - shared label policy와 private HTML helper 섹션 명시
+  - 동작 변경 없이 코드 가독성만 개선
+- Acceptance criteria:
+  - [x] 파일 내부 경계가 섹션 주석으로 드러남
+  - [x] 기존 동작과 테스트 결과가 유지됨
+  - [x] backlog에 다음 구조화 후보가 반영됨
+
+### RR-111. related-report detail helper cluster를 별도 internal submodule로 분리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Module Boundaries
+- Problem: `report_policy.py` 안에 policy snapshot/alignment와 related-report detail renderer가 함께 있어 역할 경계가 분명해졌어도 파일 책임이 여전히 넓었다.
+- Scope:
+  - related-report detail 전용 타입/renderer/helper를 internal submodule로 이동
+  - `report_policy.py`는 policy snapshot/alignment만 남기기
+  - dashboard/CLI/sync report 경로가 새 internal module을 직접 사용하도록 정리
+  - 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] related-report detail cluster가 internal submodule로 이동함
+  - [x] `report_policy.py`가 policy-only 역할로 축소됨
+  - [x] 기존 동작과 테스트 결과가 유지됨
+
+### RR-112. internal submodule 분리 후 test/module naming을 더 명확히 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Test Hygiene
+- Problem: internal submodule 분리 후에도 `tests/test_report_policy.py`가 related-detail renderer를 테스트하고 있어, 파일명과 실제 책임이 어긋나 있었다.
+- Scope:
+  - related-detail 테스트를 별도 파일로 분리
+  - `test_report_policy.py`는 policy-only 모듈 테스트로 재구성
+  - 파일명과 실제 책임이 일치하도록 정리
+- Acceptance criteria:
+  - [x] related-detail 테스트가 별도 파일로 이동함
+  - [x] `test_report_policy.py`가 policy-only 테스트를 담음
+  - [x] 기존 동작과 테스트 결과가 유지됨
+
+### RR-113. `_related_report_detail.py` 이름을 더 domain-specific하게 정리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Naming
+- Problem: internal submodule이 related-report detail cluster 전체를 담는데도 파일명이 단수형이라, block/renderer/policy 묶음이라는 성격이 이름에서 충분히 드러나지 않았다.
+- Scope:
+  - internal submodule 이름을 `_related_report_details.py`로 조정
+  - dashboard/CLI/sync report/test import를 새 이름으로 갱신
+  - 테스트 파일명도 새 모듈명에 맞춰 정리
+- Acceptance criteria:
+  - [x] internal module 이름이 `_related_report_details.py`로 정리됨
+  - [x] 소비 경로와 테스트 import가 새 이름을 사용함
+  - [x] 기존 동작과 테스트 결과가 유지됨
+
+### RR-114. related-report internal module을 package로 분리하기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Module Boundaries
+- Problem: `_related_report_details.py`가 internal submodule로 분리되긴 했지만, 모델/렌더링/HTML helper가 다시 한 파일에 모여 있어 다음 구조 정리 여지가 남아 있었다.
+- Scope:
+  - `_related_report_details/` package 생성
+  - `models.py`, `rendering.py`, `html.py`, `__init__.py`로 책임 분리
+  - 기존 import 표면은 `reporepublic._related_report_details`에서 유지
+  - 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] related-report internal module이 package 구조로 분리됨
+  - [x] import 표면이 유지됨
+  - [x] 기존 동작과 테스트 결과가 유지됨
+
+### RR-115. `_related_report_details` package root re-export 표면 줄이기
+
+- Status: done
+- Priority: P3
+- Area: Reporting / Refactor / Internal API Hygiene
+- Problem: internal package를 package 구조로 나눈 뒤에도 `__init__.py`가 많은 symbol을 다시 re-export하고 있어, private package root가 사실상 공개 API처럼 보였다.
+- Scope:
+  - dashboard/CLI/sync report/test가 `rendering.py`, `models.py`, `html.py`를 직접 import하도록 정리
+  - `__init__.py`는 namespace marker 수준만 유지
+  - 회귀 테스트 유지
+- Acceptance criteria:
+  - [x] 소비자가 concrete submodule을 직접 import함
+  - [x] `__init__.py`가 최소 표면만 유지함
+  - [x] 기존 동작과 테스트 결과가 유지됨
+
+### RR-116. `doctor/status` operator snapshot export 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / CLI
+- Problem: `doctor`와 `status`는 터미널 출력은 풍부하지만 JSON/Markdown export가 없어, 운영 handoff나 automation이 현재 상태를 재사용하려면 stdout parsing에 의존해야 했다.
+- Scope:
+  - `doctor --format json|markdown|all --output ...` 추가
+  - `status --format json|markdown|all --output ...` 추가
+  - `.ai-republic/reports/doctor.*`, `status.*` 기본 export 경로 제공
+  - CLI integration test와 문서 갱신
+- Acceptance criteria:
+  - [x] `doctor`가 structured operator snapshot을 export함
+  - [x] `status`가 structured operator snapshot을 export함
+  - [x] JSON/Markdown export 경로와 테스트가 추가됨
+
+### RR-117. `ops snapshot bundle` 작업 단위 구현하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: `doctor`, `status`, `dashboard`, `sync audit`는 각각 export할 수 있었지만, incident handoff나 automation 입력용으로 한 디렉터리에 묶인 운영 번들이 없어 operator가 여러 명령과 경로를 따로 조합해야 했다.
+- Scope:
+  - `republic ops snapshot` subcommand 추가
+  - `doctor/status/dashboard/sync-audit` export를 한 bundle directory로 묶기
+  - `bundle.json`, `bundle.md` manifest 추가
+  - bundle summary/exit code, unit/CLI 테스트, 문서 갱신
+- Acceptance criteria:
+  - [x] `republic ops snapshot`이 bundle directory를 생성함
+  - [x] bundle manifest가 component status와 output path를 포함함
+  - [x] 전체 흐름에 대한 테스트가 추가됨
+
+### RR-118. `ops snapshot bundle`에 cleanup preview/result 선택 포함 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: `ops snapshot bundle`이 핵심 운영 surface는 잘 묶지만 cleanup preview/result는 따로 봐야 해서, incident handoff 시 stale local state와 prior cleanup 결과를 같은 디렉터리에서 같이 전달하기 어려웠다.
+- Scope:
+  - `--include-cleanup-preview`로 bundle 안에서 cleanup preview 생성
+  - `--include-cleanup-result`로 기존 cleanup result 복사
+  - bundle manifest에 cleanup component와 sync-audit cross-link 기록
+  - unit/CLI 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] cleanup preview가 bundle 안에 생성될 수 있음
+  - [x] 기존 cleanup result를 bundle 안으로 복사할 수 있음
+  - [x] bundle manifest가 cleanup/sync cross-link를 포함함
+
+### RR-119. `ops snapshot bundle`에 sync check/repair preview 선택 포함 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: `ops snapshot bundle`이 cleanup surface까지는 묶지만, applied sync manifest integrity와 repair preview는 별도 명령으로만 확인할 수 있어 operator가 incident handoff 시 integrity finding과 repair plan을 같은 디렉터리에서 함께 전달하기 어려웠다.
+- Scope:
+  - `--include-sync-check`로 bundle 안에서 dedicated sync check report 생성
+  - `--include-sync-repair-preview`로 bundle 안에서 dry-run repair preview report 생성
+  - bundle manifest에 `sync-audit`, `sync-check`, `sync-repair-preview` cross-link 기록
+  - unit/CLI 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] sync check snapshot이 bundle 안에 생성될 수 있음
+  - [x] sync repair preview snapshot이 bundle 안에 생성될 수 있음
+  - [x] bundle manifest가 sync integrity/repair cross-link를 포함함
+
+### RR-120. `ops snapshot bundle` archive/tarball export 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Handoff
+- Problem: `ops snapshot bundle` directory는 풍부했지만, incident handoff나 외부 업로드에 바로 전달 가능한 단일 archive가 없어 operator가 bundle directory를 별도로 압축하고 checksum을 수동으로 계산해야 했다.
+- Scope:
+  - `republic ops snapshot --archive` 추가
+  - optional `--archive-output` 경로 지원
+  - `.tar.gz` archive 생성과 sha256/size/member count 출력
+  - unit/CLI 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] bundle directory에서 `.tar.gz` archive를 생성할 수 있음
+  - [x] CLI가 archive path와 checksum을 출력함
+  - [x] archive에 bundle manifest와 component exports가 포함됨
+
+### RR-121. `ops snapshot bundle` latest pointer/history index 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Automation
+- Problem: `ops snapshot` bundle과 archive를 만들 수 있어도, operator나 automation이 가장 최근 handoff를 찾으려면 timestamped directory를 직접 탐색해야 해서 최신 snapshot lookup이 불안정했다.
+- Scope:
+  - `.ai-republic/reports/ops/latest.json|md` pointer 추가
+  - `.ai-republic/reports/ops/history.json|md` bounded history index 추가
+  - latest entry에 bundle path, archive path, component statuses 기록
+  - unit/CLI 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `ops snapshot` 실행 시 latest pointer가 갱신됨
+  - [x] history index가 최신 순으로 누적됨
+  - [x] custom output dir를 써도 index는 `.ai-republic/reports/ops/` 아래에서 조회 가능함
+
+### RR-122. `ops snapshot bundle` history retention/prune policy 연결하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Cleanup
+- Problem: latest/history index가 추가된 뒤에도 오래된 bundle/archive는 계속 누적되어, operator가 handoff를 많이 만들면 `.ai-republic/reports/ops/` 아래 managed artifact가 자동으로 줄지 않았다.
+- Scope:
+  - `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`를 `republic ops snapshot` 실행 경로에 연결
+  - `--history-limit`, `--prune-history` CLI override 추가
+  - dropped history entry 중 `.ai-republic/reports/ops/` 아래 managed bundle/archive만 안전하게 prune
+  - unit/CLI 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `ops snapshot`이 config 기본 retention limit를 사용함
+  - [x] `--history-limit`으로 이번 실행의 history bound를 override할 수 있음
+  - [x] `--prune-history`가 외부 custom path를 건드리지 않고 managed bundle/archive만 삭제함
+
+### RR-123. `ops snapshot` history/index 상태를 dashboard와 status surface에 노출하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Visibility
+- Problem: `ops snapshot` latest/history index는 파일로 남지만, operator가 평소 보는 `dashboard`와 `status`에서는 그 존재와 retention posture를 바로 확인할 수 없어 handoff bundle 상태를 다시 파일로 열어야 했다.
+- Scope:
+  - dashboard snapshot에 `ops_snapshots` section과 count 추가
+  - HTML/JSON/Markdown dashboard에 latest ops snapshot, bounded history, dropped entry count 노출
+  - `republic status`와 `status.json|md` export에 ops snapshot summary 추가
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] dashboard가 `.ai-republic/reports/ops/latest.*`, `history.*`를 읽어 `Ops snapshots` section을 렌더링함
+  - [x] dashboard JSON/Markdown snapshot이 ops snapshot count와 latest entry를 포함함
+  - [x] `republic status`와 `status.md`가 같은 ops snapshot summary를 표시함
 
 ## 권장 다음 순서
 
-1. dashboard HTML card의 Cross references 영역도 같은 block semantics를 더 직접적으로 드러낼지 결정하기
+### RR-124. dedicated `republic ops status` surface 추가하기
+
+- Status: done
+- Priority: P2
+- Area: Ops UX / Reporting / Visibility
+- Problem: `ops snapshot` latest/history index는 dashboard와 `status`에서 요약만 보이고, 최신 indexed bundle manifest의 component summary와 recent history preview를 보려면 operator가 다시 `bundle.json`과 `latest/history` 파일을 각각 열어야 했다.
+- Scope:
+  - `republic ops status` subcommand 추가
+  - `.ai-republic/reports/ops/latest.*`, `history.*`, 최신 indexed `bundle.json`을 함께 읽는 snapshot builder 추가
+  - text + JSON/Markdown export 추가
+  - 테스트와 문서 갱신
+- Acceptance criteria:
+  - [x] `republic ops status`가 latest/history index posture와 latest bundle manifest summary를 함께 출력함
+  - [x] `republic ops status --format all`이 `.ai-republic/reports/ops-status.json|md`를 생성함
+  - [x] 최신 bundle component summary와 recent history preview가 snapshot/export에 포함됨
+
+## 권장 다음 순서
+
+1. `ops status` export를 dashboard handoff/report card와 더 강하게 교차 링크할지 결정하기

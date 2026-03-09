@@ -5,12 +5,20 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from reporepublic._related_report_details.rendering import (
+    build_related_report_detail_summary,
+    extract_related_report_warning_lines,
+)
 from reporepublic.config import LoadedConfig
 from reporepublic.models.domain import utc_now
 from reporepublic.report_policy import (
     build_report_freshness_policy_snapshot,
     build_report_policy_drift_guidance,
     build_report_policy_alignment,
+)
+from reporepublic.sync_manifest_reports import (
+    serialize_sync_manifest_finding,
+    serialize_sync_manifest_report,
 )
 from reporepublic.sync_artifacts import (
     AppliedSyncManifestFinding,
@@ -79,9 +87,13 @@ def build_sync_audit_report(
         prunable_groups=int(summary["prunable_groups"]),
         related_cleanup_reports=int(summary["related_cleanup_reports"]),
         cleanup_report_mismatches=int(summary["cleanup_report_mismatches"]),
-        cleanup_mismatch_warnings=_detail_warning_list(snapshot["related_reports"].get("mismatches")),
+        cleanup_mismatch_warnings=extract_related_report_warning_lines(
+            snapshot["related_reports"].get("mismatches")
+        ),
         related_cleanup_policy_drifts=int(summary["related_cleanup_policy_drifts"]),
-        cleanup_policy_drift_warnings=_detail_warning_list(snapshot["related_reports"].get("policy_drifts")),
+        cleanup_policy_drift_warnings=extract_related_report_warning_lines(
+            snapshot["related_reports"].get("policy_drifts")
+        ),
         policy_drift_guidance=_string_or_none(snapshot["related_reports"].get("policy_drift_guidance")),
     )
 
@@ -446,28 +458,11 @@ def _serialize_integrity_reports(reports: list[AppliedSyncManifestReport]) -> di
 
 
 def _serialize_integrity_report(report: AppliedSyncManifestReport) -> dict[str, object]:
-    return {
-        "tracker": report.tracker,
-        "issue_id": report.issue_id,
-        "status": "issues" if report.findings else "ok",
-        "manifest_path": str(report.manifest_path),
-        "manifest_exists": report.manifest_exists,
-        "manifest_entry_count": report.manifest_entry_count,
-        "archive_file_count": len(report.archive_files),
-        "archive_files": list(report.archive_files),
-        "referenced_archive_count": report.referenced_archive_count,
-        "finding_count": len(report.findings),
-        "findings": [_serialize_integrity_finding(finding) for finding in report.findings],
-    }
+    return serialize_sync_manifest_report(report)
 
 
 def _serialize_integrity_finding(finding: AppliedSyncManifestFinding) -> dict[str, object]:
-    return {
-        "code": finding.code,
-        "message": finding.message,
-        "entry_key": finding.entry_key,
-        "path": finding.path,
-    }
+    return serialize_sync_manifest_finding(finding)
 
 
 def _serialize_retention_snapshot(snapshot: SyncAppliedRetentionSnapshot) -> dict[str, object]:
@@ -593,6 +588,11 @@ def _load_related_cleanup_reports(
         "policy_drift_reports": len(policy_drifts),
         "policy_drift_guidance": remediation if policy_drifts else None,
         "policy_drifts": policy_drifts,
+        "detail_summary": build_related_report_detail_summary(
+            mismatch_warnings=extract_related_report_warning_lines(mismatches),
+            policy_drift_warnings=extract_related_report_warning_lines(policy_drifts),
+            remediation=remediation if policy_drifts else None,
+        ),
     }
 
 
@@ -722,16 +722,3 @@ def _string_or_none(value: object) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
-
-
-def _detail_warning_list(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    warnings: list[str] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        label = _string_or_none(item.get("label")) or "Related report"
-        warning = _string_or_none(item.get("warning")) or "issue filter mismatch"
-        warnings.append(f"{label}: {warning}")
-    return tuple(warnings)

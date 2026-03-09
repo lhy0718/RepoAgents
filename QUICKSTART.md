@@ -28,6 +28,10 @@ uv run republic init
 uv run republic init --preset python-library --tracker-repo owner/name
 uv run republic init --tracker-kind local_file --tracker-path issues.json
 uv run republic doctor
+uv run republic ops snapshot --archive
+uv run republic ops snapshot --archive --history-limit 5 --prune-history
+uv run republic ops status
+cat .ai-republic/reports/ops/latest.json
 ```
 
 Running `uv run republic init` without flags starts an interactive setup flow. Use `--backend mock` if you want the initialized config to default to the deterministic mock backend. Use `--tracker-kind local_file` when you want a local JSON inbox instead of GitHub.
@@ -80,7 +84,13 @@ uv run republic run --dry-run
 uv run republic run --once
 uv run republic status
 uv run republic dashboard
+uv run republic ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
+uv run republic ops status --format all
+cat .ai-republic/reports/ops/history.json
 ```
+
+`ops snapshot` history retention defaults to `cleanup.ops_snapshot_keep_entries`. Add `--prune-history` only when you want RepoRepublic to delete dropped managed bundle/archive paths under `.ai-republic/reports/ops/`.
+Use `ops status` when you want one CLI/export surface that includes the latest indexed handoff bundle plus recent history without opening the dashboard.
 
 What happens:
 
@@ -195,7 +205,10 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
 - optional JSONL logs: `.ai-republic/logs/reporepublic.jsonl`
+- doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
+- status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
 - single issue status: `uv run republic status --issue 123`
+- export operator health snapshots: `uv run republic doctor --format all` and `uv run republic status --format all`
 - run one issue immediately: `uv run republic trigger 123`
 - validate a GitHub webhook payload: `uv run republic webhook --event issues --payload webhook.json --dry-run`
 - force an immediate retry: `uv run republic retry 123`

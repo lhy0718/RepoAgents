@@ -30,6 +30,10 @@ uv run republic init
 uv run republic init --preset python-library --tracker-repo owner/name
 uv run republic init --tracker-kind local_file --tracker-path issues.json
 uv run republic doctor
+uv run republic ops snapshot --archive
+uv run republic ops snapshot --archive --history-limit 5 --prune-history
+uv run republic ops status
+cat .ai-republic/reports/ops/latest.json
 ```
 
 `uv run republic init`을 플래그 없이 실행하면 대화형 초기화가 시작됩니다. 초기 설정을 deterministic mock backend로 두고 싶다면 `--backend mock`을 사용하면 됩니다. GitHub 없이 로컬 JSON inbox로만 돌리려면 `--tracker-kind local_file`를 사용하면 됩니다.
@@ -82,7 +86,13 @@ uv run republic run --dry-run
 uv run republic run --once
 uv run republic status
 uv run republic dashboard
+uv run republic ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
+uv run republic ops status --format all
+cat .ai-republic/reports/ops/history.json
 ```
+
+`ops snapshot` history retention 기본값은 `cleanup.ops_snapshot_keep_entries`입니다. dropped managed bundle/archive를 `.ai-republic/reports/ops/` 아래에서 함께 정리하고 싶을 때만 `--prune-history`를 사용하면 됩니다.
+dashboard를 열지 않고 최신 indexed handoff bundle과 recent history를 한 번에 확인하려면 `ops status`를 사용하면 됩니다.
 
 optional role pack 동작을 보려면 아래 예제를 사용하면 됩니다.
 
@@ -196,8 +206,11 @@ uv run republic webhook --event issues --payload webhook.json --dry-run
 - dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
 - sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
 - cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
+- doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
+- status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
 - 선택적 JSONL 로그: `.ai-republic/logs/reporepublic.jsonl`
 - 특정 이슈 상태: `uv run republic status --issue 123`
+- operator health snapshot export: `uv run republic doctor --format all`, `uv run republic status --format all`
 - 특정 이슈 즉시 실행: `uv run republic trigger 123`
 - GitHub webhook payload 검증: `uv run republic webhook --event issues --payload webhook.json --dry-run`
 - 즉시 재시도 예약: `uv run republic retry 123`

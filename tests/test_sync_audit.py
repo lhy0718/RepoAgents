@@ -86,6 +86,7 @@ def test_build_sync_audit_report_writes_json_and_markdown_exports(demo_repo: Pat
     assert payload["summary"]["related_cleanup_reports"] == 2
     assert payload["related_reports"]["entries"][0]["label"] == "Cleanup preview"
     assert payload["related_reports"]["entries"][1]["label"] == "Cleanup result"
+    assert payload["related_reports"]["detail_summary"] is None
     assert payload["retention"]["entries"][0]["status"] == "prunable"
     assert "# RepoRepublic Sync Audit" in markdown
     assert "## Policy" in markdown
@@ -112,6 +113,12 @@ def test_build_sync_audit_snapshot_filters_related_cleanup_reports_by_issue(demo
     assert [entry["label"] for entry in snapshot["related_reports"]["entries"]] == ["Cleanup result"]
     assert [entry["label"] for entry in snapshot["related_reports"]["mismatches"]] == ["Cleanup preview"]
     assert "issue_filter=3 does not match audit issue_filter=7" in snapshot["related_reports"]["mismatches"][0]["warning"]
+    assert (
+        snapshot["related_reports"]["detail_summary"]
+        == "related report details\n"
+        "mismatches\n"
+        "- Cleanup preview: cleanup report issue_filter=3 does not match audit issue_filter=7"
+    )
 
 
 def test_build_sync_audit_snapshot_reports_integrity_issues(demo_repo: Path) -> None:
@@ -179,6 +186,13 @@ def test_build_sync_audit_snapshot_cross_links_cleanup_policy_drift(demo_repo: P
     assert (
         snapshot["related_reports"]["policy_drifts"][0]["remediation"]
         == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+    )
+    assert (
+        snapshot["related_reports"]["detail_summary"]
+        == "related report details\n"
+        "policy drifts\n"
+        "- Cleanup preview: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)\n"
+        "remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["related_reports"]["entries"][0]["policy_alignment"]["status"] == "drift"
     assert (

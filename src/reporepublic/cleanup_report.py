@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from reporepublic._related_report_details.rendering import (
+    build_related_report_detail_summary,
+    extract_related_report_warning_lines,
+)
 from reporepublic.config import LoadedConfig
 from reporepublic.models.domain import utc_now
 from reporepublic.report_policy import (
@@ -68,9 +72,13 @@ def build_cleanup_report(
         action_count=len(actions),
         related_sync_audit_reports=int(snapshot["summary"]["related_sync_audit_reports"]),
         sync_audit_issue_filter_mismatches=int(snapshot["summary"]["sync_audit_issue_filter_mismatches"]),
-        sync_audit_mismatch_warnings=_detail_warning_list(snapshot["related_reports"].get("mismatches")),
+        sync_audit_mismatch_warnings=extract_related_report_warning_lines(
+            snapshot["related_reports"].get("mismatches")
+        ),
         sync_audit_policy_drifts=int(snapshot["summary"]["sync_audit_policy_drifts"]),
-        sync_audit_policy_drift_warnings=_detail_warning_list(snapshot["related_reports"].get("policy_drifts")),
+        sync_audit_policy_drift_warnings=extract_related_report_warning_lines(
+            snapshot["related_reports"].get("policy_drifts")
+        ),
         policy_drift_guidance=_string_or_none(snapshot["related_reports"].get("policy_drift_guidance")),
     )
 
@@ -306,6 +314,7 @@ def _load_related_sync_audit_report(
             "policy_drift_reports": 0,
             "policy_drift_guidance": None,
             "policy_drifts": [],
+            "detail_summary": None,
         }
     payload = _load_report_payload(json_path) if json_path.exists() else None
     entry = _serialize_related_sync_audit_report(
@@ -347,6 +356,11 @@ def _load_related_sync_audit_report(
         "policy_drift_reports": len(policy_drifts),
         "policy_drift_guidance": remediation if policy_drifts else None,
         "policy_drifts": policy_drifts,
+        "detail_summary": build_related_report_detail_summary(
+            mismatch_warnings=extract_related_report_warning_lines(mismatches),
+            policy_drift_warnings=extract_related_report_warning_lines(policy_drifts),
+            remediation=remediation if policy_drifts else None,
+        ),
     }
 
 
@@ -457,16 +471,3 @@ def _string_or_none(value: object) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
-
-
-def _detail_warning_list(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    warnings: list[str] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        label = _string_or_none(item.get("label")) or "Related report"
-        warning = _string_or_none(item.get("warning")) or "issue filter mismatch"
-        warnings.append(f"{label}: {warning}")
-    return tuple(warnings)

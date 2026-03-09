@@ -171,6 +171,8 @@ class LoggingSettings(BaseModel):
 
 class CleanupSettings(BaseModel):
     sync_applied_keep_groups_per_issue: int = Field(default=20, ge=1, le=500)
+    ops_snapshot_keep_entries: int = Field(default=25, ge=1, le=500)
+    ops_snapshot_prune_managed: bool = False
 
 
 class ReportFreshnessPolicySettings(BaseModel):

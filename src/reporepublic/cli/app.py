@@ -24,21 +24,48 @@ from reporepublic.cleanup_report import (
 from reporepublic.config import ConfigLoadError, LoadedConfig, load_config, resolve_repo_root
 from reporepublic.dashboard import (
     build_dashboard,
+    build_ops_snapshot_status_snapshot,
     build_report_health_snapshot,
     normalize_dashboard_formats,
 )
 from reporepublic.logging import configure_logging
 from reporepublic.models import RunLifecycle, RunRecord
 from reporepublic.models.domain import utc_now
+from reporepublic.operator_reports import (
+    build_operator_report_exports,
+    normalize_operator_report_formats,
+)
+from reporepublic.ops_bundle import (
+    build_ops_snapshot_index,
+    build_ops_snapshot_bundle,
+    build_ops_snapshot_archive,
+    default_ops_snapshot_bundle_dir,
+    prune_ops_snapshot_history,
+)
+from reporepublic.ops_status import (
+    build_ops_status_exports,
+    build_ops_status_snapshot,
+    normalize_ops_status_formats,
+    render_ops_status_text,
+)
 from reporepublic.orchestrator import DryRunPreview, Orchestrator, RunStateStore, load_webhook_payload
+from reporepublic._related_report_details.rendering import (
+    build_related_report_detail_block,
+    build_related_report_detail_line_layout,
+    render_related_report_detail_lines,
+)
 from reporepublic.report_policy import build_report_policy_drift_guidance
+from reporepublic.sync_manifest_reports import (
+    build_sync_check_report,
+    build_sync_repair_report,
+    serialize_sync_manifest_repair_result,
+    serialize_sync_manifest_report,
+)
 from reporepublic.sync_audit import (
     build_sync_audit_report,
     normalize_sync_audit_formats,
 )
 from reporepublic.sync_artifacts import (
-    AppliedSyncManifestRepairResult,
-    AppliedSyncManifestReport,
     SyncArtifact,
     SyncArtifactLookupError,
     apply_sync_artifact,
@@ -63,6 +90,7 @@ from reporepublic.utils import (
     is_git_repository,
     list_dirty_working_tree_entries,
     write_json_file,
+    write_text_file,
 )
 from reporepublic.workspace import CopyWorkspaceManager, WorktreeWorkspaceManager
 
@@ -73,6 +101,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 sync_app = typer.Typer(help="Inspect staged tracker sync artifacts.")
+ops_app = typer.Typer(help="Export operator snapshot bundles.")
 RAW_POLICY_REPORT_EXPORTS = (
     "sync-audit.json",
     "cleanup-preview.json",
@@ -138,6 +167,7 @@ def callback() -> None:
 
 
 app.add_typer(sync_app, name="sync")
+app.add_typer(ops_app, name="ops")
 
 
 @app.command("init")
@@ -288,42 +318,70 @@ def init_command(
 
 
 @app.command("doctor")
-def doctor_command() -> None:
+def doctor_command(
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional doctor report output path. Additional formats reuse the same filename stem.",
+    ),
+) -> None:
     repo_root = resolve_repo_root(Path.cwd())
-    typer.echo(f"Repo root: {repo_root}")
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_operator_report_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
 
     config_status = None
+    config_error: str | None = None
     try:
         loaded = load_config(repo_root)
         config_status = loaded
-        typer.echo(f"Config: OK ({loaded.config_path})")
     except ConfigLoadError as exc:
-        typer.echo(f"Config: ERROR\n{exc}", err=True)
+        config_error = str(exc)
         loaded = None
 
     codex_command = loaded.data.codex.command if loaded else "codex"
     command_path = shutil.which(codex_command)
+    codex_version: str | None = None
     if command_path:
-        version = _run_version([codex_command, "--version"])
-        typer.echo(f"Codex command: OK ({command_path}) {version.strip()}")
-    else:
+        codex_version = _run_version([codex_command, "--version"]).strip()
+
+    if export_formats is None:
+        typer.echo(f"Repo root: {repo_root}")
+        if config_status:
+            typer.echo(f"Config: OK ({loaded.config_path})")
+        else:
+            typer.echo(f"Config: ERROR\n{config_error}", err=True)
+    if command_path:
+        if export_formats is None:
+            typer.echo(f"Codex command: OK ({command_path}) {codex_version or ''}".rstrip())
+    elif export_formats is None:
         typer.echo(f"Codex command: MISSING ({codex_command})", err=True)
 
     diagnostic_checks: list[DiagnosticCheck] = []
     if loaded:
-        _print_tracker_status(loaded)
         working_tree = _get_working_tree_status(loaded)
-        _print_workspace_status(loaded, working_tree)
         diagnostic_checks = _collect_doctor_checks(loaded)
-        for check in diagnostic_checks:
-            _print_diagnostic_check(check)
-        _print_required_files(loaded)
-        configure_logging(
-            level=loaded.data.logging.level,
-            json_logs=loaded.data.logging.json_logs,
-            file_enabled=loaded.data.logging.file_enabled,
-            log_dir=loaded.logs_dir,
-        )
+        if export_formats is None:
+            _print_tracker_status(loaded)
+            _print_workspace_status(loaded, working_tree)
+            for check in diagnostic_checks:
+                _print_diagnostic_check(check)
+            _print_required_files(loaded)
+            configure_logging(
+                level=loaded.data.logging.level,
+                json_logs=loaded.data.logging.json_logs,
+                file_enabled=loaded.data.logging.file_enabled,
+                log_dir=loaded.logs_dir,
+            )
     else:
         working_tree = None
 
@@ -332,6 +390,38 @@ def doctor_command() -> None:
         exit_code = 1
     if any(check.status == "ERROR" for check in diagnostic_checks):
         exit_code = 1
+
+    if export_formats is not None:
+        snapshot = _build_doctor_snapshot(
+            repo_root=repo_root,
+            loaded=loaded,
+            config_error=config_error,
+            codex_command=codex_command,
+            command_path=command_path,
+            codex_version=codex_version,
+            diagnostic_checks=diagnostic_checks,
+            working_tree=working_tree,
+            exit_code=exit_code,
+        )
+        output_path = _resolve_operator_report_output(
+            repo_root=repo_root,
+            loaded=loaded,
+            output=output,
+            default_name="doctor",
+        )
+        result = build_operator_report_exports(
+            kind="doctor",
+            snapshot=snapshot,
+            output_path=output_path,
+            formats=export_formats,
+        )
+        _print_operator_report_exports("Doctor", result.output_paths)
+        typer.echo(
+            "Doctor summary: "
+            f"status={snapshot['summary']['overall_status']} "
+            f"diagnostics={snapshot['summary']['diagnostic_count']} "
+            f"exit_code={snapshot['summary']['exit_code']}"
+        )
     raise typer.Exit(code=exit_code)
 
 
@@ -469,6 +559,16 @@ def webhook_command(
 @app.command("status")
 def status_command(
     issue: int | None = typer.Option(None, "--issue", help="Show a single issue run."),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional status report output path. Additional formats reuse the same filename stem.",
+    ),
 ) -> None:
     try:
         loaded = load_config(resolve_repo_root(Path.cwd()))
@@ -477,6 +577,7 @@ def status_command(
         raise typer.Exit(code=1)
 
     store = RunStateStore(loaded.state_dir / "runs.json")
+    all_records = store.all()
     if issue is not None:
         record = store.get(issue)
         if record is None:
@@ -484,26 +585,71 @@ def status_command(
             raise typer.Exit(code=1)
         records = [record]
     else:
-        records = store.all()
-    if not records:
+        records = all_records
+
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_operator_report_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    if not records and export_formats is None:
         typer.echo("No runs recorded yet.")
         return
-    typer.echo(f"Run state: {loaded.state_dir / 'runs.json'}")
-    if issue is None:
-        counts = Counter(record.status.value for record in records)
-        summary = ", ".join(f"{status}={count}" for status, count in sorted(counts.items()))
-        typer.echo(f"Run summary: {summary}")
     policy_alignment = _collect_report_policy_export_alignment(loaded)
-    _print_status_report_health(
-        build_report_health_snapshot(loaded=loaded),
+    report_health_snapshot = build_report_health_snapshot(loaded=loaded)
+    ops_snapshot = build_ops_snapshot_status_snapshot(loaded=loaded)
+    policy_health = _collect_report_policy_health(
+        loaded,
         policy_alignment=policy_alignment,
-        policy_health=_collect_report_policy_health(
-            loaded,
-            policy_alignment=policy_alignment,
-        ),
     )
-    for record in records:
-        _print_run_record(record)
+    if export_formats is None:
+        typer.echo(f"Run state: {loaded.state_dir / 'runs.json'}")
+        if issue is None:
+            counts = Counter(record.status.value for record in records)
+            summary = ", ".join(f"{status}={count}" for status, count in sorted(counts.items()))
+            typer.echo(f"Run summary: {summary}")
+        _print_status_report_health(
+            report_health_snapshot,
+            policy_alignment=policy_alignment,
+            policy_health=policy_health,
+            ops_snapshot=ops_snapshot,
+        )
+        for record in records:
+            _print_run_record(record)
+        return
+
+    snapshot = _build_status_snapshot(
+        loaded=loaded,
+        all_records=all_records,
+        selected_records=records,
+        issue_filter=issue,
+        report_health_snapshot=report_health_snapshot,
+        ops_snapshot=ops_snapshot,
+        policy_alignment=policy_alignment,
+        policy_health=policy_health,
+    )
+    output_path = _resolve_operator_report_output(
+        repo_root=loaded.repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="status",
+    )
+    result = build_operator_report_exports(
+        kind="status",
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Status", result.output_paths)
+    typer.echo(
+        "Status summary: "
+        f"selected_runs={snapshot['summary']['selected_runs']} "
+        f"total_runs={snapshot['summary']['total_runs']} "
+        f"report_health={snapshot['report_health']['hero']['severity']}"
+    )
 
 
 @app.command("retry")
@@ -712,6 +858,316 @@ def dashboard_command(
     typer.echo(f"Included {result.visible_runs} of {result.total_runs} recorded runs.")
 
 
+@ops_app.command("snapshot")
+def ops_snapshot_command(
+    issue: int | None = typer.Option(None, "--issue", help="Filter status/sync audit to one issue id."),
+    tracker: str | None = typer.Option(None, "--tracker", help="Filter sync audit to one tracker."),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Optional output directory for the bundle. Defaults to .ai-republic/reports/ops/<timestamp>/",
+    ),
+    dashboard_limit: int = typer.Option(
+        50,
+        "--dashboard-limit",
+        min=1,
+        max=500,
+        help="Maximum number of runs to include in the dashboard snapshot.",
+    ),
+    sync_limit: int = typer.Option(
+        50,
+        "--sync-limit",
+        min=1,
+        max=500,
+        help="Maximum number of sync entries to include in the sync audit snapshot.",
+    ),
+    refresh_seconds: int = typer.Option(
+        0,
+        "--refresh-seconds",
+        min=0,
+        max=3600,
+        help="Default browser auto-refresh interval embedded into the bundled dashboard. 0 disables it.",
+    ),
+    include_cleanup_preview: bool = typer.Option(
+        False,
+        "--include-cleanup-preview",
+        help="Generate a cleanup preview report inside the bundle.",
+    ),
+    include_cleanup_result: bool = typer.Option(
+        False,
+        "--include-cleanup-result",
+        help="Copy the latest existing cleanup-result report into the bundle when present.",
+    ),
+    include_sync_check: bool = typer.Option(
+        False,
+        "--include-sync-check",
+        help="Generate a dedicated sync manifest check report inside the bundle.",
+    ),
+    include_sync_repair_preview: bool = typer.Option(
+        False,
+        "--include-sync-repair-preview",
+        help="Generate a dry-run sync manifest repair preview inside the bundle.",
+    ),
+    cleanup_sync_applied: bool = typer.Option(
+        True,
+        "--cleanup-sync-applied/--no-cleanup-sync-applied",
+        help="Include manifest-aware sync archive retention when generating the bundled cleanup preview.",
+    ),
+    cleanup_keep_groups: int | None = typer.Option(
+        None,
+        "--cleanup-keep-groups",
+        min=1,
+        max=500,
+        help="Override cleanup.sync_applied_keep_groups_per_issue for bundled cleanup preview generation.",
+    ),
+    archive: bool = typer.Option(
+        False,
+        "--archive",
+        help="Pack the completed ops snapshot bundle into a tar.gz handoff archive.",
+    ),
+    archive_output: Path | None = typer.Option(
+        None,
+        "--archive-output",
+        help="Optional archive output path. Defaults to a sibling <bundle>.tar.gz file.",
+    ),
+    history_limit: int | None = typer.Option(
+        None,
+        "--history-limit",
+        min=1,
+        max=500,
+        help="Maximum number of ops snapshot history entries to retain in latest/history indices.",
+    ),
+    prune_history: bool = typer.Option(
+        False,
+        "--prune-history",
+        help="Delete dropped managed bundle/archive paths recorded under .ai-republic/reports/ops/.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    all_records = store.all()
+    selected_records = all_records if issue is None else [record for record in all_records if record.issue_id == issue]
+
+    policy_alignment = _collect_report_policy_export_alignment(loaded)
+    policy_health = _collect_report_policy_health(
+        loaded,
+        policy_alignment=policy_alignment,
+    )
+    report_health_snapshot = build_report_health_snapshot(loaded=loaded)
+    ops_snapshot = build_ops_snapshot_status_snapshot(loaded=loaded)
+    working_tree = _get_working_tree_status(loaded)
+    diagnostic_checks = _collect_doctor_checks(loaded)
+    codex_command = loaded.data.codex.command
+    command_path = shutil.which(codex_command)
+    codex_version = _run_version([codex_command, "--version"]).strip() if command_path else None
+
+    doctor_exit_code = 0 if command_path else 1
+    if _workspace_doctor_has_error(loaded, working_tree):
+        doctor_exit_code = 1
+    if any(check.status == "ERROR" for check in diagnostic_checks):
+        doctor_exit_code = 1
+
+    bundle_root = loaded.resolve(output_dir) if output_dir is not None else default_ops_snapshot_bundle_dir(loaded.reports_dir)
+
+    doctor_snapshot = _build_doctor_snapshot(
+        repo_root=loaded.repo_root,
+        loaded=loaded,
+        config_error=None,
+        codex_command=codex_command,
+        command_path=command_path,
+        codex_version=codex_version,
+        diagnostic_checks=diagnostic_checks,
+        working_tree=working_tree,
+        exit_code=doctor_exit_code,
+    )
+    doctor_result = build_operator_report_exports(
+        kind="doctor",
+        snapshot=doctor_snapshot,
+        output_path=bundle_root / "doctor.json",
+        formats=("json", "markdown"),
+    )
+
+    status_snapshot = _build_status_snapshot(
+        loaded=loaded,
+        all_records=all_records,
+        selected_records=selected_records,
+        issue_filter=issue,
+        report_health_snapshot=report_health_snapshot,
+        ops_snapshot=ops_snapshot,
+        policy_alignment=policy_alignment,
+        policy_health=policy_health,
+    )
+    status_result = build_operator_report_exports(
+        kind="status",
+        snapshot=status_snapshot,
+        output_path=bundle_root / "status.json",
+        formats=("json", "markdown"),
+    )
+
+    dashboard_result = build_dashboard(
+        loaded,
+        output_path=bundle_root / "dashboard.html",
+        limit=dashboard_limit,
+        refresh_seconds=refresh_seconds,
+        formats=("html", "json", "markdown"),
+    )
+    sync_result = build_sync_audit_report(
+        loaded,
+        output_path=bundle_root / "sync-audit.json",
+        formats=("json", "markdown"),
+        issue_id=issue,
+        tracker=tracker,
+        limit=sync_limit,
+    )
+    extra_components = _build_ops_snapshot_cleanup_components(
+        loaded=loaded,
+        bundle_root=bundle_root,
+        records=selected_records,
+        issue_filter=issue,
+        include_cleanup_preview=include_cleanup_preview,
+        include_cleanup_result=include_cleanup_result,
+        cleanup_sync_applied=cleanup_sync_applied,
+        cleanup_keep_groups=cleanup_keep_groups,
+    )
+    extra_components.update(
+        _build_ops_snapshot_sync_components(
+            loaded=loaded,
+            bundle_root=bundle_root,
+            issue_filter=issue,
+            tracker_filter=tracker,
+            include_sync_check=include_sync_check,
+            include_sync_repair_preview=include_sync_repair_preview,
+        )
+    )
+    bundle_result = build_ops_snapshot_bundle(
+        bundle_dir=bundle_root,
+        repo_root=loaded.repo_root,
+        config_path=loaded.config_path,
+        issue_filter=issue,
+        tracker_filter=tracker,
+        dashboard_limit=dashboard_limit,
+        sync_limit=sync_limit,
+        refresh_seconds=refresh_seconds,
+        doctor_snapshot=doctor_snapshot,
+        doctor_result=doctor_result,
+        status_snapshot=status_snapshot,
+        status_result=status_result,
+        dashboard_result=dashboard_result,
+        sync_result=sync_result,
+        extra_components=extra_components,
+    )
+    archive_result = None
+    if archive:
+        archive_result = build_ops_snapshot_archive(
+            bundle_dir=bundle_result.bundle_dir,
+            output_path=loaded.resolve(archive_output) if archive_output is not None else None,
+        )
+    effective_history_limit = history_limit or loaded.data.cleanup.ops_snapshot_keep_entries
+    index_result = build_ops_snapshot_index(
+        ops_root=loaded.reports_dir / "ops",
+        bundle_result=bundle_result,
+        archive_result=archive_result,
+        history_limit=effective_history_limit,
+    )
+    effective_prune_history = prune_history or loaded.data.cleanup.ops_snapshot_prune_managed
+    prune_result = None
+    if effective_prune_history and index_result.dropped_entries:
+        prune_result = prune_ops_snapshot_history(
+            ops_root=loaded.reports_dir / "ops",
+            dropped_entries=index_result.dropped_entries,
+        )
+
+    typer.echo("Ops snapshot bundle:")
+    typer.echo(f"- bundle_dir: {bundle_result.bundle_dir}")
+    for name, path in sorted(bundle_result.output_paths.items()):
+        typer.echo(f"- {name}: {path}")
+    if archive_result is not None:
+        typer.echo(f"- archive_path: {archive_result.archive_path}")
+        typer.echo(f"- archive_sha256: {archive_result.sha256}")
+        typer.echo(f"- archive_size_bytes: {archive_result.size_bytes}")
+        typer.echo(f"- archive_file_count: {archive_result.file_count}")
+        typer.echo(f"- archive_member_count: {archive_result.member_count}")
+    typer.echo(f"- latest_index_json: {index_result.latest_json}")
+    typer.echo(f"- latest_index_markdown: {index_result.latest_markdown}")
+    typer.echo(f"- history_index_json: {index_result.history_json}")
+    typer.echo(f"- history_index_markdown: {index_result.history_markdown}")
+    typer.echo(f"- history_limit: {index_result.history_limit}")
+    typer.echo(f"- history_entry_count: {index_result.entry_count}")
+    typer.echo(f"- dropped_history_entries: {len(index_result.dropped_entries)}")
+    if effective_prune_history:
+        typer.echo(f"- prune_history: {str(True).lower()}")
+        typer.echo(f"- pruned_bundle_dirs: {len(prune_result.removed_bundle_dirs) if prune_result else 0}")
+        typer.echo(f"- pruned_archives: {len(prune_result.removed_archives) if prune_result else 0}")
+        typer.echo(f"- skipped_external_paths: {prune_result.skipped_external_paths if prune_result else 0}")
+        typer.echo(f"- skipped_active_paths: {prune_result.skipped_active_paths if prune_result else 0}")
+        typer.echo(f"- missing_pruned_paths: {prune_result.missing_paths if prune_result else 0}")
+    elif index_result.dropped_entries:
+        typer.echo("- history_prune_note: dropped entries remain on disk until you re-run with --prune-history.")
+    typer.echo(f"- overall_status: {bundle_result.overall_status}")
+    for name, status in bundle_result.component_statuses.items():
+        typer.echo(f"- {name}: {status}")
+
+    if bundle_result.overall_status == "issues":
+        raise typer.Exit(code=1)
+
+
+@ops_app.command("status")
+def ops_status_command(
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        min=1,
+        max=100,
+        help="Maximum number of recent ops history entries to include.",
+    ),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text, json, markdown, or all.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional ops status output path. Additional formats reuse the same filename stem.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    output_format = format.strip().lower()
+    export_formats: tuple[str, ...] | None = None
+    if output_format != "text":
+        try:
+            export_formats = normalize_ops_status_formats((output_format,))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--format") from exc
+
+    snapshot = build_ops_status_snapshot(
+        loaded=loaded,
+        history_preview_limit=limit,
+    )
+    if export_formats is None:
+        typer.echo(render_ops_status_text(snapshot), nl=False)
+        return
+
+    output_path = _resolve_operator_report_output(
+        repo_root=loaded.repo_root,
+        loaded=loaded,
+        output=output,
+        default_name="ops-status",
+    )
+    result = build_ops_status_exports(
+        snapshot=snapshot,
+        output_path=output_path,
+        formats=export_formats,
+    )
+    _print_operator_report_exports("Ops status", result.output_paths)
+    typer.echo(
+        "Ops status summary: "
+        f"status={snapshot['summary']['status']} "
+        f"index={snapshot['summary']['index_status']} "
+        f"latest_bundle={snapshot['summary']['latest_bundle_status']}"
+    )
+
+
 @sync_app.command("ls")
 def sync_list_command(
     issue: int | None = typer.Option(None, "--issue", help="Filter staged artifacts to one issue id."),
@@ -879,7 +1335,16 @@ def sync_check_command(
         raise typer.BadParameter("Unsupported sync format. Expected one of: text, json", param_hint="--format")
     reports = inspect_applied_sync_manifests(loaded, issue_id=issue, tracker=tracker)
     if output_format == "json":
-        typer.echo(json.dumps([_serialize_sync_manifest_report(report) for report in reports], indent=2, sort_keys=True))
+        typer.echo(
+            json.dumps(
+                [
+                    serialize_sync_manifest_report(report, include_issue_root=True)
+                    for report in reports
+                ],
+                indent=2,
+                sort_keys=True,
+            )
+        )
         if any(report.findings for report in reports):
             raise typer.Exit(code=1)
         return
@@ -915,7 +1380,16 @@ def sync_repair_command(
         raise typer.BadParameter("Unsupported sync format. Expected one of: text, json", param_hint="--format")
     results = repair_applied_sync_manifests(loaded, issue_id=issue, tracker=tracker, dry_run=dry_run)
     if output_format == "json":
-        typer.echo(json.dumps([_serialize_sync_manifest_repair_result(result) for result in results], indent=2, sort_keys=True))
+        typer.echo(
+            json.dumps(
+                [
+                    serialize_sync_manifest_repair_result(result, include_issue_root=True)
+                    for result in results
+                ],
+                indent=2,
+                sort_keys=True,
+            )
+        )
     else:
         if not results:
             typer.echo("No applied sync manifests found.")
@@ -1599,25 +2073,7 @@ def _print_tracker_status(loaded: LoadedConfig) -> None:
 
 
 def _print_required_files(loaded: LoadedConfig) -> None:
-    required = [
-        loaded.ai_root / "reporepublic.yaml",
-        loaded.ai_root / "roles" / "triage.md",
-        loaded.ai_root / "roles" / "planner.md",
-        loaded.ai_root / "roles" / "engineer.md",
-        loaded.ai_root / "roles" / "qa.md",
-        loaded.ai_root / "roles" / "reviewer.md",
-        loaded.ai_root / "prompts" / "triage.txt.j2",
-        loaded.ai_root / "prompts" / "planner.txt.j2",
-        loaded.ai_root / "prompts" / "engineer.txt.j2",
-        loaded.ai_root / "prompts" / "qa.txt.j2",
-        loaded.ai_root / "prompts" / "reviewer.txt.j2",
-        loaded.ai_root / "policies" / "merge-policy.md",
-        loaded.ai_root / "policies" / "scope-policy.md",
-        loaded.state_dir / "runs.json",
-        loaded.repo_root / "AGENTS.md",
-        loaded.repo_root / "WORKFLOW.md",
-        loaded.repo_root / ".github" / "workflows" / "republic-check.yml",
-    ]
+    required = _required_managed_files(loaded)
     missing = [path for path in required if not path.exists()]
     if missing:
         typer.echo("Managed files: MISSING")
@@ -1661,6 +2117,413 @@ def _print_logging_status(loaded: LoadedConfig) -> None:
         f"file_enabled={loaded.data.logging.file_enabled} "
         f"dir={loaded.logs_dir}"
     )
+
+
+def _resolve_operator_report_output(
+    *,
+    repo_root: Path,
+    loaded: LoadedConfig | None,
+    output: Path | None,
+    default_name: str,
+) -> Path:
+    if output is not None:
+        if loaded is not None:
+            return loaded.resolve(output)
+        if output.is_absolute():
+            return output
+        return (repo_root / output).resolve()
+    if loaded is not None:
+        return loaded.reports_dir / f"{default_name}.json"
+    return (repo_root / ".ai-republic" / "reports" / f"{default_name}.json").resolve()
+
+
+def _print_operator_report_exports(label: str, output_paths: dict[str, Path]) -> None:
+    typer.echo(f"{label} exports:")
+    for export_format, path in output_paths.items():
+        typer.echo(f"- {export_format}: {path}")
+
+
+def _serialize_diagnostic_check(check: DiagnosticCheck) -> dict[str, object]:
+    return {
+        "name": check.name,
+        "status": check.status,
+        "message": check.message,
+        "hint": check.hint,
+        "detail_lines": list(check.detail_lines),
+    }
+
+
+def _collect_tracker_snapshot(loaded: LoadedConfig) -> dict[str, object]:
+    tracker = loaded.data.tracker
+    snapshot: dict[str, object] = {
+        "kind": tracker.kind.value,
+        "mode": tracker.mode.value,
+        "repo": tracker.repo,
+        "path": str(loaded.resolve(tracker.path or "issues.json")),
+        "poll_interval_seconds": tracker.poll_interval_seconds,
+    }
+    if tracker.kind.value == "github":
+        snapshot["api_url"] = tracker.api_url
+        snapshot["token_env"] = tracker.token_env
+        snapshot["fixtures_path"] = tracker.fixtures_path
+        return snapshot
+
+    tracker_path = loaded.resolve(tracker.path or "issues.json")
+    expected_kind = "directory" if tracker.kind.value == "local_markdown" else "file"
+    if not tracker_path.exists():
+        snapshot["path_status"] = "missing"
+    elif expected_kind == "directory" and not tracker_path.is_dir():
+        snapshot["path_status"] = "wrong_type"
+    elif expected_kind == "file" and tracker_path.is_dir():
+        snapshot["path_status"] = "wrong_type"
+    else:
+        snapshot["path_status"] = "ok"
+    return snapshot
+
+
+def _collect_workspace_snapshot(
+    loaded: LoadedConfig,
+    working_tree: WorkingTreeStatus,
+) -> dict[str, object]:
+    snapshot: dict[str, object] = {
+        "strategy": loaded.data.workspace.strategy,
+        "root": str(loaded.workspace_root),
+        "dirty_policy": loaded.data.workspace.dirty_policy.value,
+        "is_git_repo": working_tree.is_git_repo,
+        "dirty_entries": list(working_tree.dirty_entries),
+    }
+    if loaded.data.workspace.strategy == "worktree":
+        snapshot["git_support_status"] = "ok" if working_tree.is_git_repo else "missing"
+    if not working_tree.is_git_repo:
+        snapshot["working_tree_status"] = "not_applicable"
+    elif not working_tree.dirty_entries:
+        snapshot["working_tree_status"] = "clean"
+    else:
+        snapshot["working_tree_status"] = "dirty"
+        snapshot["dirty_summary"] = _summarize_dirty_entries(working_tree.dirty_entries)
+    return snapshot
+
+
+def _collect_logging_snapshot(loaded: LoadedConfig) -> dict[str, object]:
+    return {
+        "json_logs": loaded.data.logging.json_logs,
+        "file_enabled": loaded.data.logging.file_enabled,
+        "directory": str(loaded.logs_dir),
+        "level": loaded.data.logging.level,
+    }
+
+
+def _required_managed_files(loaded: LoadedConfig) -> list[Path]:
+    return [
+        loaded.ai_root / "reporepublic.yaml",
+        loaded.ai_root / "roles" / "triage.md",
+        loaded.ai_root / "roles" / "planner.md",
+        loaded.ai_root / "roles" / "engineer.md",
+        loaded.ai_root / "roles" / "qa.md",
+        loaded.ai_root / "roles" / "reviewer.md",
+        loaded.ai_root / "prompts" / "triage.txt.j2",
+        loaded.ai_root / "prompts" / "planner.txt.j2",
+        loaded.ai_root / "prompts" / "engineer.txt.j2",
+        loaded.ai_root / "prompts" / "qa.txt.j2",
+        loaded.ai_root / "prompts" / "reviewer.txt.j2",
+        loaded.ai_root / "policies" / "merge-policy.md",
+        loaded.ai_root / "policies" / "scope-policy.md",
+        loaded.state_dir / "runs.json",
+        loaded.repo_root / "AGENTS.md",
+        loaded.repo_root / "WORKFLOW.md",
+        loaded.repo_root / ".github" / "workflows" / "republic-check.yml",
+    ]
+
+
+def _collect_managed_files_snapshot(loaded: LoadedConfig) -> dict[str, object]:
+    required = _required_managed_files(loaded)
+    missing = [str(path) for path in required if not path.exists()]
+    return {
+        "status": "ok" if not missing else "missing",
+        "required_count": len(required),
+        "missing_count": len(missing),
+        "missing": missing,
+    }
+
+
+def _build_doctor_snapshot(
+    *,
+    repo_root: Path,
+    loaded: LoadedConfig | None,
+    config_error: str | None,
+    codex_command: str,
+    command_path: str | None,
+    codex_version: str | None,
+    diagnostic_checks: list[DiagnosticCheck],
+    working_tree: WorkingTreeStatus | None,
+    exit_code: int,
+) -> dict[str, object]:
+    diagnostic_counts = Counter(check.status for check in diagnostic_checks)
+    if exit_code != 0:
+        overall_status = "issues"
+    elif diagnostic_counts.get("WARN", 0):
+        overall_status = "attention"
+    else:
+        overall_status = "clean"
+
+    snapshot: dict[str, object] = {
+        "meta": {
+            "kind": "doctor",
+            "rendered_at": utc_now().isoformat(),
+            "repo_root": str(repo_root),
+        },
+        "summary": {
+            "overall_status": overall_status,
+            "exit_code": exit_code,
+            "diagnostic_count": len(diagnostic_checks),
+            "diagnostic_status_counts": dict(sorted(diagnostic_counts.items())),
+        },
+        "config": {
+            "status": "ok" if loaded is not None else "error",
+            "path": str(loaded.config_path if loaded is not None else (repo_root / ".ai-republic" / "reporepublic.yaml")),
+            "error": config_error,
+        },
+        "codex": {
+            "command": codex_command,
+            "status": "ok" if command_path else "missing",
+            "path": command_path,
+            "version": codex_version,
+        },
+        "diagnostics": [_serialize_diagnostic_check(check) for check in diagnostic_checks],
+    }
+    if loaded is not None:
+        snapshot["tracker"] = _collect_tracker_snapshot(loaded)
+        if working_tree is not None:
+            snapshot["workspace"] = _collect_workspace_snapshot(loaded, working_tree)
+        snapshot["logging"] = _collect_logging_snapshot(loaded)
+        snapshot["managed_files"] = _collect_managed_files_snapshot(loaded)
+    return snapshot
+
+
+def _build_status_snapshot(
+    *,
+    loaded: LoadedConfig,
+    all_records: list[RunRecord],
+    selected_records: list[RunRecord],
+    issue_filter: int | None,
+    report_health_snapshot: dict[str, object],
+    ops_snapshot: dict[str, object],
+    policy_alignment: ReportPolicyExportAlignment,
+    policy_health: ReportPolicyHealth,
+) -> dict[str, object]:
+    selected_counts = Counter(record.status.value for record in selected_records)
+    all_counts = Counter(record.status.value for record in all_records)
+    detail_lines = _build_related_report_details_lines(
+        title="related report details:",
+        mismatch_warnings=(),
+        policy_drift_warnings=tuple(
+            _format_report_policy_mismatch(mismatch) for mismatch in policy_alignment.mismatches
+        ),
+        remediation=_report_policy_drift_guidance_detail(),
+        show_mismatches=False,
+        show_remediation=True,
+        prefix="  ",
+    )
+    return {
+        "meta": {
+            "kind": "status",
+            "rendered_at": utc_now().isoformat(),
+            "repo_root": str(loaded.repo_root),
+            "config_path": str(loaded.config_path),
+            "state_path": str(loaded.state_dir / "runs.json"),
+            "issue_filter": issue_filter,
+        },
+        "summary": {
+            "total_runs": len(all_records),
+            "selected_runs": len(selected_records),
+            "all_by_status": dict(sorted(all_counts.items())),
+            "selected_by_status": dict(sorted(selected_counts.items())),
+        },
+        "report_health": {
+            **report_health_snapshot,
+            "policy_alignment": {
+                "status": "mismatch" if policy_alignment.mismatches else (
+                    "match" if policy_alignment.comparable_reports else "not_applicable"
+                ),
+                "current_summary": policy_alignment.current_summary,
+                "comparable_reports": policy_alignment.comparable_reports,
+                "mismatch_count": len(policy_alignment.mismatches),
+                "mismatches": [
+                    {
+                        "file_name": mismatch.file_name,
+                        "embedded_summary": mismatch.embedded_summary,
+                        "current_summary": mismatch.current_summary,
+                    }
+                    for mismatch in policy_alignment.mismatches
+                ],
+                "detail_lines": list(detail_lines),
+            },
+            "policy_health": {
+                "severity": policy_health.severity,
+                "status": policy_health.status,
+                "message": policy_health.message,
+                "hint": policy_health.hint,
+            },
+        },
+        "ops_snapshots": ops_snapshot,
+        "runs": [record.model_dump(mode="json") for record in selected_records],
+    }
+
+
+def _build_ops_snapshot_cleanup_components(
+    *,
+    loaded: LoadedConfig,
+    bundle_root: Path,
+    records: list[RunRecord],
+    issue_filter: int | None,
+    include_cleanup_preview: bool,
+    include_cleanup_result: bool,
+    cleanup_sync_applied: bool,
+    cleanup_keep_groups: int | None,
+) -> dict[str, dict[str, object]]:
+    components: dict[str, dict[str, object]] = {}
+
+    if include_cleanup_preview:
+        resolved_keep_groups = cleanup_keep_groups or loaded.data.cleanup.sync_applied_keep_groups_per_issue
+        actions = _collect_clean_actions(
+            loaded,
+            records,
+            issue_filter=issue_filter,
+            include_sync_applied=cleanup_sync_applied,
+            sync_keep_groups_per_issue=resolved_keep_groups,
+        )
+        preview_result = build_cleanup_report(
+            loaded,
+            actions=actions,
+            dry_run=True,
+            include_sync_applied=cleanup_sync_applied,
+            issue_id=issue_filter,
+            sync_keep_groups_per_issue=resolved_keep_groups if cleanup_sync_applied else None,
+            output_path=bundle_root / "cleanup-preview.json",
+            formats=("json", "markdown"),
+        )
+        components["cleanup_preview"] = {
+            "status": "attention" if preview_result.action_count else "clean",
+            "label": "Cleanup preview",
+            "reason": "generated cleanup preview in ops snapshot bundle",
+            "output_paths": preview_result.output_paths,
+            "mode": preview_result.mode,
+            "action_count": preview_result.action_count,
+            "related_sync_audit_reports": preview_result.related_sync_audit_reports,
+            "sync_audit_policy_drifts": preview_result.sync_audit_policy_drifts,
+            "link_to_sync_audit": True,
+        }
+
+    if include_cleanup_result:
+        source_json = loaded.reports_dir / "cleanup-result.json"
+        source_markdown = loaded.reports_dir / "cleanup-result.md"
+        if source_json.exists():
+            copied_paths: dict[str, Path] = {}
+            target_json = bundle_root / "cleanup-result.json"
+            write_text_file(target_json, source_json.read_text(encoding="utf-8"))
+            copied_paths["json"] = target_json
+            if source_markdown.exists():
+                target_markdown = bundle_root / "cleanup-result.md"
+                write_text_file(target_markdown, source_markdown.read_text(encoding="utf-8"))
+                copied_paths["markdown"] = target_markdown
+            snapshot = _load_report_json_payload(source_json)
+            summary = snapshot.get("summary")
+            if not isinstance(summary, dict):
+                summary = {}
+            overall_status = summary.get("overall_status")
+            action_count = summary.get("action_count", 0)
+            related_sync_audit_reports = summary.get("related_sync_audit_reports", 0)
+            sync_audit_policy_drifts = summary.get("sync_audit_policy_drifts", 0)
+            status = "clean" if overall_status in {"clean", "cleaned", "ok"} else "attention"
+            components["cleanup_result"] = {
+                "status": status,
+                "label": "Cleanup result",
+                "reason": "copied existing cleanup result into ops snapshot bundle",
+                "output_paths": copied_paths,
+                "mode": "applied",
+                "action_count": action_count,
+                "related_sync_audit_reports": related_sync_audit_reports,
+                "sync_audit_policy_drifts": sync_audit_policy_drifts,
+                "link_to_sync_audit": True,
+            }
+        else:
+            components["cleanup_result"] = {
+                "status": "missing",
+                "label": "Cleanup result",
+                "reason": "requested cleanup result inclusion but no cleanup-result.json exists under .ai-republic/reports",
+                "output_paths": {},
+                "link_to_sync_audit": False,
+            }
+
+    return components
+
+
+def _build_ops_snapshot_sync_components(
+    *,
+    loaded: LoadedConfig,
+    bundle_root: Path,
+    issue_filter: int | None,
+    tracker_filter: str | None,
+    include_sync_check: bool,
+    include_sync_repair_preview: bool,
+) -> dict[str, dict[str, object]]:
+    components: dict[str, dict[str, object]] = {}
+
+    if include_sync_check:
+        check_result = build_sync_check_report(
+            loaded,
+            output_path=bundle_root / "sync-check.json",
+            formats=("json", "markdown"),
+            issue_id=issue_filter,
+            tracker=tracker_filter,
+        )
+        components["sync_check"] = {
+            "status": check_result.overall_status,
+            "label": "Sync check",
+            "reason": "generated sync check report in ops snapshot bundle",
+            "output_paths": check_result.output_paths,
+            "report_count": check_result.total_reports,
+            "issues_with_findings": check_result.issues_with_findings,
+            "total_findings": check_result.total_findings,
+            "link_targets": ("sync_audit",),
+        }
+
+    if include_sync_repair_preview:
+        repair_result = build_sync_repair_report(
+            loaded,
+            dry_run=True,
+            output_path=bundle_root / "sync-repair-preview.json",
+            formats=("json", "markdown"),
+            issue_id=issue_filter,
+            tracker=tracker_filter,
+        )
+        components["sync_repair_preview"] = {
+            "status": repair_result.overall_status,
+            "label": "Sync repair preview",
+            "reason": "generated sync repair preview in ops snapshot bundle",
+            "output_paths": repair_result.output_paths,
+            "mode": "preview",
+            "report_count": repair_result.total_reports,
+            "changed_reports": repair_result.changed_reports,
+            "findings_before": repair_result.findings_before,
+            "findings_after": repair_result.findings_after,
+            "dropped_entries": repair_result.dropped_entries,
+            "adopted_archives": repair_result.adopted_archives,
+            "normalized_entries": repair_result.normalized_entries,
+            "link_targets": ("sync_audit", "sync_check"),
+        }
+
+    return components
+
+
+def _load_report_json_payload(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
 
 
 def _collect_doctor_checks(loaded: LoadedConfig) -> list[DiagnosticCheck]:
@@ -2054,6 +2917,7 @@ def _print_status_report_health(
     *,
     policy_alignment: ReportPolicyExportAlignment | None = None,
     policy_health: ReportPolicyHealth | None = None,
+    ops_snapshot: dict[str, object] | None = None,
 ) -> None:
     hero = snapshot.get("hero")
     policy = snapshot.get("policy")
@@ -2100,6 +2964,28 @@ def _print_status_report_health(
             f"{_format_status_report_freshness(reports.get('cleanup_freshness'))} | "
             f"{reports.get('cleanup_freshness_severity_reason', 'n/a')}"
         )
+    if isinstance(ops_snapshot, dict):
+        typer.echo(
+            "Ops snapshots: "
+            f"status={ops_snapshot.get('status', 'missing')} "
+            f"entries={ops_snapshot.get('history_entry_count', 0)}/"
+            f"{ops_snapshot.get('history_limit', 0)} "
+            f"archives={ops_snapshot.get('archive_entry_count', 0)} "
+            f"dropped={ops_snapshot.get('dropped_entry_count', 0)}"
+        )
+        latest = ops_snapshot.get("latest")
+        if isinstance(latest, dict) and latest:
+            typer.echo(
+                "  latest: "
+                f"{latest.get('entry_id', 'n/a')} | "
+                f"{latest.get('overall_status', 'unknown')} | "
+                f"age={latest.get('age_human', 'n/a')}"
+            )
+            typer.echo(
+                f"  bundle: {latest.get('bundle_dir', 'n/a')}"
+            )
+            if latest.get("archive_path"):
+                typer.echo(f"  archive: {latest['archive_path']}")
 
 
 def _format_status_report_freshness(value: object) -> str:
@@ -2352,22 +3238,18 @@ def _build_related_report_details_lines(
     visible_mismatches = mismatch_warnings if show_mismatches else ()
     visible_policy_drifts = policy_drift_warnings if show_remediation else ()
     show_guidance = bool(show_remediation and remediation and policy_drift_warnings)
-    if not visible_mismatches and not visible_policy_drifts and not show_guidance:
-        return ()
-    lines: list[str] = [f"{prefix}{title}"]
-    section_prefix = f"{prefix}  "
-    item_prefix = f"{prefix}    "
-    if visible_mismatches:
-        lines.append(f"{section_prefix}mismatches:")
-        for warning in visible_mismatches:
-            lines.append(f"{item_prefix}- {warning}")
-    if visible_policy_drifts:
-        lines.append(f"{section_prefix}policy_drifts:")
-        for warning in visible_policy_drifts:
-            lines.append(f"{item_prefix}- {warning}")
-    if show_guidance:
-        lines.append(f"{section_prefix}remediation: {remediation}")
-    return tuple(lines)
+    block = build_related_report_detail_block(
+        mismatch_warnings=visible_mismatches,
+        policy_drift_warnings=visible_policy_drifts,
+        remediation=remediation if show_guidance else None,
+    )
+    return render_related_report_detail_lines(
+        block,
+        title=title,
+        section_label_style="machine",
+        remediation_label_style="machine",
+        layout_policy=build_related_report_detail_line_layout("indented_cli", prefix=prefix),
+    )
 
 
 def _print_skipped_single_issue(store: RunStateStore, issue_id: int) -> None:
@@ -2409,43 +3291,3 @@ def _resolve_sync_selection(
             f"Multiple pending sync artifacts matched the requested filters. Pass an explicit artifact path or use --latest. Matches: {joined}"
         )
     return artifacts[0]
-
-
-def _serialize_sync_manifest_report(report: AppliedSyncManifestReport) -> dict[str, object]:
-    return {
-        "tracker": report.tracker,
-        "issue_id": report.issue_id,
-        "issue_root": str(report.issue_root),
-        "manifest_path": str(report.manifest_path),
-        "manifest_exists": report.manifest_exists,
-        "manifest_entry_count": report.manifest_entry_count,
-        "referenced_archive_count": report.referenced_archive_count,
-        "archive_files": list(report.archive_files),
-        "findings": [
-            {
-                "code": finding.code,
-                "message": finding.message,
-                "entry_key": finding.entry_key,
-                "path": finding.path,
-            }
-            for finding in report.findings
-        ],
-    }
-
-
-def _serialize_sync_manifest_repair_result(result: AppliedSyncManifestRepairResult) -> dict[str, object]:
-    return {
-        "tracker": result.tracker,
-        "issue_id": result.issue_id,
-        "issue_root": str(result.issue_root),
-        "manifest_path": str(result.manifest_path),
-        "changed": result.changed,
-        "dry_run": result.dry_run,
-        "manifest_entry_count_before": result.manifest_entry_count_before,
-        "manifest_entry_count_after": result.manifest_entry_count_after,
-        "findings_before": result.findings_before,
-        "findings_after": result.findings_after,
-        "dropped_entries": result.dropped_entries,
-        "adopted_archives": result.adopted_archives,
-        "normalized_entries": result.normalized_entries,
-    }
