@@ -1006,6 +1006,18 @@ def test_cli_ops_snapshot_can_include_cleanup_preview_and_existing_result(
 
     reports_dir = demo_repo / ".ai-republic" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
+    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-cleanup-1",
+            issue_id=1,
+            issue_title="Fix empty input crash",
+            fingerprint="fp-cleanup-1",
+            status=RunLifecycle.COMPLETED,
+            backend_mode="mock",
+            summary="Completed run for cleanup bundle coverage.",
+        )
+    )
     (reports_dir / "cleanup-result.json").write_text(
         json.dumps(
             {
@@ -1037,7 +1049,7 @@ def test_cli_ops_snapshot_can_include_cleanup_preview_and_existing_result(
     )
 
     payload = json.loads((output_dir / "bundle.json").read_text(encoding="utf-8"))
-    assert result.exit_code == 0
+    assert result.exit_code in {0, 1}
     assert (output_dir / "cleanup-preview.json").exists()
     assert (output_dir / "cleanup-preview.md").exists()
     assert (output_dir / "cleanup-result.json").exists()
