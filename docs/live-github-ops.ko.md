@@ -6,7 +6,7 @@
 
 다음 상황에서 사용합니다.
 
-- fixture 또는 mock 데모에서 live GitHub issue polling으로 넘어갈 때
+- fixture 또는 오프라인 데모에서 live GitHub issue polling으로 넘어갈 때
 - Codex CLI를 기본 worker runtime으로 유지할 때
 - 보수적인 human approval 정책으로 RepoAgents를 연속 운영할 때
 - 큰 플랫폼을 만들기 전, 로컬 머신이나 VM, 간단한 프로세스 매니저 위에서 먼저 운영할 때
@@ -192,7 +192,7 @@ uv run --project /path/to/RepoAgents repoagents trigger 123 --dry-run
 - role 순서가 맞는지
 - planner의 `likely_files`가 그럴듯한지
 - 막힌 side effect가 정책과 일치하는지
-- backend가 `mock`이 아니라 `codex`인지
+- backend가 demo shim이 아니라 `codex`인지
 
 특정 issue 번호를 아직 고르기 어렵다면, 다음 poll cycle을 보기 위해 `repoagents run --dry-run --once`도 유용합니다.
 

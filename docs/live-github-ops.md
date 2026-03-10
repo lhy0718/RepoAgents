@@ -6,7 +6,7 @@ This guide turns the `examples/live-github-ops` blueprint into a step-by-step op
 
 Use this document when you want to:
 
-- move from fixture or mock demos into live GitHub issue polling
+- move from fixture or offline demo runs into live GitHub issue polling
 - keep Codex CLI as the default worker runtime
 - run RepoAgents continuously with conservative human approval
 - operate from a local machine, VM, or simple process manager before building a larger platform
@@ -192,7 +192,7 @@ Look for:
 - the role order is correct
 - planner `likely_files` are plausible
 - blocked side effects match policy
-- the backend is `codex`, not `mock`
+- the backend is `codex`, not a demo shim
 
 If the repo is not ready for a specific issue number yet, `repoagents run --dry-run --once` is also useful for previewing the next poll cycle.
 

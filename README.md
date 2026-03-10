@@ -89,11 +89,13 @@ uv run repoagents doctor
 Useful setup variations:
 
 - `uv run repoagents init` starts the interactive setup flow.
-- `uv run repoagents init --backend mock` seeds the repo with the deterministic mock backend.
+- the interactive preset picker supports arrow-key selection and includes a `none` option for the shared baseline scaffold.
+- when `tracker.kind=github`, interactive init can verify the tracker repo with `gh` and offer to create it with a `public` or `private` visibility choice if it does not exist yet.
 - `uv run repoagents init --tracker-kind local_file --tracker-path issues.json` uses a local JSON inbox instead of GitHub.
 - `uv run repoagents init --tracker-kind local_markdown --tracker-path issues` uses a local Markdown issue directory.
 - local offline trackers can stage publication proposals under `.ai-repoagents/sync/<tracker>/issue-<id>/`.
 - local Markdown trackers with writes enabled stage publication proposals under `.ai-repoagents/sync/local-markdown/issue-<id>/`.
+- repo-level demo scripts install a deterministic fake `codex` shim for offline walkthroughs.
 - `uv run repoagents init --upgrade` inspects managed scaffold drift without overwriting local managed-file edits.
 
 ### Choosing a preset
@@ -102,6 +104,7 @@ Presets do not change the core `triage -> planner -> engineer -> reviewer` pipel
 
 | Preset | Best for | What it biases toward | Pick it when |
 | --- | --- | --- | --- |
+| `none` | Repositories that want the shared RepoAgents baseline without repo-type tuning | Neutral workflow guidance, explicit risk surfacing, and minimal domain assumptions | You want to start without preset-specific policy bias and refine the scaffold later |
 | `python-library` | Python packages, CLIs, APIs, and backend services | Small Python code changes, focused tests, packaging hygiene, and explicit API-surface notes | Most of the repo lives in `src/`, `tests/`, and `pyproject.toml`, or you want the safest default starting point |
 | `web-app` | Frontend apps or full-stack repos with UI and deployment concerns | Focused component/route changes, visual-regression awareness, and careful handling of env/deploy config | The repo ships pages, assets, routes, or server/client code where UI breakage and config drift matter |
 | `docs-only` | Documentation sites, handbook repos, specs, or example-heavy docs projects | Staying inside Markdown, docs tooling, examples, and copy/paste accuracy unless code edits are explicitly requested | The repository is primarily prose and reference material, and maintainers want code changes to stay exceptional |
@@ -110,6 +113,7 @@ Presets do not change the core `triage -> planner -> engineer -> reviewer` pipel
 Practical rule of thumb:
 
 - Start with `python-library` if the repo is mostly application or library code and you are unsure.
+- Use `none` when you want the baseline RepoAgents scaffold without repository-type tuning.
 - Use `web-app` when browser/UI behavior is part of the review surface, not just implementation detail.
 - Use `docs-only` when “do not wander into product code unless asked” is the main requirement.
 - Use `research-project` when preserving experiment context matters more than keeping the tree tidy.
@@ -161,7 +165,7 @@ The operating model stays in the repo, so maintainers can inspect and evolve it 
 
 ## Demo Paths
 
-The examples are designed for local fixture issues and the mock backend. That keeps demos deterministic while preserving the production architecture.
+The examples are designed for local fixture issues and an offline fake `codex` shim. That keeps demos deterministic while preserving the production architecture.
 
 Recommended first runs:
 
@@ -198,11 +202,16 @@ Recommended first runs:
 ```bash
 cd examples/python-lib
 uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
+uv run --project /path/to/RepoAgents python -m repoagents.testing.fake_codex \
+  --install-shim .ai-repoagents/demo-bin/codex \
+  --project-root /path/to/RepoAgents
 python3 - <<'PY'
 from pathlib import Path
+import yaml
 path = Path(".ai-repoagents/repoagents.yaml")
-body = path.read_text()
-path.write_text(body.replace("mode: codex", "mode: mock"))
+payload = yaml.safe_load(path.read_text())
+payload["codex"]["command"] = str((Path(".ai-repoagents/demo-bin/codex")).resolve())
+path.write_text(yaml.safe_dump(payload, sort_keys=False))
 PY
 uv run repoagents doctor
 uv run repoagents run --dry-run
@@ -301,8 +310,8 @@ The Codex smoke test is read-only, opt-in, and only runs when Codex CLI is insta
 
 ```bash
 repoagents init
+repoagents init --preset none
 repoagents init --preset python-library
-repoagents init --backend mock
 repoagents init --preset web-app
 repoagents init --preset docs-only
 repoagents init --preset research-project
@@ -472,7 +481,7 @@ Current limitations:
 - GitHub integration is issue-focused; branch and PR creation remain intentionally conservative.
 - local offline trackers stage proposals under `.ai-repoagents/sync/` instead of writing directly to hosted systems.
 - The Codex backend expects a working `codex exec` installation and login state.
-- The mock backend is deterministic but only applies small heuristic edits.
+- The offline fake `codex` demo shim is deterministic but only applies small heuristic edits.
 - `copy` remains the default workspace strategy; `worktree` requires the target repo to be a valid Git work tree.
 - The dashboard is still static HTML; it supports client-side filtering and timed reload, but not server-push sync or multi-user hosting.
 

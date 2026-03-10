@@ -22,7 +22,6 @@ class TrackerKind(StrEnum):
 
 class LLMMode(StrEnum):
     CODEX = "codex"
-    MOCK = "mock"
 
 
 class DirtyRepoPolicy(StrEnum):
@@ -209,8 +208,8 @@ class RepoAgentsConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_cross_section(self) -> "RepoAgentsConfig":
-        if self.llm.mode == LLMMode.CODEX and not self.codex.command.strip():
-            raise ValueError("codex.command must not be empty when llm.mode=codex")
+        if not self.codex.command.strip():
+            raise ValueError("codex.command must not be empty")
         return self
 
     @field_validator("workspace")

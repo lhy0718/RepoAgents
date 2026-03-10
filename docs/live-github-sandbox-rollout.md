@@ -42,7 +42,7 @@ Run the bundled sandbox demo:
 bash scripts/demo_live_publish_sandbox.sh
 ```
 
-This prepares a temporary repository, sets a fake `GITHUB_TOKEN`, points `tracker.smoke_fixture_path` at the phase fixtures, records per-phase `doctor` and `github smoke` exports, builds the readiness bundle under `.ai-repoagents/reports/ops/sandbox-pr-ready/`, then switches temporarily into `github fixture + mock backend` mode to run one deterministic issue and build a second execution bundle under `.ai-repoagents/reports/ops/sandbox-issue-201/`.
+This prepares a temporary repository, sets a fake `GITHUB_TOKEN`, points `tracker.smoke_fixture_path` at the phase fixtures, records per-phase `doctor` and `github smoke` exports, builds the readiness bundle under `.ai-repoagents/reports/ops/sandbox-pr-ready/`, then switches temporarily into `github fixture + offline fake Codex shim` mode to run one deterministic issue and build a second execution bundle under `.ai-repoagents/reports/ops/sandbox-issue-201/`.
 
 During the rehearsal, the helper script creates local commits for each phase transition so `workspace.dirty_policy: block` remains valid while `doctor` is re-run.
 
@@ -69,7 +69,7 @@ After the publish gate is green, the example runs one issue in offline execution
 
 - `tracker.mode=fixture`
 - `tracker.fixtures_path=issues.json`
-- `llm.mode=mock`
+- `llm.mode=codex`
 
 That path writes:
 

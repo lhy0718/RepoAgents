@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/demo_codex.sh"
 SOURCE_DIR="$ROOT_DIR/examples/python-lib"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
@@ -21,13 +22,7 @@ uv run --project "$ROOT_DIR" repoagents init \
   --fixture-issues issues.json \
   --tracker-repo demo/python-lib
 
-python3 - <<'PY'
-from pathlib import Path
-
-path = Path(".ai-repoagents/repoagents.yaml")
-body = path.read_text(encoding="utf-8")
-path.write_text(body.replace("mode: codex", "mode: mock"), encoding="utf-8")
-PY
+configure_demo_codex "$ROOT_DIR" "$DEST_DIR"
 
 uv run --project "$ROOT_DIR" repoagents doctor
 uv run --project "$ROOT_DIR" repoagents run --dry-run

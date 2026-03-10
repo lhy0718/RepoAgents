@@ -36,6 +36,16 @@ class UpgradePlanItem:
 
 
 PRESETS: dict[str, PresetDefinition] = {
+    "none": PresetDefinition(
+        name="none",
+        description="Shared baseline scaffold without repository-specific bias.",
+        scope_summary="Use the common RepoAgents workflow and policies without adding domain-specific emphasis.",
+        rules=[
+            "Prefer narrow changes that follow the issue intent and existing repository conventions.",
+            "Call out repository-specific risks explicitly instead of assuming framework- or domain-specific defaults.",
+            "Escalate when the right scope is unclear rather than inventing extra policy bias.",
+        ],
+    ),
     "python-library": PresetDefinition(
         name="python-library",
         description="Python package or service repository.",

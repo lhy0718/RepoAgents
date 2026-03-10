@@ -25,13 +25,15 @@ bash scripts/demo_webhook_receiver.sh
 Equivalent manual flow:
 
 ```bash
-uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json
 uv run --project /path/to/RepoAgents python /path/to/RepoAgents/scripts/webhook_receiver.py --repo-root "$PWD" --project-root /path/to/RepoAgents --render-dashboard
 curl -X POST http://127.0.0.1:8787/github \
   -H 'Content-Type: application/json' \
   -H 'X-GitHub-Event: issues' \
   --data @payloads/issues-opened.json
 ```
+
+Use the repo-level demo script when you want the offline shim configured automatically.
 
 After the POST completes, inspect:
 

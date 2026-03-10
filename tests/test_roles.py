@@ -3,17 +3,17 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from repoagents.backend.mock import MockBackend
 from repoagents.config import load_config
 from repoagents.models import IssueRef, QAResult, RoleName, TriageResult
 from repoagents.prompts import PromptRenderer
 from repoagents.roles import PipelineContext, TriageRole, build_role_sequence
+from repoagents.testing import FakeBackend
 from repoagents.utils import ArtifactStore, build_repo_context
 
 
 def test_role_result_schema_and_artifacts(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
-    backend = MockBackend()
+    backend = FakeBackend()
     renderer = PromptRenderer(loaded)
     artifacts = ArtifactStore(loaded.artifacts_dir)
     role = TriageRole(backend, renderer, artifacts, timeout_seconds=30)
@@ -37,7 +37,7 @@ def test_role_result_schema_and_artifacts(demo_repo: Path) -> None:
 def test_role_debug_artifacts_include_prompt_and_raw_output(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
     loaded.data.agent.debug_artifacts = True
-    backend = MockBackend()
+    backend = FakeBackend()
     renderer = PromptRenderer(loaded)
     artifacts = ArtifactStore(loaded.artifacts_dir)
     role = TriageRole(backend, renderer, artifacts, timeout_seconds=30)
@@ -61,7 +61,7 @@ def test_role_debug_artifacts_include_prompt_and_raw_output(demo_repo: Path) -> 
 
 def test_role_registry_builds_optional_qa_role(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
-    backend = MockBackend()
+    backend = FakeBackend()
     renderer = PromptRenderer(loaded)
     artifacts = ArtifactStore(loaded.artifacts_dir)
 

@@ -7,6 +7,7 @@ import tarfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import click
 from typer.testing import CliRunner
 import yaml
 
@@ -20,6 +21,17 @@ from repoagents.sync_audit import SyncAuditBuildResult
 
 runner = CliRunner()
 app_module = importlib.import_module("repoagents.cli.app")
+
+
+def _rewrite_tracker_config(repo_root: Path, *, kind: str, path: str) -> None:
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    tracker = payload.setdefault("tracker", {})
+    tracker["kind"] = kind
+    tracker["path"] = path
+    tracker.pop("repo", None)
+    tracker.pop("mode", None)
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_cli_init_creates_files(tmp_path: Path, monkeypatch) -> None:
@@ -50,25 +62,25 @@ def test_cli_init_creates_files(tmp_path: Path, monkeypatch) -> None:
 def test_cli_init_interactive_prompts_for_missing_values(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "issues.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(app_module, "_ensure_interactive_github_tracker_repo", lambda repo: repo)
 
     result = runner.invoke(
         app,
         ["init"],
-        input="python-library\ngithub\ndemo/repo\nmock\ny\nissues.json\n",
+        input="python-library\ngithub\ndemo/repo\ny\nissues.json\n",
         catch_exceptions=False,
     )
 
     loaded = load_config(tmp_path)
     assert result.exit_code == 0
     assert "Interactive RepoAgents initialization" in result.stdout
-    assert "Preset [docs-only/python-library/research-project/web-app]" in result.stdout
+    assert "Preset [none/python-library/web-app/docs-only/research-project]" in result.stdout
     assert "Tracker kind [github/local_file/local_markdown]" in result.stdout
     assert "Tracker repo" in result.stdout
-    assert "Backend mode [codex/mock]" in result.stdout
     assert loaded.data.tracker.repo == "demo/repo"
     assert loaded.data.tracker.mode.value == "fixture"
     assert loaded.data.tracker.fixtures_path == "issues.json"
-    assert loaded.data.llm.mode.value == "mock"
+    assert loaded.data.llm.mode.value == "codex"
 
 
 def test_cli_init_local_file_tracker_writes_local_tracker_config(tmp_path: Path, monkeypatch) -> None:
@@ -117,17 +129,109 @@ def test_cli_init_local_markdown_tracker_writes_local_tracker_config(tmp_path: P
     assert loaded.data.tracker.repo is None
 
 
-def test_cli_init_backend_flag_updates_config_mode(tmp_path: Path, monkeypatch) -> None:
+def test_cli_init_none_preset_creates_neutral_scaffold(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: None)
+    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: None)
+
     result = runner.invoke(
         app,
-        ["init", "--backend", "mock"],
+        ["init", "--preset", "none"],
         catch_exceptions=False,
     )
 
-    loaded = load_config(tmp_path)
+    scope_policy = (tmp_path / ".ai-repoagents" / "policies" / "scope-policy.md").read_text(encoding="utf-8")
+    workflow = (tmp_path / "WORKFLOW.md").read_text(encoding="utf-8")
     assert result.exit_code == 0
-    assert loaded.data.llm.mode.value == "mock"
+    assert "Preset: `none`" in scope_policy
+    assert "shared baseline scaffold without repository-specific bias" in workflow.lower()
+
+def test_prompt_choice_arrow_navigation_selects_no_preset(monkeypatch) -> None:
+    keys = iter(["\x1b[A", "\r"])
+    monkeypatch.setattr(app_module, "_supports_arrow_choice_prompt", lambda: True)
+    monkeypatch.setattr(app_module.click, "getchar", lambda: next(keys))
+    monkeypatch.setattr(app_module.click, "echo", lambda *args, **kwargs: None)
+
+    chosen = app_module._prompt_choice(
+        "Preset",
+        current=None,
+        default="python-library",
+        options=app_module._preset_choice_options(),
+    )
+
+    assert chosen == "none"
+
+
+def test_read_choice_key_supports_split_escape_sequence(monkeypatch) -> None:
+    keys = iter(["\x1b", "[", "B"])
+    monkeypatch.setattr(app_module.click, "getchar", lambda: next(keys))
+
+    assert app_module._read_choice_key() == "down"
+
+
+def test_render_arrow_choice_prompt_styles_selected_label_and_detail(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(app_module.click, "echo", lambda message="", **kwargs: rendered.append(message))
+
+    app_module._render_arrow_choice_prompt(
+        "Preset",
+        app_module._preset_choice_options(),
+        selected_index=0,
+        rendered_lines=0,
+    )
+
+    selected_line = rendered[1]
+    assert click.style(">", fg="blue") in selected_line
+    assert click.style("No preset [none]", fg="blue") in selected_line
+    assert click.style(
+        "Shared baseline scaffold without repository-specific bias.",
+        fg="bright_black",
+    ) in selected_line
+    assert " - " not in selected_line
+
+
+def test_default_github_tracker_repo_prefers_origin_slug(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: "owner/from-origin")
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: "from-gh")
+
+    assert app_module._default_github_tracker_repo(tmp_path) == "owner/from-origin"
+
+
+def test_default_github_tracker_repo_falls_back_to_gh_login(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: None)
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: "from-gh")
+
+    assert app_module._default_github_tracker_repo(tmp_path) == f"from-gh/{tmp_path.name}"
+
+
+def test_ensure_interactive_github_tracker_repo_creates_missing_repo(monkeypatch) -> None:
+    recorded: dict[str, str] = {}
+
+    monkeypatch.setattr(app_module, "_probe_github_tracker_repo", lambda repo: app_module.GitHubRepoProbe("missing"))
+    monkeypatch.setattr(app_module.typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module, "_prompt_choice", lambda *args, **kwargs: "public")
+    monkeypatch.setattr(
+        app_module,
+        "_create_github_tracker_repo",
+        lambda repo, visibility: recorded.update({"repo": repo, "visibility": visibility}),
+    )
+    monkeypatch.setattr(app_module.typer, "echo", lambda *args, **kwargs: None)
+
+    chosen = app_module._ensure_interactive_github_tracker_repo("owner/new-repo")
+
+    assert chosen == "owner/new-repo"
+    assert recorded == {"repo": "owner/new-repo", "visibility": "public"}
+
+
+def test_ensure_interactive_github_tracker_repo_skips_when_probe_unknown(monkeypatch) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_tracker_repo",
+        lambda repo: app_module.GitHubRepoProbe("unknown", "gh is not installed"),
+    )
+    monkeypatch.setattr(app_module.typer, "echo", lambda *args, **kwargs: None)
+
+    assert app_module._ensure_interactive_github_tracker_repo("owner/new-repo") == "owner/new-repo"
 
 
 def test_cli_init_upgrade_preserves_local_drift_and_restores_missing_files(demo_repo: Path, monkeypatch) -> None:
@@ -471,7 +575,7 @@ def test_cli_status_filters_single_issue(demo_repo: Path, monkeypatch) -> None:
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
         )
     )
@@ -522,7 +626,7 @@ def test_cli_status_includes_report_health_summary(demo_repo: Path, monkeypatch)
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
         )
     )
@@ -597,7 +701,7 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
         )
     )
@@ -641,7 +745,7 @@ def test_cli_status_exports_json_and_markdown(demo_repo: Path, monkeypatch) -> N
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
         )
     )
@@ -678,7 +782,7 @@ def test_cli_status_exports_filtered_issue_to_custom_path(demo_repo: Path, monke
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
         )
     )
     store.upsert(
@@ -688,7 +792,7 @@ def test_cli_status_exports_filtered_issue_to_custom_path(demo_repo: Path, monke
             issue_title="Improve README quickstart",
             fingerprint="fp-2",
             status=RunLifecycle.FAILED,
-            backend_mode="mock",
+            backend_mode="codex",
         )
     )
 
@@ -725,7 +829,7 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
         )
     )
@@ -1014,7 +1118,7 @@ def test_cli_ops_snapshot_can_include_cleanup_preview_and_existing_result(
             issue_title="Fix empty input crash",
             fingerprint="fp-cleanup-1",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run for cleanup bundle coverage.",
         )
     )
@@ -1937,7 +2041,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
             issue_title="Fix empty input crash",
             fingerprint="fp-dashboard",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             summary="Completed run.",
             role_artifacts={"reviewer": str(artifact_file)},
         )
@@ -3154,14 +3258,7 @@ def test_cli_sync_apply_uses_latest_filtered_artifact_and_lists_applied_scope(de
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_markdown")
-        .replace("repo: demo/repo\n", "path: issues\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_markdown", path="issues")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010101000001Z-comment.md").write_text(
@@ -3214,14 +3311,7 @@ def test_cli_sync_apply_updates_local_file_issue_comments(demo_repo: Path, monke
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_file")
-        .replace("repo: demo/repo\n", "path: issues.json\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_file", path="issues.json")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010106000001Z-comment.md").write_text(
@@ -3268,14 +3358,7 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_markdown")
-        .replace("repo: demo/repo\n", "path: issues\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_markdown", path="issues")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     branch_path = sync_dir / "20260308T010201000001Z-branch.json"
@@ -3359,7 +3442,7 @@ def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
             issue_title="Fix empty input crash",
             fingerprint="fp-3",
             status=RunLifecycle.FAILED,
-            backend_mode="mock",
+            backend_mode="codex",
             next_retry_at=future_retry,
         )
     )
@@ -3395,7 +3478,7 @@ def test_cli_clean_removes_terminal_run_workspace_and_artifacts(demo_repo: Path,
             issue_title="Fix empty input crash",
             fingerprint="fp-4",
             status=RunLifecycle.COMPLETED,
-            backend_mode="mock",
+            backend_mode="codex",
             workspace_path=str(workspace),
             role_artifacts={"reviewer": str(artifact_file)},
         )
@@ -3750,7 +3833,7 @@ def test_cli_doctor_exports_snapshot_when_config_is_invalid(tmp_path: Path, monk
     assert payload["codex"]["status"] == "missing"
 
 
-def test_cli_doctor_skips_codex_requirement_for_mock_backend(demo_repo: Path, monkeypatch) -> None:
+def test_cli_doctor_requires_codex_command(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(app_module.shutil, "which", lambda command: None)
 
@@ -3759,23 +3842,16 @@ def test_cli_doctor_skips_codex_requirement_for_mock_backend(demo_repo: Path, mo
     report_json = demo_repo / ".ai-repoagents" / "reports" / "doctor.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
-    assert result.exit_code == 0
-    assert "Doctor summary: status=clean" in result.stdout
-    assert payload["summary"]["overall_status"] == "clean"
-    assert payload["codex"]["status"] == "skipped"
-    assert payload["codex"]["required"] is False
+    assert result.exit_code == 1
+    assert "Doctor summary: status=issues" in result.stdout
+    assert payload["summary"]["overall_status"] == "issues"
+    assert payload["codex"]["status"] == "missing"
+    assert payload["codex"]["required"] is True
 
 
 def test_cli_doctor_reports_local_file_tracker_status(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_file")
-        .replace("repo: demo/repo\n", "path: issues.json\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_file", path="issues.json")
 
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
@@ -3792,14 +3868,7 @@ def test_cli_doctor_reports_local_markdown_tracker_status(demo_repo: Path, monke
     issue_dir = demo_repo / "issues"
     issue_dir.mkdir()
     (issue_dir / "001-demo.md").write_text("# Demo issue\n\nTrack from markdown.\n", encoding="utf-8")
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_markdown")
-        .replace("repo: demo/repo\n", "path: issues\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_markdown", path="issues")
 
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")

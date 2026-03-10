@@ -36,7 +36,7 @@ uv run repoagents ops status
 cat .ai-repoagents/reports/ops/latest.json
 ```
 
-Running `uv run repoagents init` without flags starts an interactive setup flow. Use `--backend mock` if you want the initialized config to default to the deterministic mock backend. Use `--tracker-kind local_file` when you want a local JSON inbox instead of GitHub.
+Running `uv run repoagents init` without flags starts an interactive setup flow. Use `--tracker-kind local_file` when you want a local JSON inbox instead of GitHub. The repo-level demo scripts install a deterministic fake `codex` shim when you want offline walkthroughs without a live Codex session.
 
 Generated control files:
 
@@ -106,11 +106,16 @@ That wrapper runs `repoagents release check --format all`, which executes releas
 ```bash
 cd examples/python-lib
 uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
+uv run --project /path/to/RepoAgents python -m repoagents.testing.fake_codex \
+  --install-shim .ai-repoagents/demo-bin/codex \
+  --project-root /path/to/RepoAgents
 python3 - <<'PY'
 from pathlib import Path
+import yaml
 path = Path(".ai-repoagents/repoagents.yaml")
-body = path.read_text()
-path.write_text(body.replace("mode: codex", "mode: mock"))
+payload = yaml.safe_load(path.read_text())
+payload["codex"]["command"] = str((Path(".ai-repoagents/demo-bin/codex")).resolve())
+path.write_text(yaml.safe_dump(payload, sort_keys=False))
 PY
 uv run repoagents run --dry-run
 uv run repoagents run --once
@@ -142,7 +147,7 @@ The bundled offline examples for that path are:
 
 ```bash
 cd examples/local-file-inbox
-uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```
@@ -154,7 +159,7 @@ bash ../../scripts/demo_local_file_sync.sh
 
 ```bash
 cd examples/local-markdown-inbox
-uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```

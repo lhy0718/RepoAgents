@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/demo_codex.sh"
 SOURCE_DIR="$ROOT_DIR/examples/docs-maintainer-pack"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
@@ -19,8 +20,9 @@ pushd "$DEST_DIR" >/dev/null
 uv run --project "$ROOT_DIR" repoagents init \
   --preset docs-only \
   --fixture-issues issues.json \
-  --tracker-repo demo/docs-maintainer-pack \
-  --backend mock
+  --tracker-repo demo/docs-maintainer-pack
+
+configure_demo_codex "$ROOT_DIR" "$DEST_DIR"
 
 cp -R pack/roles/. .ai-repoagents/roles/
 cp -R pack/prompts/. .ai-repoagents/prompts/

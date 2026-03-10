@@ -4,8 +4,13 @@ from pathlib import Path
 import subprocess
 
 import pytest
+import yaml
 
+from repoagents.testing import install_fake_codex_shim
 from repoagents.templates import scaffold_repository
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def create_demo_repo(root: Path, issues_body: str | None = None) -> Path:
@@ -46,10 +51,11 @@ def create_demo_repo(root: Path, issues_body: str | None = None) -> Path:
         force=True,
     )
     config_path = root / ".ai-repoagents" / "repoagents.yaml"
-    config = config_path.read_text(encoding="utf-8")
-    config = config.replace("mode: codex", "mode: mock")
-    config = config.replace("json: true", "json: false")
-    config_path.write_text(config, encoding="utf-8")
+    shim_path = install_fake_codex_shim(root / ".demo-bin" / "codex", project_root=REPO_ROOT)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config.setdefault("codex", {})["command"] = str(shim_path)
+    config.setdefault("logging", {})["json"] = False
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return root
 
 

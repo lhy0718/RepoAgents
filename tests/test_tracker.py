@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import httpx
 import pytest
+import yaml
 
 from repoagents.config.models import TrackerMode
 from repoagents.tracker import build_tracker
@@ -19,6 +20,17 @@ from repoagents.tracker.github import GitHubTracker, _redact_remote_url
 from repoagents.tracker.local_file import LocalFileTracker
 from repoagents.tracker.local_markdown import LocalMarkdownTracker
 from repoagents.config import load_config
+
+
+def _rewrite_tracker_config(repo_root: Path, *, kind: str, path: str) -> None:
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    tracker = payload.setdefault("tracker", {})
+    tracker["kind"] = kind
+    tracker["path"] = path
+    tracker.pop("repo", None)
+    tracker.pop("mode", None)
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_github_tracker_create_branch_and_open_pr(tmp_path: Path) -> None:
@@ -720,14 +732,7 @@ def test_local_file_tracker_dry_run_blocks_sync_staging(tmp_path: Path) -> None:
 
 
 def test_build_tracker_supports_local_file_kind(demo_repo: Path) -> None:
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_file")
-        .replace("repo: demo/repo\n", "path: issues.json\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_file", path="issues.json")
 
     loaded = load_config(demo_repo)
     tracker = build_tracker(loaded, dry_run=True)
@@ -844,14 +849,7 @@ def test_build_tracker_supports_local_markdown_kind(demo_repo: Path) -> None:
     issue_dir = demo_repo / "issues"
     issue_dir.mkdir()
     (issue_dir / "001-demo.md").write_text("# Demo issue\n\nTrack from markdown.\n", encoding="utf-8")
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_markdown")
-        .replace("repo: demo/repo\n", "path: issues\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_markdown", path="issues")
 
     loaded = load_config(demo_repo)
     tracker = build_tracker(loaded, dry_run=True)

@@ -17,6 +17,6 @@ This execution step uses:
 
 - `tracker.mode=fixture`
 - `tracker.fixtures_path=issues.json`
-- `llm.mode=mock`
+- `llm.mode=codex`
 
 The example restores the config to live `tracker.mode=rest` and `llm.mode=codex` after the run so the repository ends in publish-enabled sandbox posture.

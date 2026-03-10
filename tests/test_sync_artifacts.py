@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from repoagents.config import load_config
 from repoagents.sync_artifacts import (
     inspect_applied_sync_manifests,
@@ -15,6 +17,17 @@ from repoagents.sync_artifacts import (
     resolve_sync_bundle,
     repair_applied_sync_manifests,
 )
+
+
+def _rewrite_tracker_config(repo_root: Path, *, kind: str, path: str) -> None:
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    tracker = payload.setdefault("tracker", {})
+    tracker["kind"] = kind
+    tracker["path"] = path
+    tracker.pop("repo", None)
+    tracker.pop("mode", None)
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_sync_artifact_inventory_parses_markdown_and_json(demo_repo: Path) -> None:
@@ -85,14 +98,7 @@ def test_sync_apply_moves_comment_to_applied_archive_and_updates_issue_file(demo
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_markdown")
-        .replace("repo: demo/repo\n", "path: issues\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_markdown", path="issues")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010104000001Z-comment.md"
@@ -148,14 +154,7 @@ def test_sync_apply_updates_local_file_issue_json_and_archives_artifact(demo_rep
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_file")
-        .replace("repo: demo/repo\n", "path: issues.json\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_file", path="issues.json")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010105000001Z-labels.json"
@@ -204,14 +203,7 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        .replace("kind: github", "kind: local_file")
-        .replace("repo: demo/repo\n", "path: issues.json\n")
-        .replace("mode: fixture\n", ""),
-        encoding="utf-8",
-    )
+    _rewrite_tracker_config(demo_repo, kind="local_file", path="issues.json")
     sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     branch_path = sync_dir / "20260308T010201000001Z-branch.json"

@@ -10,7 +10,7 @@ Purpose:
 
 - add an explicit QA pass between engineering and review
 - surface validation gaps before reviewer approval
-- keep the pipeline deterministic in mock-backed demos
+- keep the pipeline deterministic in offline demo runs
 
 Config snippet:
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/demo_codex.sh"
 SOURCE_DIR="$ROOT_DIR/examples/live-github-sandbox-rollout"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
@@ -17,29 +18,7 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 pushd "$DEST_DIR" >/dev/null
 
 ensure_demo_codex() {
-  if command -v codex >/dev/null 2>&1; then
-    printf '%s\n' "codex"
-    return
-  fi
-
-  local shim_dir="$DEST_DIR/.demo-bin"
-  local shim_path="$shim_dir/codex"
-
-  mkdir -p "$shim_dir"
-  cat >"$shim_path" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ "${1:-}" == "--version" ]]; then
-  printf 'codex demo-shim 0.0.0\n'
-  exit 0
-fi
-
-printf 'codex demo shim only supports --version for offline rehearsal flows.\n' >&2
-exit 1
-EOF
-  chmod +x "$shim_path"
-  printf '%s\n' "$shim_path"
+  install_demo_codex_command "$ROOT_DIR" "$DEST_DIR/.demo-bin/codex"
 }
 
 DEMO_CODEX_COMMAND="$(ensure_demo_codex)"

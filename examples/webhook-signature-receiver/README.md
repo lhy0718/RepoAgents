@@ -25,7 +25,7 @@ bash scripts/demo_webhook_signature_receiver.sh
 Equivalent manual flow:
 
 ```bash
-uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json
 export REPOREPUBLIC_WEBHOOK_SECRET=repoagents-demo-secret
 uv run --project /path/to/RepoAgents python /path/to/RepoAgents/scripts/webhook_receiver.py \
   --repo-root "$PWD" \
@@ -33,6 +33,8 @@ uv run --project /path/to/RepoAgents python /path/to/RepoAgents/scripts/webhook_
   --render-dashboard \
   --secret-env REPOREPUBLIC_WEBHOOK_SECRET
 ```
+
+Use the repo-level demo script when you want the offline shim configured automatically.
 
 Send a signed payload:
 

@@ -89,11 +89,13 @@ uv run repoagents doctor
 유용한 초기화 변형:
 
 - `uv run repoagents init`은 대화형 설정 흐름을 시작합니다.
-- `uv run repoagents init --backend mock`은 deterministic mock backend를 기본값으로 심습니다.
+- 대화형 preset 선택기는 방향키로 이동할 수 있고, 공통 기본 스캐폴드를 위한 `none` 옵션도 제공합니다.
+- `tracker.kind=github`일 때는 interactive init이 `gh`로 tracker repo 존재 여부를 확인하고, 아직 없으면 `public` 또는 `private`를 골라 바로 생성할 수 있습니다.
 - `uv run repoagents init --tracker-kind local_file --tracker-path issues.json`은 GitHub 대신 로컬 JSON inbox를 사용합니다.
 - `uv run repoagents init --tracker-kind local_markdown --tracker-path issues`는 로컬 Markdown issue 디렉터리를 사용합니다.
 - 로컬 오프라인 tracker는 `.ai-repoagents/sync/<tracker>/issue-<id>/` 아래에 publish proposal을 stage할 수 있습니다.
 - 로컬 Markdown tracker는 쓰기가 켜져 있으면 publish 제안을 `.ai-repoagents/sync/local-markdown/issue-<id>/` 아래에 stage합니다.
+- 저장소에 포함된 demo script는 오프라인 walkthrough를 위해 결정적인 fake `codex` shim을 자동으로 설치합니다.
 - `uv run repoagents init --upgrade`는 로컬 managed 파일을 덮어쓰지 않고 scaffold drift를 점검합니다.
 
 ### preset 고르기
@@ -102,6 +104,7 @@ preset은 핵심 `triage -> planner -> engineer -> reviewer` 파이프라인 자
 
 | preset | 잘 맞는 저장소 | 기본적으로 더 강조하는 것 | 이런 경우 고르기 좋음 |
 | --- | --- | --- | --- |
+| `none` | 저장소 유형별 튜닝 없이 공통 RepoAgents 기본값만 쓰고 싶은 저장소 | 중립적인 워크플로 가이드, 명시적인 리스크 표면화, 최소한의 도메인 가정 | preset별 정책 편향 없이 시작하고 나중에 스캐폴드를 다듬고 싶을 때 |
 | `python-library` | Python 패키지, CLI, API, 백엔드 서비스 | 작은 Python 코드 변경, 집중된 테스트, 패키징 위생, API surface 변경 요약 | 저장소의 중심이 `src/`, `tests/`, `pyproject.toml`에 있거나, 가장 무난한 기본값으로 시작하고 싶을 때 |
 | `web-app` | 프론트엔드 앱, UI가 있는 풀스택 저장소 | 컴포넌트/라우트 단위 변경, 시각적 회귀 경계, env/deploy 설정 주의 | 페이지, 정적 자산, 라우트, 서버/클라이언트 코드가 함께 있고 UI 깨짐과 설정 drift가 중요할 때 |
 | `docs-only` | 문서 사이트, 핸드북 저장소, 스펙 저장소, 예제 중심 문서 프로젝트 | Markdown과 문서 도구, 예제, 복붙 정확성 유지, 명시적 요청 없는 코드 변경 억제 | 저장소의 주된 산출물이 문서이고, 제품 코드 변경은 예외적으로만 허용하고 싶을 때 |
@@ -110,6 +113,7 @@ preset은 핵심 `triage -> planner -> engineer -> reviewer` 파이프라인 자
 실전 기준으로 고르면:
 
 - 애매하면 `python-library`부터 시작하는 편이 가장 안전합니다.
+- 저장소 성격을 아직 정하지 않았거나 공통 기본값만 원하면 `none`을 고르면 됩니다.
 - 브라우저/UI 동작이 리뷰 범위에 직접 들어오면 `web-app`이 더 잘 맞습니다.
 - “요청 없이는 제품 코드를 건드리지 않는 것”이 핵심이면 `docs-only`가 좋습니다.
 - 실험 맥락과 산출물 보존이 정리 편의보다 중요하면 `research-project`를 고르면 됩니다.
@@ -161,7 +165,7 @@ WORKFLOW.md
 
 ## 데모 경로
 
-예제들은 로컬 fixture issue와 mock backend를 기준으로 설계되어 있어서, 동작은 결정적이면서도 실운영 구조는 그대로 유지됩니다.
+예제들은 로컬 fixture issue와 오프라인 fake `codex` shim을 기준으로 설계되어 있어서, 동작은 결정적이면서도 실운영 구조는 그대로 유지됩니다.
 
 추천 시작 경로:
 
@@ -198,11 +202,16 @@ WORKFLOW.md
 ```bash
 cd examples/python-lib
 uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
+uv run --project /path/to/RepoAgents python -m repoagents.testing.fake_codex \
+  --install-shim .ai-repoagents/demo-bin/codex \
+  --project-root /path/to/RepoAgents
 python3 - <<'PY'
 from pathlib import Path
+import yaml
 path = Path(".ai-repoagents/repoagents.yaml")
-body = path.read_text()
-path.write_text(body.replace("mode: codex", "mode: mock"))
+payload = yaml.safe_load(path.read_text())
+payload["codex"]["command"] = str((Path(".ai-repoagents/demo-bin/codex")).resolve())
+path.write_text(yaml.safe_dump(payload, sort_keys=False))
 PY
 uv run repoagents doctor
 uv run repoagents run --dry-run
@@ -301,8 +310,8 @@ Codex smoke test는 read-only opt-in 경로이며, Codex CLI가 설치되고 로
 
 ```bash
 repoagents init
+repoagents init --preset none
 repoagents init --preset python-library
-repoagents init --backend mock
 repoagents init --preset web-app
 repoagents init --preset docs-only
 repoagents init --preset research-project
@@ -472,7 +481,7 @@ RepoAgents는 숨겨진 시스템 프롬프트 대신 저장소 파일로 Codex 
 - GitHub 연동은 issue 중심이며 branch와 PR 생성은 의도적으로 보수적으로 제한되어 있습니다.
 - 로컬 오프라인 tracker는 hosted 시스템에 직접 쓰지 않고 `.ai-repoagents/sync/` 아래에 proposal을 stage합니다.
 - Codex backend는 동작하는 `codex exec` 설치와 로그인 상태를 전제로 합니다.
-- mock backend는 결정적이지만 작은 휴리스틱 수정만 수행합니다.
+- 오프라인 fake `codex` demo shim은 결정적이지만 작은 휴리스틱 수정만 수행합니다.
 - 기본 workspace 전략은 `copy`이며, `worktree`를 쓰려면 대상 저장소가 유효한 Git work tree여야 합니다.
 - 대시보드는 정적 HTML이며 client-side 필터링과 timed reload는 지원하지만 server-push sync나 multi-user hosting은 지원하지 않습니다.
 

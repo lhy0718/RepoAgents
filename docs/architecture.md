@@ -6,7 +6,7 @@ RepoAgents is a Python orchestration framework that installs repository-local co
 
 - independent implementation, not a Symphony wrapper
 - Codex CLI as the default worker engine
-- deterministic mock backend for tests and local demos
+- deterministic fake Codex helpers for tests and local demos
 - repo-local prompts and policies that maintainers can inspect
 - conservative human-approval defaults
 
@@ -20,8 +20,9 @@ src/repoagents/
   tracker/        GitHub issue adapter abstraction
   orchestrator/   polling loop, retries, state recovery, scheduling
   roles/          triage / planner / engineer / reviewer interfaces
-  backend/        Codex CLI runner and mock backend
+  backend/        Codex CLI runner
   prompts/        Jinja-based prompt rendering
+  testing/        deterministic fake Codex helpers for tests and demos
   workspace/      isolated per-issue workspace preparation
   policies/       diff guardrails and human-approval rules
   models/         explicit issue, state, and role result schemas
@@ -74,13 +75,11 @@ flowchart TD
 
 The worker runtime lives outside RepoAgents. RepoAgents orchestrates, Codex executes.
 
-### Mock backend
+## Test helpers
 
-- deterministic for tests and local demos
-- simulates role outputs
-- applies small heuristic file changes in `engineer`
-- derives reviewer notes from diff-based review signals
-- allows end-to-end runs without network or Codex access
+- `repoagents.testing.fake_codex` provides deterministic fake Codex helpers for tests and local demos
+- it can simulate role outputs, apply small heuristic file changes in `engineer`, and emit structured JSON through a local shim
+- repo-level demo scripts point `codex.command` at that shim so end-to-end walkthroughs stay offline and repeatable
 
 ## State model
 
@@ -104,7 +103,7 @@ On process restart, in-progress runs are converted to `retry_pending` so the orc
 - external writes are blocked in `--dry-run`
 - merge mode is always `human_approval`
 - guardrails flag secret-like files, CI/CD changes, auth-sensitive paths, and large deletions
-- reviewer prompts and the mock backend both receive derived diff/test/scope review signals
+- reviewer prompts and the fake Codex test helper both receive derived diff/test/scope review signals
 - reviewer output can be overridden to `request_changes` when policy violations appear
 
 ## Workspace isolation

@@ -10,7 +10,7 @@ from repoagents.config import ConfigLoadError, load_config
 def test_load_config_success(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
     assert loaded.data.tracker.repo == "demo/repo"
-    assert loaded.data.llm.mode.value == "mock"
+    assert loaded.data.llm.mode.value == "codex"
     assert loaded.workspace_root == (demo_repo / ".ai-repoagents" / "workspaces").resolve()
     assert loaded.logs_dir == (demo_repo / ".ai-repoagents" / "logs").resolve()
     assert loaded.data.agent.debug_artifacts is False

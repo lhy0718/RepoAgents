@@ -6,7 +6,7 @@ This sample repository demonstrates the optional `qa` role in the RepoAgents pip
 
 - `roles.enabled` extended to `triage -> planner -> engineer -> qa -> reviewer`
 - `qa` artifacts emitted between engineering and review
-- deterministic mock backend behavior for offline validation
+- deterministic fake `codex` shim behavior for offline validation
 
 ## Files
 
@@ -23,10 +23,12 @@ bash scripts/demo_qa_role_pack.sh
 Equivalent manual flow:
 
 ```bash
-uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/qa-role-pack --backend mock
+uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/qa-role-pack
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```
+
+Use the repo-level demo script when you want the offline shim configured automatically.
 
 After the run, inspect:
 

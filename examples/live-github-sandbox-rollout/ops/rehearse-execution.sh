@@ -44,7 +44,6 @@ payload["tracker"]["mode"] = "fixture"
 payload["tracker"]["fixtures_path"] = "issues.json"
 payload["tracker"]["path"] = "issues.json"
 payload["tracker"]["smoke_fixture_path"] = None
-payload["llm"]["mode"] = "mock"
 path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 PY
 

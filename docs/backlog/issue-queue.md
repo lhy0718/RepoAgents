@@ -291,7 +291,7 @@
 - Problem: 현재 예제 실행이 문서 수동 절차에 의존한다.
 - Scope:
   - 최소 2개 데모 스크립트 추가
-  - mock backend 데모 자동화
+  - 오프라인 fake Codex shim 데모 자동화
 - Acceptance criteria:
   - [x] 한 줄로 예제 재현 가능
   - [x] 문서와 실제 스크립트가 일치함
@@ -2011,7 +2011,7 @@
 - Status: done
 - Priority: P2
 - Area: GitHub / Live Ops / Testing
-- Problem: live GitHub path는 read-only smoke와 local mock write test까지만 커버되어, 실제 comment write와 draft PR publish 경로를 sandbox repo에서 end-to-end로 검증하는 opt-in path가 부족했다.
+- Problem: live GitHub path는 read-only smoke와 local offline write rehearsal까지만 커버되어, 실제 comment write와 draft PR publish 경로를 sandbox repo에서 end-to-end로 검증하는 opt-in path가 부족했다.
 - Scope:
   - live tracker test를 read-only / comment write / draft PR publish opt-in 경로로 분리
   - comment write test cleanup에서 test comment 삭제
@@ -2115,7 +2115,7 @@
 - Problem: sandbox publish rollout 예제는 green readiness gate와 handoff bundle까지는 보여줬지만, 그 상태가 실제 issue execution artifact와 어떻게 이어지는지는 보여주지 못했다.
 - Scope:
   - sandbox 예제에 fixture issue와 execution helper 추가
-  - green sandbox posture 이후 `github fixture + mock backend`로 issue 하나를 deterministic하게 실행
+  - green sandbox posture 이후 `github fixture + offline fake Codex shim`으로 issue 하나를 deterministic하게 실행
   - execution report와 second ops bundle을 생성한 뒤 live sandbox config를 복구
   - demo test와 walkthrough 문서 갱신
 - Acceptance criteria:

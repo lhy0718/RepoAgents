@@ -15,7 +15,7 @@ This sample repository demonstrates `tracker.kind: local_markdown` with sidecar 
 bash scripts/demo_local_markdown_sync.sh
 ```
 
-The demo initializes RepoAgents with the deterministic mock backend, enables `allow_open_pr`, triggers issue `#1`, runs `repoagents sync ls --issue 1`, applies the newest staged comment with `repoagents sync apply`, then applies the related branch/PR handoff with `--bundle`, and archives handled artifacts under `.ai-repoagents/sync-applied/local-markdown/issue-1/`.
+The demo initializes RepoAgents with a deterministic offline fake `codex` shim, enables `allow_open_pr`, triggers issue `#1`, runs `repoagents sync ls --issue 1`, applies the newest staged comment with `repoagents sync apply`, then applies the related branch/PR handoff with `--bundle`, and archives handled artifacts under `.ai-repoagents/sync-applied/local-markdown/issue-1/`.
 
 Useful follow-up commands inside the demo workspace:
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/demo_codex.sh"
 SOURCE_DIR="$ROOT_DIR/examples/webhook-receiver"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 PORT="${REPOREPUBLIC_WEBHOOK_PORT:-8787}"
@@ -31,8 +32,9 @@ pushd "$DEST_DIR" >/dev/null
 uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-kind local_file \
-  --tracker-path issues.json \
-  --backend mock
+  --tracker-path issues.json
+
+configure_demo_codex "$ROOT_DIR" "$DEST_DIR"
 
 uv run --project "$ROOT_DIR" python "$ROOT_DIR/scripts/webhook_receiver.py" \
   --repo-root "$DEST_DIR" \

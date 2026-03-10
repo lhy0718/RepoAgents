@@ -9,6 +9,25 @@ from repoagents.templates import PRESETS, scaffold_repository
 
 
 EXPECTED_SCAFFOLD_SNAPSHOTS = {
+    "none": {
+        ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
+        ".ai-repoagents/policies/scope-policy.md": "31c0c49a90469c0802f90a73db123946410f5c74ff9033a2d6eaf4b1f8609a52",
+        ".ai-repoagents/prompts/engineer.txt.j2": "18c5ee7f429daad16189f5fb77e4e08e4c074248e200116435bfd942ddb73bb3",
+        ".ai-repoagents/prompts/planner.txt.j2": "9c23628a660f0d8fa4c66e9661a8fcb56acc5174e519a9805750abf933f504ec",
+        ".ai-repoagents/prompts/qa.txt.j2": "92cb8cdb8b65a9fd9b7bc7557baedac3ab79117b0b79ff7274a14ce12ff33495",
+        ".ai-repoagents/prompts/reviewer.txt.j2": "6463f47f82f6d8e56c3fed81e8b41180b939fe31c5bc9c9a3f87ce45c23cc323",
+        ".ai-repoagents/prompts/triage.txt.j2": "a064f88eab6c22e720c7398012c0723dbf8dfd6b29b212c0f8acc20d249675b4",
+        ".ai-repoagents/repoagents.yaml": "dd29e26c223572d5d0daf17adaef423ab9b002780b40d587228c679c11c67504",
+        ".ai-repoagents/roles/engineer.md": "670a0314a5378ad87708ced32cc356bb4d51a503cbc541240aa132037aeab587",
+        ".ai-repoagents/roles/planner.md": "6bed9894e0bb9c78f9575becb299668f6f088382812f141f9d68028757e7e5cc",
+        ".ai-repoagents/roles/qa.md": "7ba8e99e7860de95028caa3b8e4f860084a50f6cfa7f337aa7e2e23c8cdec0fe",
+        ".ai-repoagents/roles/reviewer.md": "a19313463db015a6d208646ca823c11fa3e6d3f073399eb9dd7ab2d70abfab78",
+        ".ai-repoagents/roles/triage.md": "ab34cba0afeaad192e099beb151e14047d1fc40543b516f9df20a77bd21c8c07",
+        ".ai-repoagents/state/runs.json": "434e2a01bec5e2ac6e481d9a2280fc79168009021c6624730f0257e7fed41828",
+        ".github/workflows/repoagents-check.yml": "b2afb0700a791f0c5640603ce1bcc7b5afc6b50597ef08a6c0dee63aab01908a",
+        "AGENTS.md": "3084965d71e3d144149f6fe0fbdde59937bb5ffdd4ee6fbba047b66ce8df836a",
+        "WORKFLOW.md": "926ce863a773d571373078caf069fa4891bde5fd74608e311dfe5323d4775b4c"
+    },
     "docs-only": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
         ".ai-repoagents/policies/scope-policy.md": "7dbefe5fdfedf4464cf5e3a78184ddd4cb13dc77089902380e3ac38bb48d4d95",
@@ -25,8 +44,8 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".ai-repoagents/roles/triage.md": "ab34cba0afeaad192e099beb151e14047d1fc40543b516f9df20a77bd21c8c07",
         ".ai-repoagents/state/runs.json": "434e2a01bec5e2ac6e481d9a2280fc79168009021c6624730f0257e7fed41828",
         ".github/workflows/repoagents-check.yml": "b2afb0700a791f0c5640603ce1bcc7b5afc6b50597ef08a6c0dee63aab01908a",
-        "AGENTS.md": "b899c5206a7ca078b6df66fd158f21fdfae7f30b3aaeb625a1d6b9747c6368ee",
-        "WORKFLOW.md": "a27314615f0d9348625e274ad80bc8b8e354a6b567ce671d58282fff76988a1a"
+        "AGENTS.md": "d56092dbc870b155d5557d789193113f405d4bb3345a2b1c5edd0f5b8f89a3a1",
+        "WORKFLOW.md": "e7f9ba6bcbb8d0724aacae29bedddbd5c50ccdd91fdcffc98ebd014efcd19cfd"
     },
     "python-library": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -44,8 +63,8 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".ai-repoagents/roles/triage.md": "ab34cba0afeaad192e099beb151e14047d1fc40543b516f9df20a77bd21c8c07",
         ".ai-repoagents/state/runs.json": "434e2a01bec5e2ac6e481d9a2280fc79168009021c6624730f0257e7fed41828",
         ".github/workflows/repoagents-check.yml": "b2afb0700a791f0c5640603ce1bcc7b5afc6b50597ef08a6c0dee63aab01908a",
-        "AGENTS.md": "4b326b5a7cb82a4637e81243ca8929cad96084f3e630f2cfeff8c4e5448e7f5e",
-        "WORKFLOW.md": "509fd71cd1b5e2acf14751d4f910ff6eb628b1f53a2e44ef8aaf2cbb608016bf"
+        "AGENTS.md": "99c5cd914ca86d9db1e4e444e332283befe07b982039564e4e44fc778246959b",
+        "WORKFLOW.md": "0b5f89aa8cbe6f4b7e060fcc8b347597bd213b1fe820f273fc7655370392be36"
     },
     "research-project": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -63,8 +82,8 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".ai-repoagents/roles/triage.md": "ab34cba0afeaad192e099beb151e14047d1fc40543b516f9df20a77bd21c8c07",
         ".ai-repoagents/state/runs.json": "434e2a01bec5e2ac6e481d9a2280fc79168009021c6624730f0257e7fed41828",
         ".github/workflows/repoagents-check.yml": "b2afb0700a791f0c5640603ce1bcc7b5afc6b50597ef08a6c0dee63aab01908a",
-        "AGENTS.md": "b199ae45b8c45843156146fe5cbb791f17f9377387bc237dcc8108abe5947322",
-        "WORKFLOW.md": "c6898e2d07f982047af7d72db2a3fa8cc04ce518217f636d0d57a0ee853f5d62"
+        "AGENTS.md": "2efa72decd7a10b02582fd0eef2c5f22eb77788581b4ecb90e2ee912e16d081f",
+        "WORKFLOW.md": "ef813c31b0958e25608091ac5e649b4b09e8f556b7501ec7ac89129d1f4b40d6"
     },
     "web-app": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -82,8 +101,8 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".ai-repoagents/roles/triage.md": "ab34cba0afeaad192e099beb151e14047d1fc40543b516f9df20a77bd21c8c07",
         ".ai-repoagents/state/runs.json": "434e2a01bec5e2ac6e481d9a2280fc79168009021c6624730f0257e7fed41828",
         ".github/workflows/repoagents-check.yml": "b2afb0700a791f0c5640603ce1bcc7b5afc6b50597ef08a6c0dee63aab01908a",
-        "AGENTS.md": "54fcd0233f556527261c81ae3a22269142474302de092ab1aa1c7f7701afde85",
-        "WORKFLOW.md": "487abd9d8cc91149da412dd5a60be5ecf6b4dfe98cfc95d087e8de14300dcf05"
+        "AGENTS.md": "8a82498c5d7786e871363590660710d090169a3d784836f2c927f78b2a4069ef",
+        "WORKFLOW.md": "3c7e11de7dcc5dba63521642b68ddfab2a1d6b5fb4b01aea203b43537e21db88"
     }
 }
 

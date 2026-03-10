@@ -11,7 +11,7 @@ This sample repository demonstrates RepoAgents with the `local_markdown` tracker
 ## Demo
 
 ```bash
-uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues
 uv run repoagents doctor
 uv run repoagents run --dry-run
 uv run repoagents trigger 1
@@ -23,3 +23,5 @@ Repo-level demo script:
 ```bash
 bash scripts/demo_local_markdown_tracker.sh
 ```
+
+The demo script configures a deterministic fake `codex` shim automatically for offline runs.

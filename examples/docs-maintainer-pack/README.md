@@ -28,7 +28,7 @@ bash scripts/demo_docs_maintainer_pack.sh
 Equivalent manual flow:
 
 ```bash
-uv run repoagents init --preset docs-only --fixture-issues issues.json --tracker-repo demo/docs-maintainer-pack --backend mock
+uv run repoagents init --preset docs-only --fixture-issues issues.json --tracker-repo demo/docs-maintainer-pack
 cp -R pack/roles/. .ai-repoagents/roles/
 cp -R pack/prompts/. .ai-repoagents/prompts/
 cp -R pack/policies/. .ai-repoagents/policies/
@@ -36,6 +36,8 @@ cat pack/AGENTS.append.md >> AGENTS.md
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```
+
+Use the repo-level demo script when you want the offline shim configured automatically.
 
 After the run, inspect:
 

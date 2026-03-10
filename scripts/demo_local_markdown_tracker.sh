@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/demo_codex.sh"
 SOURCE_DIR="$ROOT_DIR/examples/local-markdown-inbox"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
@@ -19,8 +20,9 @@ pushd "$DEST_DIR" >/dev/null
 uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-kind local_markdown \
-  --tracker-path issues \
-  --backend mock
+  --tracker-path issues
+
+configure_demo_codex "$ROOT_DIR" "$DEST_DIR"
 
 uv run --project "$ROOT_DIR" repoagents doctor
 uv run --project "$ROOT_DIR" repoagents run --dry-run

@@ -38,7 +38,7 @@ uv run repoagents ops status
 cat .ai-repoagents/reports/ops/latest.json
 ```
 
-`uv run repoagents init`을 플래그 없이 실행하면 대화형 초기화가 시작됩니다. 초기 설정을 deterministic mock backend로 두고 싶다면 `--backend mock`을 사용하면 됩니다. GitHub 없이 로컬 JSON inbox로만 돌리려면 `--tracker-kind local_file`를 사용하면 됩니다.
+`uv run repoagents init`을 플래그 없이 실행하면 대화형 초기화가 시작됩니다. GitHub 없이 로컬 JSON inbox로만 돌리려면 `--tracker-kind local_file`를 사용하면 됩니다. 라이브 Codex 세션 없이 오프라인 walkthrough를 하고 싶다면 저장소에 포함된 demo script가 결정적인 fake `codex` shim을 자동으로 설치합니다.
 
 생성되는 제어 파일:
 
@@ -108,11 +108,16 @@ bash scripts/release_preflight.sh
 ```bash
 cd examples/python-lib
 uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
+uv run --project /path/to/RepoAgents python -m repoagents.testing.fake_codex \
+  --install-shim .ai-repoagents/demo-bin/codex \
+  --project-root /path/to/RepoAgents
 python3 - <<'PY'
 from pathlib import Path
+import yaml
 path = Path(".ai-repoagents/repoagents.yaml")
-body = path.read_text()
-path.write_text(body.replace("mode: codex", "mode: mock"))
+payload = yaml.safe_load(path.read_text())
+payload["codex"]["command"] = str((Path(".ai-repoagents/demo-bin/codex")).resolve())
+path.write_text(yaml.safe_dump(payload, sort_keys=False))
 PY
 uv run repoagents run --dry-run
 uv run repoagents run --once
@@ -172,7 +177,7 @@ tracker:
 
 ```bash
 cd examples/local-file-inbox
-uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```
@@ -184,7 +189,7 @@ bash ../../scripts/demo_local_file_sync.sh
 
 ```bash
 cd examples/local-markdown-inbox
-uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues --backend mock
+uv run repoagents init --preset python-library --tracker-kind local_markdown --tracker-path issues
 uv run repoagents trigger 1
 uv run repoagents dashboard
 ```

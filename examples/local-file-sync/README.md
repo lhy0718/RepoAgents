@@ -15,7 +15,7 @@ This sample repository demonstrates `tracker.kind: local_file` with sidecar sync
 bash scripts/demo_local_file_sync.sh
 ```
 
-The demo initializes RepoAgents with the deterministic mock backend, triggers issue `#1`, runs `repoagents sync ls --issue 1`, applies the newest staged comment with `repoagents sync apply`, and archives handled artifacts under `.ai-repoagents/sync-applied/local-file/issue-1/`.
+The demo initializes RepoAgents with a deterministic offline fake `codex` shim, triggers issue `#1`, runs `repoagents sync ls --issue 1`, applies the newest staged comment with `repoagents sync apply`, and archives handled artifacts under `.ai-repoagents/sync-applied/local-file/issue-1/`.
 
 Useful follow-up commands inside the demo workspace:
 

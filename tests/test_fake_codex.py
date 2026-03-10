@@ -4,12 +4,12 @@ import asyncio
 from pathlib import Path
 
 from repoagents.backend.base import BackendInvocation
-from repoagents.backend.mock import MockBackend
 from repoagents.models import EngineeringResult, PlanResult, QAResult, ReviewResult, TriageResult
+from repoagents.testing import FakeBackend
 
 
-def test_mock_backend_triage_surfaces_duplicate_candidates() -> None:
-    backend = MockBackend()
+def test_fake_backend_triage_surfaces_duplicate_candidates() -> None:
+    backend = FakeBackend()
     invocation = BackendInvocation(
         role_name="triage",
         prompt="",
@@ -46,8 +46,8 @@ def test_mock_backend_triage_surfaces_duplicate_candidates() -> None:
     assert '"duplicate_candidates"' in result.raw_output
 
 
-def test_mock_backend_engineer_updates_workspace(demo_repo: Path) -> None:
-    backend = MockBackend()
+def test_fake_backend_engineer_updates_workspace(demo_repo: Path) -> None:
+    backend = FakeBackend()
     invocation = BackendInvocation(
         role_name="engineer",
         prompt="",
@@ -78,8 +78,8 @@ def test_mock_backend_engineer_updates_workspace(demo_repo: Path) -> None:
     assert "Quickstart" in (demo_repo / "README.md").read_text(encoding="utf-8")
 
 
-def test_mock_backend_reviewer_requests_changes_for_code_without_tests() -> None:
-    backend = MockBackend()
+def test_fake_backend_reviewer_requests_changes_for_code_without_tests() -> None:
+    backend = FakeBackend()
     invocation = BackendInvocation(
         role_name="reviewer",
         prompt="",
@@ -127,8 +127,8 @@ def test_mock_backend_reviewer_requests_changes_for_code_without_tests() -> None
     )
 
 
-def test_mock_backend_reviewer_requests_changes_for_manual_only_scope_drift() -> None:
-    backend = MockBackend()
+def test_fake_backend_reviewer_requests_changes_for_manual_only_scope_drift() -> None:
+    backend = FakeBackend()
     invocation = BackendInvocation(
         role_name="reviewer",
         prompt="",
@@ -170,8 +170,8 @@ def test_mock_backend_reviewer_requests_changes_for_manual_only_scope_drift() ->
     assert any("manual-only validation" in note for note in result.payload.review_notes)
 
 
-def test_mock_backend_qa_role_surfaces_follow_up_when_validation_is_manual_only() -> None:
-    backend = MockBackend()
+def test_fake_backend_qa_role_surfaces_follow_up_when_validation_is_manual_only() -> None:
+    backend = FakeBackend()
     invocation = BackendInvocation(
         role_name="qa",
         prompt="",

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import click
 import httpx
 import typer
 import yaml
@@ -35,6 +36,7 @@ from repoagents.github_health import (
     collect_github_live_repo_snapshots,
     collect_github_origin_snapshot,
     collect_github_publish_readiness,
+    extract_git_remote_repo_slug,
     normalize_github_smoke_formats,
     render_github_smoke_text,
 )
@@ -135,9 +137,11 @@ from repoagents.templates import (
     scaffold_repository,
 )
 from repoagents.utils import (
+    GitCommandError,
     ensure_dir,
     is_git_repository,
     list_dirty_working_tree_entries,
+    run_git,
     write_json_file,
     write_text_file,
 )
@@ -158,6 +162,7 @@ RAW_POLICY_REPORT_EXPORTS = (
     "cleanup-preview.json",
     "cleanup-result.json",
 )
+INIT_PRESET_ORDER = ("none", "python-library", "web-app", "docs-only", "research-project")
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +213,19 @@ class CleanAction:
     detail: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ChoiceOption:
+    value: str
+    label: str
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoProbe:
+    status: str
+    message: str | None = None
+
+
 def main() -> None:
     app()
 
@@ -228,7 +246,7 @@ def init_command(
     preset: str | None = typer.Option(
         None,
         "--preset",
-        help="Bootstrap preset: python-library, web-app, docs-only, research-project.",
+        help="Bootstrap preset: none, python-library, web-app, docs-only, or research-project.",
     ),
     tracker_kind: str | None = typer.Option(
         None,
@@ -249,11 +267,6 @@ def init_command(
         None,
         "--fixture-issues",
         help="Optional JSON file for local fixture issues.",
-    ),
-    backend: str | None = typer.Option(
-        None,
-        "--backend",
-        help="Default worker backend: codex or mock.",
     ),
     interactive: bool | None = typer.Option(
         None,
@@ -312,7 +325,6 @@ def init_command(
         tracker_repo,
         tracker_path,
         fixture_issues,
-        backend,
     )
     if interactive_mode:
         typer.echo("Interactive RepoAgents initialization")
@@ -321,7 +333,6 @@ def init_command(
             resolved_tracker_kind,
             target_repo,
             resolved_tracker_path,
-            backend_mode,
             resolved_fixture_issues,
         ) = _prompt_init_inputs(
             repo_root=repo_root,
@@ -330,16 +341,17 @@ def init_command(
             tracker_repo=tracker_repo,
             tracker_path=tracker_path,
             fixture_issues=fixture_issues,
-            backend=backend,
         )
     else:
         preset_name = preset or "python-library"
         resolved_tracker_kind = _normalize_tracker_kind(tracker_kind or "github")
-        target_repo = tracker_repo or f"local/{repo_root.name}"
+        if resolved_tracker_kind == "github":
+            target_repo = tracker_repo or _default_github_tracker_repo(repo_root)
+        else:
+            target_repo = tracker_repo or f"local/{repo_root.name}"
         resolved_tracker_path = tracker_path or (
             "issues" if resolved_tracker_kind == "local_markdown" else "issues.json"
         )
-        backend_mode = _normalize_backend_mode(backend or "codex")
         resolved_fixture_issues = fixture_issues if resolved_tracker_kind == "github" else None
 
     if preset_name not in PRESETS:
@@ -356,10 +368,6 @@ def init_command(
         force=force,
         tracker_kind=resolved_tracker_kind,
         tracker_path=resolved_tracker_path,
-    )
-    _apply_init_config_overrides(
-        repo_root=repo_root,
-        backend_mode=backend_mode,
     )
     typer.echo(f"Initialized RepoAgents in {repo_root}")
     if created:
@@ -402,7 +410,6 @@ def doctor_command(
         loaded = None
 
     codex_command = loaded.data.codex.command if loaded else "codex"
-    codex_required = _doctor_requires_codex_command(loaded)
     command_path = shutil.which(codex_command)
     codex_version: str | None = None
     if command_path:
@@ -417,9 +424,6 @@ def doctor_command(
     if command_path:
         if export_formats is None:
             typer.echo(f"Codex command: OK ({command_path}) {codex_version or ''}".rstrip())
-    elif not codex_required:
-        if export_formats is None:
-            typer.echo("Codex command: SKIPPED (llm.mode=mock)")
     elif export_formats is None:
         typer.echo(f"Codex command: MISSING ({codex_command})", err=True)
 
@@ -442,7 +446,7 @@ def doctor_command(
     else:
         working_tree = None
 
-    exit_code = 0 if loaded and (command_path or not codex_required) else 1
+    exit_code = 0 if loaded and command_path else 1
     if loaded and working_tree and _workspace_doctor_has_error(loaded, working_tree):
         exit_code = 1
     if any(check.status == "ERROR" for check in diagnostic_checks):
@@ -456,7 +460,7 @@ def doctor_command(
             codex_command=codex_command,
             command_path=command_path,
             codex_version=codex_version,
-            codex_required=codex_required,
+            codex_required=True,
             diagnostic_checks=diagnostic_checks,
             working_tree=working_tree,
             exit_code=exit_code,
@@ -2234,11 +2238,10 @@ def _should_prompt_for_init(
     tracker_repo: str | None,
     tracker_path: str | None,
     fixture_issues: str | None,
-    backend: str | None,
 ) -> bool:
     if interactive is not None:
         return interactive
-    return all(value is None for value in (preset, tracker_kind, tracker_repo, tracker_path, fixture_issues, backend))
+    return all(value is None for value in (preset, tracker_kind, tracker_repo, tracker_path, fixture_issues))
 
 
 def _prompt_init_inputs(
@@ -2248,25 +2251,33 @@ def _prompt_init_inputs(
     tracker_repo: str | None,
     tracker_path: str | None,
     fixture_issues: str | None,
-    backend: str | None,
-) -> tuple[str, str, str, str | None, str, str | None]:
+) -> tuple[str, str, str, str | None, str | None]:
     preset_name = _prompt_choice(
         "Preset",
         current=preset,
         default="python-library",
-        allowed=sorted(PRESETS),
+        options=_preset_choice_options(),
     )
     resolved_tracker_kind = _prompt_choice(
         "Tracker kind",
         current=tracker_kind,
         default="github",
-        allowed=["github", "local_file", "local_markdown"],
+        options=[
+            ChoiceOption("github", "github", "Use a GitHub issue tracker."),
+            ChoiceOption("local_file", "local_file", "Use a local JSON issue inbox."),
+            ChoiceOption("local_markdown", "local_markdown", "Use a local Markdown issue directory."),
+        ],
     )
     if resolved_tracker_kind == "github":
+        default_tracker_repo = tracker_repo or _default_github_tracker_repo(repo_root)
         target_repo = typer.prompt(
             "Tracker repo",
-            default=tracker_repo or f"local/{repo_root.name}",
+            default=default_tracker_repo,
         ).strip()
+        if not _looks_like_github_repo_slug(target_repo):
+            typer.echo("Tracker repo must look like owner/name.", err=True)
+            raise typer.Exit(code=2)
+        target_repo = _ensure_interactive_github_tracker_repo(target_repo)
         resolved_tracker_path = tracker_path
     else:
         target_repo = tracker_repo or f"local/{repo_root.name}"
@@ -2274,12 +2285,6 @@ def _prompt_init_inputs(
             "Tracker path",
             default=tracker_path or ("issues" if resolved_tracker_kind == "local_markdown" else "issues.json"),
         ).strip()
-    backend_mode = _prompt_choice(
-        "Backend mode",
-        current=backend,
-        default="codex",
-        allowed=["codex", "mock"],
-    )
     fixture_path = fixture_issues if resolved_tracker_kind == "github" else None
     if resolved_tracker_kind == "github" and fixture_path is None:
         use_fixture = typer.confirm(
@@ -2293,7 +2298,6 @@ def _prompt_init_inputs(
         resolved_tracker_kind,
         target_repo,
         resolved_tracker_path,
-        backend_mode,
         fixture_path,
     )
 
@@ -2303,11 +2307,20 @@ def _prompt_choice(
     *,
     current: str | None,
     default: str,
-    allowed: list[str],
+    options: list[ChoiceOption],
 ) -> str:
+    allowed = [option.value for option in options]
+    resolved_default = current if current in allowed else default
+    if _supports_arrow_choice_prompt():
+        return _prompt_choice_with_arrows(
+            label,
+            current=current,
+            default=resolved_default,
+            options=options,
+        )
     chosen = typer.prompt(
         f"{label} [{'/'.join(allowed)}]",
-        default=current or default,
+        default=resolved_default,
     ).strip()
     normalized = chosen.strip()
     if normalized not in allowed:
@@ -2319,16 +2332,249 @@ def _prompt_choice(
     return normalized
 
 
-def _normalize_backend_mode(value: str) -> str:
-    normalized = value.strip().lower()
-    if normalized not in {"codex", "mock"}:
-        typer.echo(
-            f"Invalid backend '{value}'. Expected one of: codex, mock.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    return normalized
+def _preset_choice_options() -> list[ChoiceOption]:
+    options = [ChoiceOption("none", "No preset", PRESETS["none"].description)]
+    for preset_name in INIT_PRESET_ORDER:
+        if preset_name == "none":
+            continue
+        preset = PRESETS[preset_name]
+        options.append(ChoiceOption(preset_name, preset_name, preset.description))
+    return options
 
+
+def _default_github_tracker_repo(repo_root: Path) -> str:
+    origin_repo = _read_origin_repo_slug(repo_root)
+    if origin_repo:
+        return origin_repo
+    gh_login = _read_gh_login()
+    if gh_login:
+        return f"{gh_login}/{repo_root.name}"
+    return f"local/{repo_root.name}"
+
+
+def _read_origin_repo_slug(repo_root: Path) -> str | None:
+    if not is_git_repository(repo_root):
+        return None
+    try:
+        remote_url = run_git(["remote", "get-url", "origin"], repo_root)
+    except GitCommandError:
+        return None
+    return extract_git_remote_repo_slug(remote_url)
+
+
+def _read_gh_login() -> str | None:
+    if shutil.which("gh") is None:
+        return None
+    auth = subprocess.run(
+        ["gh", "auth", "status", "--hostname", "github.com"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    if auth.returncode != 0:
+        return None
+    completed = subprocess.run(
+        ["gh", "api", "user", "--jq", ".login"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        return None
+    login = completed.stdout.strip()
+    return login or None
+
+
+def _looks_like_github_repo_slug(value: str) -> bool:
+    parts = [part.strip() for part in value.split("/")]
+    return len(parts) == 2 and all(parts)
+
+
+def _ensure_interactive_github_tracker_repo(tracker_repo: str) -> str:
+    probe = _probe_github_tracker_repo(tracker_repo)
+    if probe.status == "exists":
+        return tracker_repo
+    if probe.status != "missing":
+        if probe.message:
+            typer.echo(f"Skipping tracker repo verification for {tracker_repo}: {probe.message}")
+        return tracker_repo
+
+    typer.echo(f"GitHub tracker repo `{tracker_repo}` was not found.")
+    create_repo = typer.confirm("Create it now with gh?", default=True)
+    if not create_repo:
+        return tracker_repo
+
+    visibility = _prompt_choice(
+        "GitHub repo visibility",
+        current=None,
+        default="private",
+        options=[
+            ChoiceOption("private", "private", "Only invited collaborators can access it."),
+            ChoiceOption("public", "public", "Anyone can view the tracker repo."),
+        ],
+    )
+    _create_github_tracker_repo(tracker_repo, visibility)
+    typer.echo(f"Created GitHub tracker repo `{tracker_repo}` ({visibility}).")
+    return tracker_repo
+
+
+def _probe_github_tracker_repo(tracker_repo: str) -> GitHubRepoProbe:
+    gh_path = shutil.which("gh")
+    if gh_path is None:
+        return GitHubRepoProbe("unknown", "gh is not installed")
+
+    auth = subprocess.run(
+        ["gh", "auth", "status", "--hostname", "github.com"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    if auth.returncode != 0:
+        return GitHubRepoProbe("unknown", "gh is installed but not authenticated")
+
+    completed = subprocess.run(
+        ["gh", "repo", "view", tracker_repo, "--json", "nameWithOwner"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=15,
+    )
+    if completed.returncode == 0:
+        return GitHubRepoProbe("exists")
+
+    output = "\n".join(part.strip() for part in (completed.stderr, completed.stdout) if part.strip())
+    lowered = output.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "not found",
+            "could not resolve to a repository",
+            "could not resolve repository",
+            "repository not found",
+        )
+    ):
+        return GitHubRepoProbe("missing")
+    return GitHubRepoProbe("unknown", output or "gh repo view failed")
+
+
+def _create_github_tracker_repo(tracker_repo: str, visibility: str) -> None:
+    completed = subprocess.run(
+        ["gh", "repo", "create", tracker_repo, f"--{visibility}"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+    if completed.returncode == 0:
+        return
+    output = "\n".join(part.strip() for part in (completed.stderr, completed.stdout) if part.strip())
+    typer.echo(
+        f"Failed to create GitHub tracker repo `{tracker_repo}`: {output or 'unknown gh error'}",
+        err=True,
+    )
+    raise typer.Exit(code=2)
+
+
+def _supports_arrow_choice_prompt() -> bool:
+    term = os.environ.get("TERM", "").strip().lower()
+    return sys.stdin.isatty() and sys.stdout.isatty() and term not in {"", "dumb"}
+
+
+def _prompt_choice_with_arrows(
+    label: str,
+    *,
+    current: str | None,
+    default: str,
+    options: list[ChoiceOption],
+) -> str:
+    selected_index = _resolve_choice_index(options, current=current, default=default)
+    rendered_lines = 0
+    cursor_hidden = False
+    try:
+        click.echo("\x1b[?25l", nl=False)
+        cursor_hidden = True
+        while True:
+            rendered_lines = _render_arrow_choice_prompt(label, options, selected_index, rendered_lines)
+            key = _read_choice_key()
+            if key == "up":
+                selected_index = (selected_index - 1) % len(options)
+                continue
+            if key == "down":
+                selected_index = (selected_index + 1) % len(options)
+                continue
+            if key == "enter":
+                click.echo()
+                return options[selected_index].value
+            if key == "interrupt":
+                raise click.Abort()
+    finally:
+        if cursor_hidden:
+            click.echo("\x1b[?25h", nl=False)
+
+
+def _resolve_choice_index(options: list[ChoiceOption], *, current: str | None, default: str) -> int:
+    allowed = [option.value for option in options]
+    selected_value = current if current in allowed else default
+    for index, option in enumerate(options):
+        if option.value == selected_value:
+            return index
+    return 0
+
+
+def _render_arrow_choice_prompt(
+    label: str,
+    options: list[ChoiceOption],
+    selected_index: int,
+    rendered_lines: int,
+) -> int:
+    if rendered_lines:
+        click.echo(f"\x1b[{rendered_lines}F", nl=False)
+    prompt_lines = [f"{label} (use arrow keys and Enter)"]
+    for index, option in enumerate(options):
+        is_selected = index == selected_index
+        marker = click.style(">", fg="blue") if is_selected else " "
+        display_label = option.label if option.label == option.value else f"{option.label} [{option.value}]"
+        label_text = click.style(display_label, fg="blue") if is_selected else display_label
+        line = f"{marker} {label_text}"
+        if option.detail:
+            line = f"{line} {click.style(option.detail, fg='bright_black')}"
+        prompt_lines.append(line)
+    for line in prompt_lines:
+        click.echo(f"\x1b[2K{line}")
+    return len(prompt_lines)
+
+
+def _read_choice_key() -> str:
+    char = click.getchar()
+    if any(marker in char for marker in ("\r", "\n")):
+        return "enter"
+    if "\x03" in char:
+        return "interrupt"
+    if char in {"k", "K"}:
+        return "up"
+    if char in {"j", "J"}:
+        return "down"
+    if char in {"\x1b[A", "\x1bOA"}:
+        return "up"
+    if char in {"\x1b[B", "\x1bOB"}:
+        return "down"
+    if char == "\x1b":
+        next_char = click.getchar()
+        if next_char in {"[A", "OA"}:
+            return "up"
+        if next_char in {"[B", "OB"}:
+            return "down"
+        if next_char == "[":
+            direction = click.getchar()
+            if direction == "A":
+                return "up"
+            if direction == "B":
+                return "down"
+        return "other"
+    return "other"
 
 def _normalize_tracker_kind(value: str) -> str:
     normalized = value.strip().lower()
@@ -2340,27 +2586,9 @@ def _normalize_tracker_kind(value: str) -> str:
         raise typer.Exit(code=2)
     return normalized
 
-
-def _apply_init_config_overrides(
-    repo_root: Path,
-    *,
-    backend_mode: str,
-) -> None:
-    if backend_mode == "codex":
-        return
-    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    payload.setdefault("llm", {})["mode"] = backend_mode
-    config_path.write_text(
-        yaml.safe_dump(payload, sort_keys=False),
-        encoding="utf-8",
-    )
-
-
 def _doctor_requires_codex_command(loaded: LoadedConfig | None) -> bool:
-    if loaded is None:
-        return True
-    return loaded.data.llm.mode.value == "codex"
+    del loaded
+    return True
 
 
 def _collect_clean_actions(

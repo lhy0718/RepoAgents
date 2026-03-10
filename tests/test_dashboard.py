@@ -150,7 +150,7 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
             issue_title="Fix empty input crash",
             fingerprint="fp-1",
             status=RunLifecycle.FAILED,
-            backend_mode="mock",
+            backend_mode="codex",
             workspace_path=str(workspace_dir),
             summary="Reviewer requested follow-up before publish.",
             last_error="Tests did not cover the empty-string branch.",
