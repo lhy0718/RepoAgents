@@ -15,6 +15,23 @@ from repoagents.utils.files import ensure_dir, write_text_file
 
 BEGIN_MARKER = "<!-- repoagents:begin -->"
 END_MARKER = "<!-- repoagents:end -->"
+GITIGNORE_BEGIN_MARKER = "# repoagents:begin"
+GITIGNORE_END_MARKER = "# repoagents:end"
+
+REPOAGENTS_GITIGNORE_PATTERNS = (
+    ".ai-republic/",
+    ".ai-repoagents/artifacts/",
+    ".ai-repoagents/branches/",
+    ".ai-repoagents/dashboard/",
+    ".ai-repoagents/inbox/",
+    ".ai-repoagents/logs/",
+    ".ai-repoagents/reports/",
+    ".ai-repoagents/sync/",
+    ".ai-repoagents/sync-applied/",
+    ".ai-repoagents/workspaces/",
+    ".ai-repoagents/state/runs.json",
+    ".ai-repoagents/ops/",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +167,26 @@ def scaffold_repository(
             agents_path.write_text(updated, encoding="utf-8")
             created.append(agents_path)
 
+    gitignore_block = render_gitignore_block()
+    gitignore_path = repo_root / ".gitignore"
+    if not gitignore_path.exists():
+        write_text_file(
+            gitignore_path,
+            f"{GITIGNORE_BEGIN_MARKER}\n{gitignore_block}\n{GITIGNORE_END_MARKER}\n",
+        )
+        created.append(gitignore_path)
+    else:
+        original = gitignore_path.read_text(encoding="utf-8")
+        updated = _replace_managed_block(
+            original,
+            gitignore_block,
+            begin_marker=GITIGNORE_BEGIN_MARKER,
+            end_marker=GITIGNORE_END_MARKER,
+        )
+        if updated != original:
+            gitignore_path.write_text(updated, encoding="utf-8")
+            created.append(gitignore_path)
+
     return created
 
 
@@ -253,6 +290,50 @@ def build_upgrade_plan(
                     ),
                 )
             )
+
+    expected_gitignore_block = render_gitignore_block()
+    gitignore_path = repo_root / ".gitignore"
+    if not gitignore_path.exists():
+        plans.append(
+            UpgradePlanItem(
+                path=gitignore_path,
+                label=".gitignore",
+                action="create",
+                reason=".gitignore is missing and will be created with a managed RepoAgents block.",
+                expected_body=f"{GITIGNORE_BEGIN_MARKER}\n{expected_gitignore_block}\n{GITIGNORE_END_MARKER}\n",
+            )
+        )
+    else:
+        current_body = gitignore_path.read_text(encoding="utf-8")
+        current_block = (
+            extract_managed_block(
+                current_body,
+                begin_marker=GITIGNORE_BEGIN_MARKER,
+                end_marker=GITIGNORE_END_MARKER,
+            )
+            or ""
+        )
+        if current_block.strip() != expected_gitignore_block.strip():
+            updated = _replace_managed_block(
+                current_body,
+                expected_gitignore_block,
+                begin_marker=GITIGNORE_BEGIN_MARKER,
+                end_marker=GITIGNORE_END_MARKER,
+            )
+            plans.append(
+                UpgradePlanItem(
+                    path=gitignore_path,
+                    label=".gitignore#managed-block",
+                    action="update_managed_block",
+                    reason="The managed .gitignore block differs and will be refreshed without touching user ignore rules outside the block.",
+                    expected_body=updated,
+                    diff_preview=_build_diff_preview(
+                        current_block,
+                        expected_gitignore_block,
+                        ".gitignore#managed-block",
+                    ),
+                )
+            )
     return plans
 
 
@@ -328,6 +409,11 @@ def render_agents_block(
     )
 
 
+def render_gitignore_block() -> str:
+    lines = ["# RepoAgents runtime outputs", *REPOAGENTS_GITIGNORE_PATTERNS]
+    return "\n".join(lines)
+
+
 def detect_scaffold_preset(repo_root: Path) -> str | None:
     scope_policy_path = repo_root / ".ai-repoagents" / "policies" / "scope-policy.md"
     if not scope_policy_path.exists():
@@ -343,11 +429,16 @@ def detect_scaffold_preset(repo_root: Path) -> str | None:
     return preset_name if preset_name in PRESETS else None
 
 
-def extract_managed_block(original: str) -> str | None:
-    if BEGIN_MARKER not in original or END_MARKER not in original:
+def extract_managed_block(
+    original: str,
+    *,
+    begin_marker: str = BEGIN_MARKER,
+    end_marker: str = END_MARKER,
+) -> str | None:
+    if begin_marker not in original or end_marker not in original:
         return None
-    _, _, tail = original.partition(BEGIN_MARKER)
-    block, _, _ = tail.partition(END_MARKER)
+    _, _, tail = original.partition(begin_marker)
+    block, _, _ = tail.partition(end_marker)
     return block.strip()
 
 
@@ -421,11 +512,17 @@ def _write_if_allowed(path: Path, body: str, force: bool) -> list[Path]:
     return [path]
 
 
-def _replace_managed_block(original: str, block: str) -> str:
-    replacement = f"{BEGIN_MARKER}\n{block}\n{END_MARKER}"
-    if BEGIN_MARKER in original and END_MARKER in original:
-        before, _, tail = original.partition(BEGIN_MARKER)
-        _, _, after = tail.partition(END_MARKER)
+def _replace_managed_block(
+    original: str,
+    block: str,
+    *,
+    begin_marker: str = BEGIN_MARKER,
+    end_marker: str = END_MARKER,
+) -> str:
+    replacement = f"{begin_marker}\n{block}\n{end_marker}"
+    if begin_marker in original and end_marker in original:
+        before, _, tail = original.partition(begin_marker)
+        _, _, after = tail.partition(end_marker)
         return f"{before}{replacement}{after.lstrip()}"
     suffix = "\n" if original.endswith("\n") else "\n\n"
     return f"{original}{suffix}{replacement}\n"

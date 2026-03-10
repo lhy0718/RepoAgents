@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import subprocess
@@ -52,11 +53,35 @@ def test_cli_init_creates_files(tmp_path: Path, monkeypatch) -> None:
     )
     assert result.exit_code == 0
     assert (tmp_path / ".ai-repoagents" / "repoagents.yaml").exists()
+    assert (tmp_path / ".gitignore").exists()
     assert (tmp_path / "AGENTS.md").exists()
     assert (tmp_path / "WORKFLOW.md").exists()
     assert (tmp_path / ".github" / "workflows" / "repoagents-check.yml").exists()
     assert (tmp_path / ".ai-repoagents" / "roles" / "qa.md").exists()
     assert (tmp_path / ".ai-repoagents" / "prompts" / "qa.txt.j2").exists()
+
+
+def test_cli_init_preserves_existing_gitignore_and_appends_repoagents_block(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: None)
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: None)
+    (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["init", "--preset", "none"],
+        catch_exceptions=False,
+    )
+
+    gitignore_body = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert gitignore_body.startswith("node_modules/\n")
+    assert "# repoagents:begin" in gitignore_body
+    assert ".ai-repoagents/logs/" in gitignore_body
+    assert "node_modules/" in gitignore_body
 
 
 def test_cli_init_interactive_prompts_for_missing_values(tmp_path: Path, monkeypatch) -> None:
@@ -146,6 +171,27 @@ def test_cli_init_none_preset_creates_neutral_scaffold(tmp_path: Path, monkeypat
     assert "Preset: `none`" in scope_policy
     assert "shared baseline scaffold without repository-specific bias" in workflow.lower()
 
+
+def test_cli_init_generates_guarded_repoagents_check_workflow(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: None)
+    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: None)
+
+    result = runner.invoke(
+        app,
+        ["init", "--preset", "none"],
+        catch_exceptions=False,
+    )
+
+    workflow = (tmp_path / ".github" / "workflows" / "repoagents-check.yml").read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "Detect project layout" in workflow
+    assert "Validate RepoAgents scaffold" in workflow
+    assert "if: steps.detect.outputs.has_pyproject == 'true'" in workflow
+    assert "No pyproject.toml detected; skipping uv sync." in workflow
+    assert "No pytest-style Python tests detected; skipping pytest." in workflow
+
+
 def test_prompt_choice_arrow_navigation_selects_no_preset(monkeypatch) -> None:
     keys = iter(["\x1b[A", "\r"])
     monkeypatch.setattr(app_module, "_supports_arrow_choice_prompt", lambda: True)
@@ -191,17 +237,56 @@ def test_render_arrow_choice_prompt_styles_selected_label_and_detail(monkeypatch
 
 
 def test_default_github_tracker_repo_prefers_origin_slug(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: "owner/from-origin")
+    monkeypatch.setattr(
+        app_module,
+        "_read_origin_repo_slug_details",
+        lambda repo_root: ("owner/from-origin", ""),
+    )
     monkeypatch.setattr(app_module, "_read_gh_login", lambda: "from-gh")
 
     assert app_module._default_github_tracker_repo(tmp_path) == "owner/from-origin"
 
 
 def test_default_github_tracker_repo_falls_back_to_gh_login(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(app_module, "_read_origin_repo_slug", lambda repo_root: None)
+    monkeypatch.setattr(
+        app_module,
+        "_read_origin_repo_slug_details",
+        lambda repo_root: (None, "No git `origin` remote detected."),
+    )
     monkeypatch.setattr(app_module, "_read_gh_login", lambda: "from-gh")
 
     assert app_module._default_github_tracker_repo(tmp_path) == f"from-gh/{tmp_path.name}"
+
+
+def test_resolve_default_github_tracker_repo_reports_missing_origin(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "_read_origin_repo_slug_details",
+        lambda repo_root: (None, "No git `origin` remote detected."),
+    )
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: None)
+
+    resolved = app_module._resolve_default_github_tracker_repo(tmp_path)
+
+    assert resolved.repo == f"local/{tmp_path.name}"
+    assert resolved.source == "local"
+    assert "No git `origin` remote detected." in (resolved.note or "")
+    assert "git remote add origin" in (resolved.note or "")
+
+
+def test_resolve_default_github_tracker_repo_prefers_origin_without_note(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/example/firewall.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    resolved = app_module._resolve_default_github_tracker_repo(tmp_path)
+
+    assert resolved.repo == "example/firewall"
+    assert resolved.source == "origin"
+    assert resolved.note == "Detected git `origin` repo `example/firewall`; using it as the default tracker repo."
 
 
 def test_ensure_interactive_github_tracker_repo_creates_missing_repo(monkeypatch) -> None:
@@ -262,6 +347,73 @@ def test_cli_init_upgrade_force_refreshes_drifted_managed_files(demo_repo: Path,
     assert "refresh: .ai-repoagents/roles/triage.md" in result.stdout
     assert "Applied upgrades:" in result.stdout
     assert "custom local triage guidance" not in drifted.read_text(encoding="utf-8")
+
+
+def test_cli_init_reports_tracker_repo_fallback_when_origin_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        app_module,
+        "_read_origin_repo_slug_details",
+        lambda repo_root: (None, "No git `origin` remote detected."),
+    )
+    monkeypatch.setattr(app_module, "_read_gh_login", lambda: None)
+
+    result = runner.invoke(
+        app,
+        ["init", "--preset", "none", "--no-interactive"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "No git `origin` remote detected." in result.stdout
+    assert f"Defaulting tracker repo to `local/{tmp_path.name}`." in result.stdout
+
+
+def test_cli_init_reports_detected_origin_tracker_repo(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/example/firewall.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["init", "--preset", "none", "--no-interactive"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Detected git `origin` repo `example/firewall`; using it as the default tracker repo." in result.stdout
+
+
+def test_cli_init_upgrade_refreshes_gitignore_block_without_touching_local_rules(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_repo)
+    gitignore_path = demo_repo / ".gitignore"
+    gitignore_path.write_text(
+        "node_modules/\n\n"
+        "# repoagents:begin\n"
+        "# RepoAgents runtime outputs\n"
+        ".old-repoagents-cache/\n"
+        "# repoagents:end\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["init", "--upgrade"], catch_exceptions=False)
+
+    gitignore_body = gitignore_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "update_managed_block: .gitignore#managed-block" in result.stdout
+    assert "node_modules/" in gitignore_body
+    assert ".old-repoagents-cache/" not in gitignore_body
+    assert ".ai-repoagents/logs/" in gitignore_body
 
 
 def test_cli_dry_run_outputs_preview(demo_repo: Path, monkeypatch) -> None:
@@ -1561,6 +1713,44 @@ def test_cli_github_smoke_uses_configured_fixture_snapshot(
     assert "GitHub smoke summary: status=attention open_issues=3 sampled_issue=9" in result.stdout
     assert payload["meta"]["fixture_path"] == str(fixture_path.resolve())
     assert payload["summary"]["publish_status"] == "warn"
+
+
+def test_cli_github_smoke_closes_tracker_on_same_event_loop(
+    demo_git_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_git_repo)
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
+        encoding="utf-8",
+    )
+
+    class LoopAwareTracker:
+        def __init__(self) -> None:
+            self.snapshot_loop: int | None = None
+            self.close_loop: int | None = None
+
+        async def aclose(self) -> None:
+            self.close_loop = id(asyncio.get_running_loop())
+
+    tracker = LoopAwareTracker()
+
+    async def fake_build_snapshot(*, loaded, tracker, issue_id, issue_limit):
+        del loaded, issue_id, issue_limit
+        tracker.snapshot_loop = id(asyncio.get_running_loop())
+        return {"summary": {"status": "clean", "open_issue_count": 0, "sampled_issue_id": None}}
+
+    monkeypatch.setattr(app_module, "build_tracker", lambda loaded, dry_run=False: tracker)
+    monkeypatch.setattr(app_module, "build_github_smoke_snapshot", fake_build_snapshot)
+    monkeypatch.setattr(app_module, "render_github_smoke_text", lambda snapshot: "GitHub smoke ok\n")
+
+    result = runner.invoke(app, ["github", "smoke"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert result.stdout == "GitHub smoke ok\n"
+    assert tracker.snapshot_loop is not None
+    assert tracker.close_loop == tracker.snapshot_loop
 
 
 def test_cli_ops_snapshot_can_prune_managed_history_entries(

@@ -226,6 +226,13 @@ class GitHubRepoProbe:
     message: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class DefaultGitHubTrackerRepo:
+    repo: str
+    source: str
+    note: str | None = None
+
+
 def main() -> None:
     app()
 
@@ -346,7 +353,10 @@ def init_command(
         preset_name = preset or "python-library"
         resolved_tracker_kind = _normalize_tracker_kind(tracker_kind or "github")
         if resolved_tracker_kind == "github":
-            target_repo = tracker_repo or _default_github_tracker_repo(repo_root)
+            default_tracker = _resolve_default_github_tracker_repo(repo_root)
+            if tracker_repo is None and default_tracker.note:
+                typer.echo(default_tracker.note)
+            target_repo = tracker_repo or default_tracker.repo
         else:
             target_repo = tracker_repo or f"local/{repo_root.name}"
         resolved_tracker_path = tracker_path or (
@@ -1375,17 +1385,14 @@ def github_smoke_command(
             raise typer.BadParameter(str(exc), param_hint="--format") from exc
 
     tracker = build_tracker(loaded, dry_run=False)
-    try:
-        snapshot = asyncio.run(
-            build_github_smoke_snapshot(
-                loaded=loaded,
-                tracker=tracker,
-                issue_id=issue,
-                issue_limit=limit,
-            )
+    snapshot = asyncio.run(
+        _collect_github_smoke_snapshot(
+            loaded=loaded,
+            tracker=tracker,
+            issue_id=issue,
+            issue_limit=limit,
         )
-    finally:
-        asyncio.run(tracker.aclose())
+    )
 
     if export_formats is None:
         typer.echo(render_github_smoke_text(snapshot), nl=False)
@@ -2269,7 +2276,10 @@ def _prompt_init_inputs(
         ],
     )
     if resolved_tracker_kind == "github":
-        default_tracker_repo = tracker_repo or _default_github_tracker_repo(repo_root)
+        default_tracker = _resolve_default_github_tracker_repo(repo_root)
+        if tracker_repo is None and default_tracker.note:
+            typer.echo(default_tracker.note)
+        default_tracker_repo = tracker_repo or default_tracker.repo
         target_repo = typer.prompt(
             "Tracker repo",
             default=default_tracker_repo,
@@ -2343,23 +2353,54 @@ def _preset_choice_options() -> list[ChoiceOption]:
 
 
 def _default_github_tracker_repo(repo_root: Path) -> str:
-    origin_repo = _read_origin_repo_slug(repo_root)
+    return _resolve_default_github_tracker_repo(repo_root).repo
+
+
+def _resolve_default_github_tracker_repo(repo_root: Path) -> DefaultGitHubTrackerRepo:
+    origin_repo, origin_note = _read_origin_repo_slug_details(repo_root)
     if origin_repo:
-        return origin_repo
+        return DefaultGitHubTrackerRepo(
+            repo=origin_repo,
+            source="origin",
+            note=f"Detected git `origin` repo `{origin_repo}`; using it as the default tracker repo.",
+        )
+
     gh_login = _read_gh_login()
     if gh_login:
-        return f"{gh_login}/{repo_root.name}"
-    return f"local/{repo_root.name}"
+        repo = f"{gh_login}/{repo_root.name}"
+        return DefaultGitHubTrackerRepo(
+            repo=repo,
+            source="gh_login",
+            note=f"{origin_note} Defaulting tracker repo to `{repo}` from your `gh` login.",
+        )
+
+    repo = f"local/{repo_root.name}"
+    return DefaultGitHubTrackerRepo(
+        repo=repo,
+        source="local",
+        note=(
+            f"{origin_note} Defaulting tracker repo to `{repo}`. "
+            "Pass `--tracker-repo owner/name` or add `git remote add origin ...` "
+            "if you want the tracker repo to follow your GitHub remote."
+        ),
+    )
 
 
 def _read_origin_repo_slug(repo_root: Path) -> str | None:
+    return _read_origin_repo_slug_details(repo_root)[0]
+
+
+def _read_origin_repo_slug_details(repo_root: Path) -> tuple[str | None, str]:
     if not is_git_repository(repo_root):
-        return None
+        return None, "Current directory is not a git repository, so `repoagents init` cannot read `origin`."
     try:
         remote_url = run_git(["remote", "get-url", "origin"], repo_root)
     except GitCommandError:
-        return None
-    return extract_git_remote_repo_slug(remote_url)
+        return None, "No git `origin` remote detected."
+    origin_repo = extract_git_remote_repo_slug(remote_url)
+    if origin_repo:
+        return origin_repo, ""
+    return None, f"Could not derive a GitHub repo slug from git `origin` ({remote_url})."
 
 
 def _read_gh_login() -> str | None:
@@ -3533,17 +3574,14 @@ def _build_ops_snapshot_github_smoke_artifacts(
         return None
 
     tracker = build_tracker(loaded, dry_run=False)
-    try:
-        snapshot = asyncio.run(
-            build_github_smoke_snapshot(
-                loaded=loaded,
-                tracker=tracker,
-                issue_id=issue_filter,
-                issue_limit=max(1, issue_limit),
-            )
+    snapshot = asyncio.run(
+        _collect_github_smoke_snapshot(
+            loaded=loaded,
+            tracker=tracker,
+            issue_id=issue_filter,
+            issue_limit=max(1, issue_limit),
         )
-    finally:
-        asyncio.run(tracker.aclose())
+    )
 
     bundle_result = build_github_smoke_exports(
         snapshot=snapshot,
@@ -3581,6 +3619,24 @@ def _build_ops_snapshot_github_smoke_artifacts(
         "link_targets": ("ops_brief", "ops_status"),
     }
     return bundle_result, root_result, component
+
+
+async def _collect_github_smoke_snapshot(
+    *,
+    loaded: LoadedConfig,
+    tracker: Any,
+    issue_id: int | None,
+    issue_limit: int,
+) -> dict[str, object]:
+    try:
+        return await build_github_smoke_snapshot(
+            loaded=loaded,
+            tracker=tracker,
+            issue_id=issue_id,
+            issue_limit=issue_limit,
+        )
+    finally:
+        await tracker.aclose()
 
 
 def _build_ops_snapshot_ops_brief_artifacts(
