@@ -72,7 +72,9 @@ package_init_path.write_text(package_body, encoding="utf-8")
 PY
 
 git add pyproject.toml src/reporepublic/__init__.py
-git commit -q -m "rehearse release publish version bump"
+if ! git diff --cached --quiet; then
+  git commit -q -m "rehearse release publish version bump"
+fi
 git tag -a "$TAG" -m "RepoRepublic ${TAG} publish dry-run"
 
 uv run republic release announce --format all >"$REPORT_ROOT_REL/release-announce.stdout.txt"

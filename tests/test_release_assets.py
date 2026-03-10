@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import reporepublic.release_assets as release_assets
 from reporepublic.release_assets import (
     build_release_asset_exports,
     build_release_asset_snapshot,
@@ -40,6 +43,41 @@ def test_build_release_asset_exports_write_report_and_summary(tmp_path: Path) ->
     assert result.asset_summary_path.name == "release-assets-v0.1.1.md"
     assert payload["artifact_outputs"]["asset_summary_path"] == str(result.asset_summary_path)
     assert "# Release asset dry-run for v0.1.1" in summary
+
+
+def test_build_release_asset_snapshot_prefers_target_version_artifacts_for_smoke_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_release_metadata(tmp_path, version="0.1.1")
+    _install_fake_dist(tmp_path, version="0.1.0")
+    _install_fake_dist(tmp_path, version="0.1.1")
+
+    captured: dict[str, str] = {}
+
+    def _fake_smoke_install(*, repo_root: Path, dist_dir: Path, wheel_path: Path | None) -> dict[str, object]:
+        captured["wheel_path"] = str(wheel_path) if wheel_path is not None else ""
+        return {
+            "ran": True,
+            "status": "ok",
+            "command": f"install {wheel_path}",
+            "return_code": 0,
+            "stdout": "",
+            "stderr": "",
+        }
+
+    monkeypatch.setattr(release_assets, "_run_smoke_install", _fake_smoke_install)
+
+    snapshot = build_release_asset_snapshot(
+        repo_root=tmp_path,
+        smoke_install=True,
+    )
+
+    assert snapshot["summary"]["status"] == "clean"
+    assert snapshot["summary"]["target_wheel_count"] == 1
+    assert snapshot["summary"]["target_sdist_count"] == 1
+    assert captured["wheel_path"].endswith("reporepublic-0.1.1-py3-none-any.whl")
+    assert "reporepublic-0.1.1-py3-none-any.whl" in snapshot["smoke_install"]["command"]
 
 
 def _install_release_metadata(repo_root: Path, *, version: str) -> None:

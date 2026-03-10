@@ -93,10 +93,16 @@ def build_release_asset_snapshot(
         dist_dir=resolved_dist_dir,
         target_version=str(target.get("version") or ""),
     )
+    target_version_value = str(target.get("version") or "")
+    smoke_wheel_path = _select_release_artifact(
+        artifacts=artifacts,
+        kind="wheel",
+        target_version=target_version_value,
+    )
     smoke = _run_smoke_install(
         repo_root=resolved_repo_root,
         dist_dir=resolved_dist_dir,
-        wheel_path=next((Path(item["path"]) for item in artifacts if item["kind"] == "wheel"), None),
+        wheel_path=smoke_wheel_path,
     ) if smoke_install else {
         "ran": False,
         "status": "skipped",
@@ -112,6 +118,7 @@ def build_release_asset_snapshot(
         artifacts=artifacts,
         build_result=build_result,
         smoke=smoke,
+        target_version=target_version_value,
     )
     return {
         "meta": {
@@ -309,6 +316,27 @@ def _run_build(repo_root: Path) -> dict[str, Any]:
     }
 
 
+def _select_release_artifact(
+    *,
+    artifacts: list[dict[str, Any]],
+    kind: str,
+    target_version: str,
+) -> Path | None:
+    matching = [
+        Path(item["path"])
+        for item in artifacts
+        if item.get("kind") == kind and item.get("version_matches_target") is True
+    ]
+    if matching:
+        return matching[0]
+    fallback = [
+        Path(item["path"])
+        for item in artifacts
+        if item.get("kind") == kind
+    ]
+    return fallback[0] if fallback else None
+
+
 def _collect_dist_artifacts(
     *,
     dist_dir: Path,
@@ -421,10 +449,21 @@ def _build_release_asset_summary(
     artifacts: list[dict[str, Any]],
     build_result: dict[str, Any],
     smoke: dict[str, Any],
+    target_version: str,
 ) -> dict[str, Any]:
     artifact_count = len(artifacts)
     wheel_count = sum(1 for item in artifacts if item["kind"] == "wheel")
     sdist_count = sum(1 for item in artifacts if item["kind"] == "sdist")
+    target_wheel_count = sum(
+        1
+        for item in artifacts
+        if item["kind"] == "wheel" and item["version_matches_target"] is True
+    )
+    target_sdist_count = sum(
+        1
+        for item in artifacts
+        if item["kind"] == "sdist" and item["version_matches_target"] is True
+    )
     mismatched = [item["name"] for item in artifacts if item["version_matches_target"] is False]
 
     errors: list[str] = []
@@ -435,11 +474,15 @@ def _build_release_asset_summary(
         errors.append("dist directory does not contain release artifacts")
     if wheel_count == 0:
         errors.append("wheel artifact is missing")
+    elif target_wheel_count == 0:
+        errors.append(f"wheel artifact for target version {target_version} is missing")
     if sdist_count == 0:
         errors.append("sdist artifact is missing")
+    elif target_sdist_count == 0:
+        errors.append(f"sdist artifact for target version {target_version} is missing")
     if smoke["status"] == "error":
         errors.append("smoke install failed")
-    if mismatched:
+    if mismatched and target_wheel_count == 0 and target_sdist_count == 0:
         warnings.append("some dist artifacts do not match the target version")
 
     if errors:
@@ -457,6 +500,8 @@ def _build_release_asset_summary(
         "artifact_count": artifact_count,
         "wheel_count": wheel_count,
         "sdist_count": sdist_count,
+        "target_wheel_count": target_wheel_count,
+        "target_sdist_count": target_sdist_count,
         "version_mismatch_count": len(mismatched),
         "warning_count": len(warnings),
         "error_count": len(errors),
