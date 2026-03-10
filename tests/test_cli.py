@@ -3750,6 +3750,22 @@ def test_cli_doctor_exports_snapshot_when_config_is_invalid(tmp_path: Path, monk
     assert payload["codex"]["status"] == "missing"
 
 
+def test_cli_doctor_skips_codex_requirement_for_mock_backend(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    monkeypatch.setattr(app_module.shutil, "which", lambda command: None)
+
+    result = runner.invoke(app, ["doctor", "--format", "json"], catch_exceptions=False)
+
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "doctor.json"
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert "Doctor summary: status=clean" in result.stdout
+    assert payload["summary"]["overall_status"] == "clean"
+    assert payload["codex"]["status"] == "skipped"
+    assert payload["codex"]["required"] is False
+
+
 def test_cli_doctor_reports_local_file_tracker_status(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"

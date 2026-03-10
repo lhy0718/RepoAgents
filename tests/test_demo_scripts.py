@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,20 @@ from repoagents.config import load_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _env_without_codex(tmp_path: Path) -> dict[str, str]:
+    bin_dir = tmp_path / "demo-bin-no-codex"
+    bin_dir.mkdir(exist_ok=True)
+    for name in ("python3", "uv"):
+        target = shutil.which(name)
+        assert target is not None
+        link = bin_dir / name
+        if not link.exists():
+            link.symlink_to(target)
+    return {
+        "PATH": os.pathsep.join([str(bin_dir), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
+    }
 
 
 def test_demo_python_lib_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -21,6 +36,7 @@ def test_demo_python_lib_script_runs_in_temp_workspace(tmp_path: Path) -> None:
         text=True,
         env={
             **os.environ,
+            **_env_without_codex(tmp_path),
             "REPOREPUBLIC_DEMO_DEST": str(dest),
         },
     )
@@ -42,6 +58,7 @@ def test_demo_web_app_script_runs_in_temp_workspace(tmp_path: Path) -> None:
         text=True,
         env={
             **os.environ,
+            **_env_without_codex(tmp_path),
             "REPOREPUBLIC_DEMO_DEST": str(dest),
         },
     )
@@ -383,6 +400,7 @@ def test_demo_live_publish_sandbox_script_rehearses_publish_rollout(tmp_path: Pa
         text=True,
         env={
             **os.environ,
+            **_env_without_codex(tmp_path),
             "REPOREPUBLIC_DEMO_DEST": str(dest),
         },
     )

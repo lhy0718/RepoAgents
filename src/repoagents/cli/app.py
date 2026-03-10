@@ -402,6 +402,7 @@ def doctor_command(
         loaded = None
 
     codex_command = loaded.data.codex.command if loaded else "codex"
+    codex_required = _doctor_requires_codex_command(loaded)
     command_path = shutil.which(codex_command)
     codex_version: str | None = None
     if command_path:
@@ -416,6 +417,9 @@ def doctor_command(
     if command_path:
         if export_formats is None:
             typer.echo(f"Codex command: OK ({command_path}) {codex_version or ''}".rstrip())
+    elif not codex_required:
+        if export_formats is None:
+            typer.echo("Codex command: SKIPPED (llm.mode=mock)")
     elif export_formats is None:
         typer.echo(f"Codex command: MISSING ({codex_command})", err=True)
 
@@ -438,7 +442,7 @@ def doctor_command(
     else:
         working_tree = None
 
-    exit_code = 0 if loaded and command_path else 1
+    exit_code = 0 if loaded and (command_path or not codex_required) else 1
     if loaded and working_tree and _workspace_doctor_has_error(loaded, working_tree):
         exit_code = 1
     if any(check.status == "ERROR" for check in diagnostic_checks):
@@ -452,6 +456,7 @@ def doctor_command(
             codex_command=codex_command,
             command_path=command_path,
             codex_version=codex_version,
+            codex_required=codex_required,
             diagnostic_checks=diagnostic_checks,
             working_tree=working_tree,
             exit_code=exit_code,
@@ -1013,8 +1018,9 @@ def ops_snapshot_command(
     codex_command = loaded.data.codex.command
     command_path = shutil.which(codex_command)
     codex_version = _run_version([codex_command, "--version"]).strip() if command_path else None
+    codex_required = _doctor_requires_codex_command(loaded)
 
-    doctor_exit_code = 0 if command_path else 1
+    doctor_exit_code = 0 if command_path or not codex_required else 1
     if _workspace_doctor_has_error(loaded, working_tree):
         doctor_exit_code = 1
     if any(check.status == "ERROR" for check in diagnostic_checks):
@@ -1029,6 +1035,7 @@ def ops_snapshot_command(
         codex_command=codex_command,
         command_path=command_path,
         codex_version=codex_version,
+        codex_required=codex_required,
         diagnostic_checks=diagnostic_checks,
         working_tree=working_tree,
         exit_code=doctor_exit_code,
@@ -2350,6 +2357,12 @@ def _apply_init_config_overrides(
     )
 
 
+def _doctor_requires_codex_command(loaded: LoadedConfig | None) -> bool:
+    if loaded is None:
+        return True
+    return loaded.data.llm.mode.value == "codex"
+
+
 def _collect_clean_actions(
     loaded: LoadedConfig,
     records: list[RunRecord],
@@ -2952,6 +2965,7 @@ def _build_doctor_snapshot(
     codex_command: str,
     command_path: str | None,
     codex_version: str | None,
+    codex_required: bool,
     diagnostic_checks: list[DiagnosticCheck],
     working_tree: WorkingTreeStatus | None,
     exit_code: int,
@@ -2983,7 +2997,8 @@ def _build_doctor_snapshot(
         },
         "codex": {
             "command": codex_command,
-            "status": "ok" if command_path else "missing",
+            "status": "ok" if command_path else ("skipped" if not codex_required else "missing"),
+            "required": codex_required,
             "path": command_path,
             "version": codex_version,
         },

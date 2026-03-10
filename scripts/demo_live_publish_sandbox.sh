@@ -16,6 +16,34 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 
 pushd "$DEST_DIR" >/dev/null
 
+ensure_demo_codex() {
+  if command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return
+  fi
+
+  local shim_dir="$DEST_DIR/.demo-bin"
+  local shim_path="$shim_dir/codex"
+
+  mkdir -p "$shim_dir"
+  cat >"$shim_path" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'codex demo-shim 0.0.0\n'
+  exit 0
+fi
+
+printf 'codex demo shim only supports --version for offline rehearsal flows.\n' >&2
+exit 1
+EOF
+  chmod +x "$shim_path"
+  printf '%s\n' "$shim_path"
+}
+
+DEMO_CODEX_COMMAND="$(ensure_demo_codex)"
+
 git init -q
 git config user.name "RepoAgents Demo"
 git config user.email "demo@repoagents.local"
@@ -27,7 +55,8 @@ uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-repo acme/sandbox-repo
 
-uv run --project "$ROOT_DIR" python - <<'PY'
+REPOAGENTS_DEMO_CODEX_COMMAND="$DEMO_CODEX_COMMAND" uv run --project "$ROOT_DIR" python - <<'PY'
+import os
 from pathlib import Path
 import yaml
 
@@ -45,6 +74,7 @@ payload["logging"]["json"] = True
 payload["safety"]["allow_write_comments"] = False
 payload["safety"]["allow_open_pr"] = False
 payload["llm"]["mode"] = "codex"
+payload["codex"]["command"] = os.environ["REPOAGENTS_DEMO_CODEX_COMMAND"]
 path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 PY
 
