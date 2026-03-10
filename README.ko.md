@@ -86,6 +86,24 @@ uv run repoagents doctor
 - 로컬 Markdown tracker는 쓰기가 켜져 있으면 publish 제안을 `.ai-repoagents/sync/local-markdown/issue-<id>/` 아래에 stage합니다.
 - `uv run repoagents init --upgrade`는 로컬 managed 파일을 덮어쓰지 않고 scaffold drift를 점검합니다.
 
+### preset 고르기
+
+preset은 핵심 `triage -> planner -> engineer -> reviewer` 파이프라인 자체를 바꾸지 않고, tracker나 backend를 고정하지도 않습니다. 대신 저장소 안에 설치되는 초기 프롬프트, 정책, 워크플로 가이드를 조정해서 “이 저장소에서는 어떤 종류의 변경을 기본값으로 더 조심하고, 무엇을 우선 보게 할지”를 맞춥니다. 잘못 골랐더라도 나중에 `repoagents init --preset <name> --upgrade`로 다시 맞출 수 있습니다.
+
+| preset | 잘 맞는 저장소 | 기본적으로 더 강조하는 것 | 이런 경우 고르기 좋음 |
+| --- | --- | --- | --- |
+| `python-library` | Python 패키지, CLI, API, 백엔드 서비스 | 작은 Python 코드 변경, 집중된 테스트, 패키징 위생, API surface 변경 요약 | 저장소의 중심이 `src/`, `tests/`, `pyproject.toml`에 있거나, 가장 무난한 기본값으로 시작하고 싶을 때 |
+| `web-app` | 프론트엔드 앱, UI가 있는 풀스택 저장소 | 컴포넌트/라우트 단위 변경, 시각적 회귀 경계, env/deploy 설정 주의 | 페이지, 정적 자산, 라우트, 서버/클라이언트 코드가 함께 있고 UI 깨짐과 설정 drift가 중요할 때 |
+| `docs-only` | 문서 사이트, 핸드북 저장소, 스펙 저장소, 예제 중심 문서 프로젝트 | Markdown과 문서 도구, 예제, 복붙 정확성 유지, 명시적 요청 없는 코드 변경 억제 | 저장소의 주된 산출물이 문서이고, 제품 코드 변경은 예외적으로만 허용하고 싶을 때 |
+| `research-project` | 노트북 중심 저장소, 실험 코드, 프로토타입, 리서치 워크플로 | 재현 가능성, 실험 메모, 좁은 변경 범위, 데이터셋/생성 산출물 보존 | 노트북, 일회성 실험, 생성 결과물이 많아서 함부로 정리하거나 덮어쓰면 안 될 때 |
+
+실전 기준으로 고르면:
+
+- 애매하면 `python-library`부터 시작하는 편이 가장 안전합니다.
+- 브라우저/UI 동작이 리뷰 범위에 직접 들어오면 `web-app`이 더 잘 맞습니다.
+- “요청 없이는 제품 코드를 건드리지 않는 것”이 핵심이면 `docs-only`가 좋습니다.
+- 실험 맥락과 산출물 보존이 정리 편의보다 중요하면 `research-project`를 고르면 됩니다.
+
 ### 3. 첫 파이프라인 미리 실행
 
 ```bash

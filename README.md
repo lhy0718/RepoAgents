@@ -86,6 +86,24 @@ Useful setup variations:
 - local Markdown trackers with writes enabled stage publication proposals under `.ai-repoagents/sync/local-markdown/issue-<id>/`.
 - `uv run repoagents init --upgrade` inspects managed scaffold drift without overwriting local managed-file edits.
 
+### Choosing a preset
+
+Presets do not change the core `triage -> planner -> engineer -> reviewer` pipeline, and they do not lock you into a tracker or backend. They tune the initial repo-local prompts, policies, and workflow guidance so the default behavior matches the kind of repository you are installing RepoAgents into. If you pick the wrong one, you can re-run `repoagents init --preset <name> --upgrade` later.
+
+| Preset | Best for | What it biases toward | Pick it when |
+| --- | --- | --- | --- |
+| `python-library` | Python packages, CLIs, APIs, and backend services | Small Python code changes, focused tests, packaging hygiene, and explicit API-surface notes | Most of the repo lives in `src/`, `tests/`, and `pyproject.toml`, or you want the safest default starting point |
+| `web-app` | Frontend apps or full-stack repos with UI and deployment concerns | Focused component/route changes, visual-regression awareness, and careful handling of env/deploy config | The repo ships pages, assets, routes, or server/client code where UI breakage and config drift matter |
+| `docs-only` | Documentation sites, handbook repos, specs, or example-heavy docs projects | Staying inside Markdown, docs tooling, examples, and copy/paste accuracy unless code edits are explicitly requested | The repository is primarily prose and reference material, and maintainers want code changes to stay exceptional |
+| `research-project` | Notebook-heavy repos, experiment code, prototypes, and research workflows | Reproducibility, experiment notes, narrow changes, and caution around datasets or generated artifacts | The repo contains notebooks, one-off experiments, or generated outputs that should not be rewritten casually |
+
+Practical rule of thumb:
+
+- Start with `python-library` if the repo is mostly application or library code and you are unsure.
+- Use `web-app` when browser/UI behavior is part of the review surface, not just implementation detail.
+- Use `docs-only` when “do not wander into product code unless asked” is the main requirement.
+- Use `research-project` when preserving experiment context matters more than keeping the tree tidy.
+
 ### 3. Dry-run the first pipeline
 
 ```bash
