@@ -5,12 +5,31 @@ import json
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
 from repoagents.backend.base import BackendExecutionError, BackendInvocation, BackendRunResult, BackendRunner
 from repoagents.utils.files import write_json_file
 from repoagents.utils.prompting import extract_json_object
+
+
+def build_output_schema(output_model: type[BaseModel]) -> dict[str, Any]:
+    return _strict_json_schema(output_model.model_json_schema())
+
+
+def _strict_json_schema(node: Any) -> Any:
+    if isinstance(node, dict):
+        normalized = {key: _strict_json_schema(value) for key, value in node.items()}
+        if normalized.get("type") == "object" or "properties" in normalized:
+            normalized["additionalProperties"] = False
+            properties = normalized.get("properties", {})
+            if isinstance(properties, dict):
+                normalized["required"] = list(properties.keys())
+        return normalized
+    if isinstance(node, list):
+        return [_strict_json_schema(item) for item in node]
+    return node
 
 
 class CodexBackend(BackendRunner):
@@ -71,7 +90,7 @@ class CodexBackend(BackendRunner):
             temp_root = Path(temp_dir)
             schema_path = temp_root / "schema.json"
             output_path = temp_root / "last-message.json"
-            write_json_file(schema_path, invocation.output_model.model_json_schema())
+            write_json_file(schema_path, build_output_schema(invocation.output_model))
             command = self.build_command(invocation, schema_path, output_path)
             process = await asyncio.create_subprocess_exec(
                 *command,

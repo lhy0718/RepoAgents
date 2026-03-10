@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 import repoagents.backend.codex as codex_module
 from repoagents.backend import BackendExecutionError, BackendInvocation, CodexBackend
@@ -36,6 +37,24 @@ def test_codex_backend_command_builder() -> None:
     assert "--output-schema" in command
     assert "-C" in command
     assert "read-only" in command
+
+
+def test_build_output_schema_sets_additional_properties_false_recursively() -> None:
+    class NestedPayload(BaseModel):
+        summary: str
+
+    class NestedResult(BaseModel):
+        payload: NestedPayload
+        notes: list[str]
+
+    schema = codex_module.build_output_schema(NestedResult)
+
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["payload", "notes"]
+    nested_payload = schema["$defs"]["NestedPayload"]
+    assert nested_payload["type"] == "object"
+    assert nested_payload["additionalProperties"] is False
+    assert nested_payload["required"] == ["summary"]
 
 
 def test_codex_backend_timeout_raises_execution_error(tmp_path: Path, monkeypatch) -> None:
