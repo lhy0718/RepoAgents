@@ -68,6 +68,16 @@ codex --version
 codex login
 ```
 
+`uv sync --dev`를 실행하면 `repoagents` 엔트리포인트는 `.venv/bin/repoagents`에 만들어지지만, 그 경로가 현재 셸의 `PATH`에 자동으로 추가되지는 않습니다. 그래서 이 저장소의 예제는 가상환경을 직접 활성화하지 않아도 되는 `uv run repoagents ...` 형태를 기본으로 사용합니다.
+
+`repoagents`를 바로 입력해서 실행하고 싶다면 다음 중 하나를 사용하면 됩니다.
+
+- `source .venv/bin/activate`로 프로젝트 가상환경 활성화
+- `uv run repoagents ...`로 uv를 통해 실행
+- `uv tool install -e /path/to/RepoAgents`로 전역 uv tool처럼 설치
+
+그리고 이 CLI에서 대상 저장소 스캐폴딩은 `repoagents init`으로 합니다. `repoagents template create ...` 명령은 지원하지 않습니다.
+
 ### 2. 대상 저장소 초기화
 
 ```bash

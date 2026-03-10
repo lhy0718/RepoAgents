@@ -68,6 +68,16 @@ codex --version
 codex login
 ```
 
+After `uv sync --dev`, the `repoagents` entrypoint is available at `.venv/bin/repoagents`, but that path is not added to your shell automatically. The examples in this repo use `uv run repoagents ...` because it works without activating the virtualenv.
+
+If you want to call `repoagents` directly, use one of these options:
+
+- activate the project virtualenv with `source .venv/bin/activate`
+- run through uv with `uv run repoagents ...`
+- install it as a global uv tool with `uv tool install -e /path/to/RepoAgents`
+
+Also note that RepoAgents scaffolds target repositories with `repoagents init`; there is no `repoagents template create ...` command in this CLI.
+
 ### 2. Initialize a target repo
 
 ```bash
