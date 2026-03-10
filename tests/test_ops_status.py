@@ -172,8 +172,8 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "clean",
                 "output_paths": {
-                    "html": str(latest_bundle_dir / "dashboard.html"),
                     "json": str(latest_bundle_dir / "dashboard.json"),
+                    "markdown": str(latest_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 4,
                 "visible_runs": 4,
@@ -275,7 +275,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "issues",
                 "output_paths": {
-                    "html": str(previous_bundle_dir / "dashboard.html"),
+                    "markdown": str(previous_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 2,
                 "visible_runs": 2,

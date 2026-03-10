@@ -121,6 +121,7 @@ uv run repoagents run --dry-run
 uv run repoagents run --once
 uv run repoagents status
 uv run repoagents dashboard
+uv run repoagents dashboard --tui
 uv run repoagents ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
 uv run repoagents ops status --format all
 cat .ai-repoagents/reports/ops/history.json
@@ -177,7 +178,8 @@ The equivalent JSON-inbox flow is `uv run repoagents sync apply --issue 1 --trac
 Use `uv run repoagents sync check --issue 1` to inspect applied manifest integrity, and `uv run repoagents sync repair --issue 1 --dry-run` to preview canonicalization and orphan adoption.
 Use `uv run repoagents sync health --issue 1 --format all` when you want one combined sync-ops snapshot before drilling into `sync check`, `sync repair`, or `clean`.
 Use `uv run repoagents clean --sync-applied --dry-run` to preview manifest-aware retention before pruning old applied handoff groups.
-Use `uv run repoagents dashboard --format all` to review both `Sync handoffs` and `Sync retention`, including prunable groups, prunable bytes, and oldest prunable age.
+Use `uv run repoagents dashboard --tui` to review both `Sync handoffs` and `Sync retention` in the terminal, including prunable groups, prunable bytes, and oldest prunable age. Add `--refresh-seconds 30` if you want the TUI to auto-reload.
+Use `uv run repoagents dashboard --tui` when you want that same posture directly in the terminal with keyboard navigation.
 
 If you want to see an optional role pack in action, use:
 
@@ -223,14 +225,16 @@ codex:
   model: gpt-5.4
 ```
 
-Then export a token and start polling:
+Then authenticate and start polling:
 
 ```bash
-export GITHUB_TOKEN=...
+gh auth login
 uv run repoagents doctor
 uv run repoagents github smoke --require-write-ready
 uv run repoagents run
 ```
+
+RepoAgents automatically reuses `gh auth token` when `GITHUB_TOKEN` is unset. If you prefer an explicit environment variable, or you are configuring CI, use `export GITHUB_TOKEN="$(gh auth token)"` instead.
 
 `github smoke --require-write-ready` now checks default-branch protection, PR review requirements, required status checks, and repo metadata push permission before you enable unattended draft-PR publish.
 
@@ -247,9 +251,8 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - debug artifacts when enabled: `<role>.prompt.txt`, `<role>.raw-output.txt`
 - workspaces: `.ai-repoagents/workspaces/issue-<id>/<run-id>/repo/`
 - run state: `.ai-repoagents/state/runs.json`
-- dashboard: `.ai-repoagents/dashboard/index.html`
-- dashboard JSON snapshot: `.ai-repoagents/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-repoagents/dashboard/index.md`
+- dashboard JSON snapshot: `.ai-repoagents/dashboard/index.json`
 - sync audit reports: `.ai-repoagents/reports/sync-audit.json`, `.ai-repoagents/reports/sync-audit.md`
 - sync health reports: `.ai-repoagents/reports/sync-health.json`, `.ai-repoagents/reports/sync-health.md`
 - ops brief snapshots: `.ai-repoagents/reports/ops-brief.json`, `.ai-repoagents/reports/ops-brief.md`
@@ -282,8 +285,8 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - export a combined sync-ops snapshot: `uv run repoagents sync health --issue 123 --format all`
 - export a sync audit bundle: `uv run repoagents sync audit --format all`
 - regenerate the local dashboard: `uv run repoagents dashboard`
-- generate a dashboard with timed reload: `uv run repoagents dashboard --refresh-seconds 30`
-- export HTML, JSON, and Markdown together: `uv run repoagents dashboard --format all`
+- open the terminal dashboard with timed reload: `uv run repoagents dashboard --tui --refresh-seconds 30`
+- export JSON and Markdown together: `uv run repoagents dashboard --format all`
 
 ## Presets
 

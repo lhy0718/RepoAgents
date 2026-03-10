@@ -170,41 +170,31 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
         loaded,
         limit=10,
         refresh_seconds=30,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     dashboard_json = result.exported_paths["json"].read_text(encoding="utf-8")
     dashboard_markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
     payload = json.loads(dashboard_json)
 
     assert result.total_runs == 1
     assert result.visible_runs == 1
-    assert set(result.exported_paths) == {"html", "json", "markdown"}
-    assert "RepoAgents Operations Dashboard" in html
-    assert "Fix empty input crash" in html
-    assert "Tests did not cover the empty-string branch." in html
-    assert "reviewer" in html
-    assert "https://github.example/demo/repo/issues/1#issuecomment-1" in html
-    assert "Sync handoffs" in html
-    assert "pr-body-proposal" in html
-    assert "metadata_artifact" in html
-    assert "manifest.json" in html
-    assert 'id="run-search"' in html
-    assert 'id="status-filter"' in html
-    assert 'id="refresh-interval"' in html
-    assert 'data-status="failed"' in html
-    assert 'data-default-refresh-seconds="30"' in html
-    assert "window.location.reload()" in html
+    assert result.output_path == result.exported_paths["markdown"]
+    assert set(result.exported_paths) == {"json", "markdown"}
     assert payload["counts"]["total_runs"] == 1
     assert payload["counts"]["total_sync_handoffs"] == 2
     assert payload["runs"][0]["run_id"] == "run-1"
     assert payload["runs"][0]["external_actions"][0]["action"] == "post_comment"
+    assert (
+        payload["runs"][0]["external_actions"][0]["payload"]["url"]
+        == "https://github.example/demo/repo/issues/1#issuecomment-1"
+    )
     assert payload["sync_handoffs"][0]["artifact_role"] == "pr-body-proposal"
     assert payload["sync_handoffs"][0]["normalized_links"][0]["label"] == "metadata_artifact"
     assert payload["sync_handoffs"][0]["manifest_path"] == str(manifest_path)
     assert "# RepoAgents Dashboard Snapshot" in dashboard_markdown
     assert "### Issue #1: Fix empty input crash" in dashboard_markdown
     assert "- status: failed" in dashboard_markdown
+    assert "Tests did not cover the empty-string branch." in dashboard_markdown
     assert "## Sync handoffs" in dashboard_markdown
     assert "- bundle_key: issue:1|head:repoagents/issue-1-fix-empty-input" in dashboard_markdown
 
@@ -284,16 +274,11 @@ def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> No
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert "Sync retention" in html
-    assert "Retention posture" in html
-    assert "status-prunable" in html
-    assert "Prunable groups" in html
     assert payload["sync_retention"]["keep_groups_per_issue"] == 1
     assert payload["sync_retention"]["prunable_groups"] == 1
     assert payload["sync_retention"]["entries"][0]["status"] == "prunable"
@@ -317,42 +302,10 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
-
-    assert "Reports" in html
-    assert "Sync audit" in html
-    assert "Cleanup preview" in html
-    assert 'class="hero hero-issues"' in html
-    assert "Report freshness needs action" in html
-    assert "freshness_policy unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
-    assert "Overall reports are issues: stale reports need regeneration or operator review." in html
-    assert "Cleanup reports are issues: stale reports need regeneration or operator review." in html
-    assert "Report freshness" in html
-    assert "Aging reports" in html
-    assert "Future reports" in html
-    assert "Cleanup freshness" in html
-    assert "Cleanup aging reports" in html
-    assert "Cleanup future reports" in html
-    assert "Stale cleanup reports" in html
-    assert "aging 1" in html
-    assert "/ 2 total" in html
-    assert "fresh 0" in html
-    assert "stale 1" in html
-    assert "status-attention" in html
-    assert "status-preview" in html
-    assert "pending_artifacts" in html
-    assert "action_count" in html
-    assert "issues_with_findings" in html
-    assert "missing_manifest=1" in html
-    assert "missing_manifest (1): run `repoagents sync repair --dry-run` to rebuild manifest state from archived files" in html
-    assert "cleanup_report_mismatches:</strong> 1" in html
-    assert "Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in html
-    assert 'href="#report-cleanup-preview"' in html
-    assert 'href="#report-sync-audit"' in html
     assert payload["counts"]["available_reports"] == 2
     assert payload["counts"]["aging_reports"] == 1
     assert payload["counts"]["future_reports"] == 0
@@ -415,15 +368,9 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert payload["reports"]["entries"][1]["label"] == "Cleanup preview"
     assert payload["reports"]["entries"][1]["freshness_status"] == "stale"
     assert payload["reports"]["entries"][1]["age_seconds"] is not None
-    assert "related report details" in html
-    assert "mismatches" in html
     assert payload["reports"]["entries"][1]["metrics"]["action_count"] == 3
     assert payload["reports"]["entries"][1]["policy"]["stale_issues_threshold"] == 1
     assert payload["reports"]["entries"][1]["referenced_by"][0]["key"] == "sync-audit"
-    assert "freshness stale" in html
-    assert "Policy context" in html
-    assert "unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
-    assert "unknown_issues_threshold:</strong> 1" in html
     assert "## Policy" in markdown
     assert "- report_freshness_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
     assert "- stale_issues_threshold: 1" in markdown
@@ -472,19 +419,10 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
-
-    assert "Ops snapshots" in html
-    assert "Latest ops snapshot" in html
-    assert "Indexed ops snapshots" in html
-    assert "ops latest" in html
-    assert "ops history" in html
-    assert "20260309T101500Z" in html
-    assert "Dropped ops entries" in html
     assert payload["counts"]["ops_snapshot_entries"] == 2
     assert payload["counts"]["ops_snapshot_archives"] == 1
     assert payload["counts"]["ops_snapshot_dropped_entries"] == 1
@@ -530,9 +468,8 @@ def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
@@ -540,8 +477,6 @@ def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
         entry for entry in payload["reports"]["entries"] if entry["key"] == "ops-status"
     )
 
-    assert "Ops status" in html
-    assert "report-ops-status" in html
     assert payload["reports"]["total"] == 3
     assert ops_status_entry["status"] == "clean"
     assert ops_status_entry["metrics"]["related_report_count"] == 2
@@ -567,9 +502,8 @@ def test_build_dashboard_surfaces_sync_health_report_and_relations(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
@@ -577,8 +511,6 @@ def test_build_dashboard_surfaces_sync_health_report_and_relations(
         entry for entry in payload["reports"]["entries"] if entry["key"] == "sync-health"
     )
 
-    assert "Sync health" in html
-    assert "report-sync-health" in html
     assert sync_health_entry["status"] == "attention"
     assert sync_health_entry["summary"] == "pending=2 integrity_issues=1 cleanup_actions=3"
     assert sync_health_entry["metrics"]["repair_changed_reports"] == 1
@@ -608,9 +540,8 @@ def test_build_dashboard_surfaces_github_smoke_report(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
@@ -618,8 +549,6 @@ def test_build_dashboard_surfaces_github_smoke_report(
         entry for entry in payload["reports"]["entries"] if entry["key"] == "github-smoke"
     )
 
-    assert "GitHub smoke" in html
-    assert "report-github-smoke" in html
     assert github_smoke_entry["status"] == "attention"
     assert github_smoke_entry["metrics"]["branch_policy_status"] == "warn"
     assert github_smoke_entry["details"]["default_branch"] == "main"
@@ -653,17 +582,11 @@ def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Pa
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert "Unknown freshness reports" in html
-    assert "Cleanup unknown freshness reports" in html
-    assert 'class="hero hero-issues"' in html
-    assert "Report freshness needs action" in html
-    assert "unknown 1" in html
     assert payload["counts"]["unknown_reports"] == 1
     assert payload["counts"]["cleanup_unknown_reports"] == 1
     assert payload["reports"]["unknown_total"] == 1
@@ -714,15 +637,11 @@ def test_build_dashboard_applies_report_freshness_policy_thresholds(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert 'class="hero hero-attention"' in html
-    assert "Report freshness needs follow-up" in html
-    assert "freshness_policy unknown&gt;=2 stale&gt;=2 future&gt;=2 aging&gt;=2" in html
     assert payload["policy"]["summary"] == "unknown>=2 stale>=2 future>=2 aging>=2"
     assert payload["policy"]["report_freshness_policy"]["unknown_issues_threshold"] == 2
     assert payload["reports"]["freshness_severity"] == "attention"
@@ -787,17 +706,11 @@ def test_build_dashboard_detects_embedded_policy_drift(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     snapshot = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert "Policy drift reports" in html
-    assert "refresh raw report exports to align embedded policy metadata" in html
-    assert "re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all`" in html
-    assert "embedded policy drift" in html
-    assert "embedded policy differs from current config" in html
     assert snapshot["counts"]["policy_drift_reports"] == 1
     assert snapshot["counts"]["policy_embedded_reports"] == 1
     assert snapshot["counts"]["policy_metadata_missing_reports"] == 1
@@ -874,15 +787,11 @@ def test_build_dashboard_escalates_hero_when_only_policy_drift_exists(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     snapshot = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert 'class="hero hero-attention"' in html
-    assert "Report policy drift needs follow-up" in html
-    assert "Policy drift" in html
     assert snapshot["reports"]["freshness_severity"] == "clean"
     assert snapshot["reports"]["policy_drift_severity"] == "attention"
     assert snapshot["reports"]["report_summary_severity"] == "attention"
@@ -1009,17 +918,11 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
     result = build_dashboard(
         loaded,
         limit=10,
-        formats=("html", "json", "markdown"),
+        formats=("json", "markdown"),
     )
-    html = result.output_path.read_text(encoding="utf-8")
     payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
     markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
 
-    assert "Cleanup preview: embedded policy differs from current config" in html
-    assert "Sync audit: embedded policy differs from current config" in html
-    assert "related report details" in html
-    assert "policy drifts" in html
-    assert "refresh raw report exports to align embedded policy metadata" in html
     assert payload["reports"]["entries"][0]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["details"]["related_report_policy_drifts"] == 1
@@ -1333,8 +1236,8 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "clean",
                 "output_paths": {
-                    "html": str(latest_bundle_dir / "dashboard.html"),
                     "json": str(latest_bundle_dir / "dashboard.json"),
+                    "markdown": str(latest_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 4,
                 "visible_runs": 4,
@@ -1423,7 +1326,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "issues",
                 "output_paths": {
-                    "html": str(previous_bundle_dir / "dashboard.html"),
+                    "markdown": str(previous_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 2,
                 "visible_runs": 2,

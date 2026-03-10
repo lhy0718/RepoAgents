@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
 from typing import Any
 from urllib.parse import urlparse
 
 from repoagents.config import LoadedConfig
+from repoagents.github_auth import resolve_github_token
 from repoagents.models import IssueRef
 from repoagents.models.domain import utc_now
 from repoagents.tracker import build_tracker
@@ -79,9 +77,7 @@ def resolve_github_smoke_export_paths(
 def collect_github_auth_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
     tracker = loaded.data.tracker
     token_env = tracker.token_env
-    token_present = bool(os.getenv(token_env))
-    gh_path = shutil.which("gh")
-    gh_authenticated = False
+    resolution = resolve_github_token(token_env)
 
     if tracker.mode.value == "fixture":
         return {
@@ -90,13 +86,13 @@ def collect_github_auth_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
             "hint": None,
             "source": "fixture",
             "token_env": token_env,
-            "token_present": token_present,
-            "gh_path": gh_path,
-            "gh_authenticated": False,
+            "token_present": resolution.token_present,
+            "gh_path": resolution.gh_path,
+            "gh_authenticated": resolution.gh_authenticated,
             "requires_token": False,
         }
 
-    if token_present:
+    if resolution.source == "token_env":
         return {
             "status": "ok",
             "message": f"{token_env} is set",
@@ -104,43 +100,50 @@ def collect_github_auth_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
             "source": "token_env",
             "token_env": token_env,
             "token_present": True,
-            "gh_path": gh_path,
+            "gh_path": resolution.gh_path,
             "gh_authenticated": False,
             "requires_token": True,
         }
 
-    if gh_path:
-        completed = subprocess.run(
-            ["gh", "auth", "status", "--hostname", "github.com"],
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=10,
-        )
-        gh_authenticated = completed.returncode == 0
-        if gh_authenticated:
-            return {
-                "status": "warn",
-                "message": (
-                    f"gh auth is available via {gh_path}, but tracker.mode=rest still "
-                    f"requires {token_env}"
-                ),
-                "hint": f"Export {token_env} before running live GitHub tracker operations.",
-                "source": "gh_cli_only",
-                "token_env": token_env,
-                "token_present": False,
-                "gh_path": gh_path,
-                "gh_authenticated": True,
-                "requires_token": True,
-            }
+    if resolution.source == "gh_cli":
+        gh_path = resolution.gh_path or "gh"
+        return {
+            "status": "ok",
+            "message": f"using `gh auth token` via {gh_path}",
+            "hint": (
+                f"RepoAgents will keep using `gh auth token` while {token_env} is unset. "
+                f"Export {token_env} only when you need a non-interactive environment."
+            ),
+            "source": "gh_cli",
+            "token_env": token_env,
+            "token_present": True,
+            "gh_path": resolution.gh_path,
+            "gh_authenticated": True,
+            "requires_token": True,
+        }
+
+    if resolution.gh_path and resolution.gh_authenticated:
         return {
             "status": "warn",
-            "message": "gh is installed but not authenticated",
-            "hint": f"Run `gh auth login` and export {token_env} for REST tracker access.",
+            "message": "`gh auth token` did not return a usable GitHub token",
+            "hint": f"Run `gh auth refresh -h github.com` or export {token_env} for REST tracker access.",
             "source": "missing",
             "token_env": token_env,
             "token_present": False,
-            "gh_path": gh_path,
+            "gh_path": resolution.gh_path,
+            "gh_authenticated": True,
+            "requires_token": True,
+        }
+
+    if resolution.gh_path:
+        return {
+            "status": "warn",
+            "message": "gh is installed but not authenticated",
+            "hint": f"Run `gh auth login` or export {token_env} for REST tracker access.",
+            "source": "missing",
+            "token_env": token_env,
+            "token_present": False,
+            "gh_path": resolution.gh_path,
             "gh_authenticated": False,
             "requires_token": True,
         }
@@ -148,7 +151,7 @@ def collect_github_auth_snapshot(loaded: LoadedConfig) -> dict[str, Any]:
     return {
         "status": "warn",
         "message": f"{token_env} is not set",
-        "hint": f"Set {token_env} for live GitHub REST access.",
+        "hint": f"Run `gh auth login` or set {token_env} for live GitHub REST access.",
         "source": "missing",
         "token_env": token_env,
         "token_present": False,
@@ -642,12 +645,12 @@ def collect_github_publish_readiness(
 
     if write_comments_enabled and not token_ready:
         comment_writes_ready = False
-        warnings.append(f"comment writes require {tracker.token_env}")
+        warnings.append(f"comment writes require GitHub auth (`gh auth login` or {tracker.token_env})")
 
     if open_pr_enabled:
         if not token_ready:
             pr_writes_ready = False
-            warnings.append(f"PR publish requires {tracker.token_env}")
+            warnings.append(f"PR publish requires GitHub auth (`gh auth login` or {tracker.token_env})")
         origin_status = origin.get("status")
         if origin_status != "ok":
             pr_writes_ready = False

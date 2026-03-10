@@ -45,7 +45,7 @@ def test_demo_python_lib_script_runs_in_temp_workspace(tmp_path: Path) -> None:
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
 
 
 def test_demo_web_app_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_demo_web_app_script_runs_in_temp_workspace(tmp_path: Path) -> None:
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
 
 
 def test_demo_local_file_tracker_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_demo_local_file_tracker_script_runs_in_temp_workspace(tmp_path: Path) -
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
 
 
 def test_demo_local_markdown_tracker_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_demo_local_markdown_tracker_script_runs_in_temp_workspace(tmp_path: Pat
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
 
 
 def test_demo_local_markdown_sync_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -132,7 +132,7 @@ def test_demo_local_markdown_sync_script_runs_in_temp_workspace(tmp_path: Path) 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert sync_dir.exists()
     assert not list(sync_dir.glob("*-pr-body.md"))
     assert applied_dir.exists()
@@ -168,7 +168,7 @@ def test_demo_local_file_sync_script_runs_in_temp_workspace(tmp_path: Path) -> N
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert sync_dir.exists()
     assert applied_dir.exists()
     assert list(applied_dir.glob("*-comment.md"))
@@ -196,7 +196,7 @@ def test_demo_qa_role_pack_script_runs_in_temp_workspace(tmp_path: Path) -> None
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-1/*/qa.json"))
     assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-1/*/qa.md"))
 
@@ -219,7 +219,7 @@ def test_demo_docs_maintainer_pack_script_runs_in_temp_workspace(tmp_path: Path)
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
     assert (dest / ".ai-repoagents" / "artifacts").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert (dest / ".ai-repoagents" / "prompts" / "planner.txt.j2").exists()
     assert (dest / ".ai-repoagents" / "policies" / "scope-policy.md").read_text(encoding="utf-8").startswith(
         "# Scope Policy\n\nPack: `docs-maintainer-pack`"
@@ -246,7 +246,7 @@ def test_demo_webhook_receiver_script_runs_in_temp_workspace(tmp_path: Path) -> 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert list((dest / ".ai-repoagents" / "inbox" / "webhooks").glob("*.json"))
 
 
@@ -269,7 +269,7 @@ def test_demo_webhook_signature_receiver_script_runs_in_temp_workspace(tmp_path:
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert list((dest / ".ai-repoagents" / "inbox" / "webhooks").glob("*.json"))
 
 
@@ -291,7 +291,7 @@ def test_demo_live_ops_script_prepares_live_blueprint(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".git").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert (dest / ".ai-repoagents" / "dashboard" / "index.json").exists()
     assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert (dest / ".ai-repoagents" / "reports" / "github-smoke.json").exists()
@@ -411,7 +411,7 @@ def test_demo_live_publish_sandbox_script_rehearses_publish_rollout(tmp_path: Pa
     assert "Sandbox rollout reports:" in completed.stdout
     assert "Sandbox execution reports:" in completed.stdout
     assert (dest / ".git").exists()
-    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert (dest / ".ai-repoagents" / "dashboard" / "index.json").exists()
     assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
     assert (dest / ".ai-repoagents" / "reports" / "doctor.json").exists()

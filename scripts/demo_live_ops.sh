@@ -56,7 +56,7 @@ REPOREPUBLIC_PROJECT_ROOT="$ROOT_DIR" \
 REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-repoagents/reports/ops/live-handoff-demo" \
   bash ops/build-handoff.sh
 uv run --project "$ROOT_DIR" repoagents ops status --format all
-uv run --project "$ROOT_DIR" repoagents dashboard --refresh-seconds 30 --format all
+uv run --project "$ROOT_DIR" repoagents dashboard --format all
 
 popd >/dev/null
 

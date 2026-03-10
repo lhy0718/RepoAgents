@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from repoagents.config.models import TrackerMode
+from repoagents.github_auth import GitHubTokenResolution, resolve_github_token
 from repoagents.tracker import build_tracker
 from repoagents.tracker.github import GitHubTracker, _redact_remote_url
 from repoagents.tracker.local_file import LocalFileTracker
@@ -225,6 +226,45 @@ def test_github_tracker_get_repo_info() -> None:
     payload = asyncio.run(run_flow())
     assert payload["full_name"] == "demo/repo"
     assert payload["default_branch"] == "main"
+
+
+def test_github_tracker_uses_gh_auth_token_when_env_missing(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer gh-token"
+        assert str(request.url).endswith("/repos/demo/repo/issues?state=open&per_page=100&page=1")
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr(
+        "repoagents.tracker.github.resolve_github_token",
+        lambda token_env: GitHubTokenResolution(
+            token="gh-token",
+            source="gh_cli",
+            token_env=token_env,
+            gh_path="/opt/test/gh",
+            gh_authenticated=True,
+        ),
+    )
+
+    tracker = GitHubTracker(
+        repo="demo/repo",
+        api_url="https://api.github.com",
+        token_env="GITHUB_TOKEN",
+        repo_root=Path.cwd(),
+        mode=TrackerMode.REST,
+        fixtures_path=None,
+        allow_write_comments=True,
+        allow_open_pr=True,
+        dry_run=False,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    async def run_flow():
+        payload = await tracker.list_open_issues()
+        await tracker.aclose()
+        return payload
+
+    payload = asyncio.run(run_flow())
+    assert payload == []
 
 
 def test_github_tracker_get_branch_info_and_protection() -> None:
@@ -883,11 +923,11 @@ class _SpyLogger:
 )
 def test_github_tracker_live_read_only() -> None:
     repo = os.getenv("REPOREPUBLIC_GITHUB_TEST_REPO") or os.getenv("GITHUB_TEST_REPO")
-    token = os.getenv("GITHUB_TOKEN")
+    token = resolve_github_token("GITHUB_TOKEN").token
     issue_id_raw = os.getenv("REPOREPUBLIC_GITHUB_TEST_ISSUE") or os.getenv("GITHUB_TEST_ISSUE")
 
     if not token:
-        pytest.skip("GITHUB_TOKEN is required for the live GitHub tracker test.")
+        pytest.skip("Run `gh auth login` or set GITHUB_TOKEN for the live GitHub tracker test.")
     if not repo:
         pytest.skip(
             "Set REPOREPUBLIC_GITHUB_TEST_REPO (or GITHUB_TEST_REPO) to a readable repo slug."
@@ -935,11 +975,11 @@ def _load_live_github_test_context(
     issue_envs: tuple[str, ...] = (),
     require_issue: bool = False,
 ) -> tuple[str, str, int | None]:
-    token = os.getenv("GITHUB_TOKEN")
+    token = resolve_github_token("GITHUB_TOKEN").token
     repo = next((os.getenv(name) for name in repo_envs if os.getenv(name)), None)
     issue_raw = next((os.getenv(name) for name in issue_envs if os.getenv(name)), None)
     if not token:
-        pytest.skip("GITHUB_TOKEN is required for the live GitHub publish test.")
+        pytest.skip("Run `gh auth login` or set GITHUB_TOKEN for the live GitHub publish test.")
     if not repo:
         pytest.skip(
             "Set one of "

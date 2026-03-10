@@ -21,13 +21,12 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
     doctor_md = bundle_dir / "doctor.md"
     status_json = bundle_dir / "status.json"
     status_md = bundle_dir / "status.md"
-    dashboard_html = bundle_dir / "dashboard.html"
     dashboard_json = bundle_dir / "dashboard.json"
     dashboard_md = bundle_dir / "dashboard.md"
     sync_json = bundle_dir / "sync-audit.json"
     sync_md = bundle_dir / "sync-audit.md"
 
-    for path in (doctor_json, doctor_md, status_json, status_md, dashboard_html, dashboard_md, sync_json, sync_md):
+    for path in (doctor_json, doctor_md, status_json, status_md, dashboard_md, sync_json, sync_md):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("ok\n", encoding="utf-8")
     dashboard_json.write_text(
@@ -66,10 +65,10 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
             kind="status",
         ),
         dashboard_result=DashboardBuildResult(
-            output_path=dashboard_html,
+            output_path=dashboard_md,
             total_runs=4,
             visible_runs=4,
-            exported_paths={"html": dashboard_html, "json": dashboard_json, "markdown": dashboard_md},
+            exported_paths={"json": dashboard_json, "markdown": dashboard_md},
         ),
         sync_result=SyncAuditBuildResult(
             output_paths={"json": sync_json, "markdown": sync_md},
@@ -123,7 +122,6 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     doctor_md = bundle_dir / "doctor.md"
     status_json = bundle_dir / "status.json"
     status_md = bundle_dir / "status.md"
-    dashboard_html = bundle_dir / "dashboard.html"
     dashboard_json = bundle_dir / "dashboard.json"
     dashboard_md = bundle_dir / "dashboard.md"
     cleanup_preview_json = bundle_dir / "cleanup-preview.json"
@@ -144,7 +142,6 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
         doctor_md,
         status_json,
         status_md,
-        dashboard_html,
         dashboard_json,
         dashboard_md,
         cleanup_preview_json,
@@ -187,10 +184,10 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
             kind="status",
         ),
         dashboard_result=DashboardBuildResult(
-            output_path=dashboard_html,
+            output_path=dashboard_md,
             total_runs=2,
             visible_runs=2,
-            exported_paths={"html": dashboard_html, "json": dashboard_json, "markdown": dashboard_md},
+            exported_paths={"json": dashboard_json, "markdown": dashboard_md},
         ),
         sync_result=SyncAuditBuildResult(
             output_paths={"json": sync_json, "markdown": sync_md},
@@ -306,7 +303,6 @@ def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_
     doctor_md = bundle_dir / "doctor.md"
     status_json = bundle_dir / "status.json"
     status_md = bundle_dir / "status.md"
-    dashboard_html = bundle_dir / "dashboard.html"
     dashboard_json = bundle_dir / "dashboard.json"
     dashboard_md = bundle_dir / "dashboard.md"
     sync_json = bundle_dir / "sync-audit.json"
@@ -321,7 +317,6 @@ def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_
         doctor_md,
         status_json,
         status_md,
-        dashboard_html,
         dashboard_json,
         dashboard_md,
         sync_json,
@@ -360,10 +355,10 @@ def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_
             kind="status",
         ),
         dashboard_result=DashboardBuildResult(
-            output_path=dashboard_html,
+            output_path=dashboard_md,
             total_runs=1,
             visible_runs=1,
-            exported_paths={"html": dashboard_html, "json": dashboard_json, "markdown": dashboard_md},
+            exported_paths={"json": dashboard_json, "markdown": dashboard_md},
         ),
         sync_result=SyncAuditBuildResult(
             output_paths={"json": sync_json, "markdown": sync_md},
@@ -422,7 +417,6 @@ def test_build_ops_snapshot_bundle_includes_github_smoke_component_and_links(tmp
     doctor_md = bundle_dir / "doctor.md"
     status_json = bundle_dir / "status.json"
     status_md = bundle_dir / "status.md"
-    dashboard_html = bundle_dir / "dashboard.html"
     dashboard_json = bundle_dir / "dashboard.json"
     dashboard_md = bundle_dir / "dashboard.md"
     sync_json = bundle_dir / "sync-audit.json"
@@ -439,7 +433,6 @@ def test_build_ops_snapshot_bundle_includes_github_smoke_component_and_links(tmp
         doctor_md,
         status_json,
         status_md,
-        dashboard_html,
         dashboard_json,
         dashboard_md,
         sync_json,
@@ -480,10 +473,10 @@ def test_build_ops_snapshot_bundle_includes_github_smoke_component_and_links(tmp
             kind="status",
         ),
         dashboard_result=DashboardBuildResult(
-            output_path=dashboard_html,
+            output_path=dashboard_md,
             total_runs=1,
             visible_runs=1,
-            exported_paths={"html": dashboard_html, "json": dashboard_json, "markdown": dashboard_md},
+            exported_paths={"json": dashboard_json, "markdown": dashboard_md},
         ),
         sync_result=SyncAuditBuildResult(
             output_paths={"json": sync_json, "markdown": sync_md},
@@ -608,7 +601,7 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
         doctor_result=OperatorReportBuildResult(output_paths={}, kind="doctor"),
         status_snapshot={"summary": {"total_runs": 1, "selected_runs": 1}, "report_health": {"hero": {"severity": "clean"}}},
         status_result=OperatorReportBuildResult(output_paths={}, kind="status"),
-        dashboard_result=DashboardBuildResult(output_path=bundle_one / "dashboard.html", total_runs=1, visible_runs=1, exported_paths={}),
+        dashboard_result=DashboardBuildResult(output_path=bundle_one / "dashboard.md", total_runs=1, visible_runs=1, exported_paths={}),
         sync_result=SyncAuditBuildResult(
             output_paths={},
             overall_status="clean",
@@ -639,7 +632,7 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
         doctor_result=OperatorReportBuildResult(output_paths={}, kind="doctor"),
         status_snapshot={"summary": {"total_runs": 1, "selected_runs": 1}, "report_health": {"hero": {"severity": "clean"}}},
         status_result=OperatorReportBuildResult(output_paths={}, kind="status"),
-        dashboard_result=DashboardBuildResult(output_path=bundle_two / "dashboard.html", total_runs=1, visible_runs=1, exported_paths={}),
+        dashboard_result=DashboardBuildResult(output_path=bundle_two / "dashboard.md", total_runs=1, visible_runs=1, exported_paths={}),
         sync_result=SyncAuditBuildResult(
             output_paths={},
             overall_status="issues",
@@ -724,7 +717,7 @@ def test_build_ops_snapshot_index_preserves_additional_dropped_entries(tmp_path:
         doctor_result=OperatorReportBuildResult(output_paths={}, kind="doctor"),
         status_snapshot={"summary": {"total_runs": 1, "selected_runs": 1}, "report_health": {"hero": {"severity": "clean"}}},
         status_result=OperatorReportBuildResult(output_paths={}, kind="status"),
-        dashboard_result=DashboardBuildResult(output_path=bundle_dir / "dashboard.html", total_runs=1, visible_runs=1, exported_paths={}),
+        dashboard_result=DashboardBuildResult(output_path=bundle_dir / "dashboard.md", total_runs=1, visible_runs=1, exported_paths={}),
         sync_result=SyncAuditBuildResult(
             output_paths={},
             overall_status="clean",

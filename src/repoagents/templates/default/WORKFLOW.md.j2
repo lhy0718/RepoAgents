@@ -25,7 +25,8 @@ RepoAgents runs an issue-driven maintainer pipeline in this repository.
 
 ## Operator notes
 
-- Use `repoagents doctor` to validate setup.
+- Use `uv run repoagents doctor` to validate setup.
+- For live GitHub trackers, run `gh auth login`; RepoAgents will reuse `gh auth token` when `GITHUB_TOKEN` is unset.
 - `repoagents run` checks the repository dirty-working-tree policy before starting.
 - Use `repoagents run --dry-run` to preview issue selection and role execution.
 - Use `repoagents status` to inspect persisted run state.

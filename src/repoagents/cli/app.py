@@ -29,6 +29,8 @@ from repoagents.dashboard import (
     build_report_health_snapshot,
     normalize_dashboard_formats,
 )
+from repoagents.dashboard_tui import run_dashboard_tui
+from repoagents.github_auth import resolve_github_token
 from repoagents.github_health import (
     build_github_smoke_exports,
     build_github_smoke_snapshot,
@@ -903,15 +905,42 @@ def dashboard_command(
         "--refresh-seconds",
         min=0,
         max=3600,
-        help="Default browser auto-refresh interval embedded into the dashboard. 0 disables it.",
+        help="Dashboard refresh interval. For TUI it controls auto-reload; for exported snapshots it is recorded in metadata. 0 disables it.",
+    ),
+    tui: bool = typer.Option(
+        False,
+        "--tui",
+        help="Open the interactive terminal dashboard instead of exporting files.",
     ),
     format: list[str] | None = typer.Option(
         None,
         "--format",
-        help="Repeat to export html, json, markdown, or all. Defaults to html.",
+        help="Repeat to export json, markdown, or all. Defaults to markdown in non-interactive mode.",
     ),
 ) -> None:
     loaded = _load_or_exit()
+    auto_tui = (
+        not tui
+        and output is None
+        and not format
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    )
+    if tui or auto_tui:
+        if output is not None:
+            raise typer.BadParameter("`--output` cannot be combined with `--tui`.", param_hint="--output")
+        if format:
+            raise typer.BadParameter("`--format` cannot be combined with `--tui`.", param_hint="--format")
+        try:
+            run_dashboard_tui(
+                loaded,
+                limit=limit,
+                refresh_seconds=refresh_seconds,
+            )
+        except RuntimeError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        return
     output_path = loaded.resolve(output) if output is not None else None
     try:
         formats = normalize_dashboard_formats(format)
@@ -1098,10 +1127,10 @@ def ops_snapshot_command(
 
     dashboard_result = build_dashboard(
         loaded,
-        output_path=bundle_root / "dashboard.html",
+        output_path=bundle_root / "dashboard.md",
         limit=dashboard_limit,
         refresh_seconds=refresh_seconds,
-        formats=("html", "json", "markdown"),
+        formats=("markdown", "json"),
     )
     sync_result = build_sync_audit_report(
         loaded,
@@ -3033,15 +3062,15 @@ def _print_tracker_status(loaded: LoadedConfig) -> None:
             fixture_path = loaded.resolve(tracker.fixtures_path or "")
             typer.echo(f"Fixture issues: {'OK' if fixture_path.exists() else 'MISSING'} ({fixture_path})")
         else:
-            token_present = bool(os.getenv(tracker.token_env))
-            typer.echo(
-                "GitHub auth: "
-                + (
-                    f"{tracker.token_env} available for REST API access"
-                    if token_present
-                    else f"set {tracker.token_env} for live REST API access"
+            auth = collect_github_auth_snapshot(loaded)
+            if str(auth.get("status") or "").lower() == "ok":
+                typer.echo(f"GitHub auth: ready ({auth.get('message', 'unknown GitHub auth state')})")
+            else:
+                hint = auth.get("hint") or f"Run `gh auth login` or set {tracker.token_env}."
+                typer.echo(
+                    "GitHub auth: "
+                    f"{auth.get('message', 'unknown GitHub auth state')}; {hint}"
                 )
-            )
         return
 
     tracker_path = loaded.resolve(tracker.path or "issues.json")
@@ -3851,9 +3880,9 @@ def _probe_github_network(loaded: LoadedConfig) -> DiagnosticCheck:
             message="configured GitHub smoke fixture bypasses live GitHub network probes",
         )
     headers = {"Accept": "application/vnd.github+json"}
-    token = os.getenv(loaded.data.tracker.token_env)
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    resolution = resolve_github_token(loaded.data.tracker.token_env)
+    if resolution.token:
+        headers["Authorization"] = f"Bearer {resolution.token}"
     url = f"{loaded.data.tracker.api_url.rstrip('/')}/rate_limit"
     try:
         response = httpx.get(
@@ -3895,7 +3924,7 @@ def _probe_github_repo_access(
             auth = auth_snapshot or collect_github_auth_snapshot(loaded)
             token_env = loaded.data.tracker.token_env
             hint = (
-                f"Set {token_env} for private repos or verify tracker.repo is readable."
+                f"Run `gh auth login` or set {token_env} for private repos, or verify tracker.repo is readable."
                 if not auth.get("token_present")
                 else "Verify tracker.repo and token permissions."
             )
@@ -3914,9 +3943,9 @@ def _probe_github_repo_access(
         )
     headers = {"Accept": "application/vnd.github+json"}
     token_env = loaded.data.tracker.token_env
-    token = os.getenv(token_env)
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    resolution = resolve_github_token(token_env)
+    if resolution.token:
+        headers["Authorization"] = f"Bearer {resolution.token}"
     url = f"{loaded.data.tracker.api_url.rstrip('/')}/repos/{loaded.data.tracker.repo}"
     try:
         response = httpx.get(
@@ -3935,7 +3964,7 @@ def _probe_github_repo_access(
     if response.status_code >= 400:
         auth = auth_snapshot or collect_github_auth_snapshot(loaded)
         hint = (
-            f"Set {token_env} for private repos or verify tracker.repo is readable."
+            f"Run `gh auth login` or set {token_env} for private repos, or verify tracker.repo is readable."
             if not auth.get("token_present")
             else "Verify tracker.repo and token permissions."
         )

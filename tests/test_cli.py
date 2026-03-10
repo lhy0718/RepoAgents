@@ -1052,7 +1052,7 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     assert payload["handoff_brief"]["severity"] == "clean"
     assert payload["components"]["doctor"]["status"] == "clean"
     assert payload["components"]["status"]["selected_runs"] == 1
-    assert payload["components"]["dashboard"]["output_paths"]["html"].endswith("dashboard.html")
+    assert payload["components"]["dashboard"]["output_paths"]["markdown"].endswith("dashboard.md")
     assert payload["components"]["sync_audit"]["status"] == "clean"
     assert payload["landing"]["html_path"].endswith("index.html")
     assert payload["landing"]["markdown_path"].endswith("README.md")
@@ -1576,6 +1576,50 @@ def test_cli_github_smoke_exports_json_and_markdown(
     assert payload["repo_access"]["full_name"] == "demo/repo"
     assert payload["sampled_issue"]["comment_count"] == 1
     assert "# GitHub smoke report" in report_markdown.read_text(encoding="utf-8")
+
+
+def test_cli_dashboard_tui_invokes_terminal_dashboard(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_repo)
+    called: dict[str, object] = {}
+
+    def fake_run_dashboard_tui(loaded, *, limit: int, refresh_seconds: int) -> None:
+        called["repo_root"] = loaded.repo_root
+        called["limit"] = limit
+        called["refresh_seconds"] = refresh_seconds
+
+    monkeypatch.setattr(app_module, "run_dashboard_tui", fake_run_dashboard_tui)
+
+    result = runner.invoke(
+        app,
+        ["dashboard", "--tui", "--limit", "7", "--refresh-seconds", "15"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert called == {
+        "repo_root": demo_repo,
+        "limit": 7,
+        "refresh_seconds": 15,
+    }
+
+
+def test_cli_dashboard_tui_rejects_export_flags(
+    demo_repo: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(demo_repo)
+
+    result = runner.invoke(
+        app,
+        ["dashboard", "--tui", "--format", "all"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 2
+    assert "`--format` cannot be combined with `--tui`." in result.stderr
 
 
 def test_cli_github_smoke_requires_write_ready_when_requested(
@@ -2211,7 +2255,7 @@ def test_cli_clean_sync_applied_writes_cleanup_result_report(
     assert any(action["kind"] == "sync-applied-issue-root" for action in payload["actions"])
 
 
-def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
+def test_cli_dashboard_writes_markdown_report(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
     _write_dashboard_reports(demo_repo)
@@ -2347,55 +2391,17 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
     dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
     dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
-    html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
     assert result.exit_code == 0
     assert "Dashboard exports:" in result.stdout
-    assert "- html:" in result.stdout
     assert "- json:" in result.stdout
     assert "- markdown:" in result.stdout
     assert "Included 1 of 1 recorded runs." in result.stdout
-    assert dashboard_path.exists()
     assert dashboard_json.exists()
     assert dashboard_markdown.exists()
-    assert "Fix empty input crash" in html
-    assert "run-dashboard" in html
-    assert "Sync handoffs" in html
-    assert "Sync retention" in html
-    assert "Reports" in html
-    assert "Sync audit" in html
-    assert "Cleanup result" in html
-    assert 'class="hero hero-issues"' in html
-    assert "Report freshness needs action" in html
-    assert "freshness_policy unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
-    assert "Report freshness" in html
-    assert "Aging reports" in html
-    assert "Future reports" in html
-    assert "Cleanup freshness" in html
-    assert "Cleanup aging reports" in html
-    assert "Cleanup future reports" in html
-    assert "Stale cleanup reports" in html
-    assert "aging 1" in html
-    assert "/ 2 total" in html
-    assert "fresh 0" in html
-    assert "stale 1" in html
-    assert "status-prunable" in html
-    assert "status-issues" in html
-    assert "status-cleaned" in html
-    assert "issues_with_findings" in html
-    assert "duplicate_entry_key=1" in html
-    assert "cleanup_report_mismatches:</strong> 1" in html
-    assert "duplicate_entry_key (1): run `repoagents sync repair --dry-run` to canonicalize duplicate manifest entries" in html
-    assert "Cleanup preview: cleanup report issue_filter=3 does not match audit issue_filter=1" in html
-    assert 'href="#report-cleanup-result"' in html
-    assert 'href="#report-sync-audit"' in html
-    assert "comment-proposal" in html
-    assert 'data-default-refresh-seconds="30"' in html
-    assert 'id="run-search"' in html
     assert payload["counts"]["available_reports"] == 2
     assert payload["counts"]["aging_reports"] == 1
     assert payload["counts"]["future_reports"] == 0
@@ -2449,16 +2455,14 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
     assert payload["reports"]["entries"][1]["label"] == "Cleanup result"
     assert payload["reports"]["entries"][1]["freshness_status"] == "stale"
     assert payload["reports"]["entries"][1]["age_seconds"] is not None
-    assert "related report details" in html
-    assert "mismatches" in html
     assert payload["reports"]["entries"][1]["policy"]["stale_issues_threshold"] == 1
     assert payload["reports"]["entries"][1]["referenced_by"][0]["key"] == "sync-audit"
-    assert "freshness stale" in html
-    assert "Policy context" in html
-    assert "unknown&gt;=1 stale&gt;=1 future&gt;=1 aging&gt;=1" in html
     assert "## Policy" in markdown
     assert "- report_freshness_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
     assert "## Hero" in markdown
+    assert "### Issue #1: Fix empty input crash" in markdown
+    assert "## Sync handoffs" in markdown
+    assert "## Sync retention" in markdown
     assert "- severity: issues" in markdown
     assert "## Reports" in markdown
     assert "- report_freshness_severity: issues" in markdown
@@ -2517,19 +2521,12 @@ def test_cli_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path
         ["dashboard", "--format", "all"],
         catch_exceptions=False,
     )
-    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
     dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
     dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
-    html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
 
     assert result.exit_code == 0
-    assert "Unknown freshness reports" in html
-    assert "Cleanup unknown freshness reports" in html
-    assert 'class="hero hero-issues"' in html
-    assert "Report freshness needs action" in html
-    assert "unknown 1" in html
     assert payload["counts"]["unknown_reports"] == 1
     assert payload["counts"]["cleanup_unknown_reports"] == 1
     assert payload["reports"]["unknown_total"] == 1
@@ -2592,18 +2589,12 @@ def test_cli_dashboard_surfaces_embedded_policy_drift(demo_repo: Path, monkeypat
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
     dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
     dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
-    html = dashboard_path.read_text(encoding="utf-8")
     snapshot = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
 
     assert result.exit_code == 0
-    assert "Policy drift reports" in html
-    assert "re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all`" in html
-    assert "embedded policy drift" in html
-    assert "embedded policy differs from current config" in html
     assert snapshot["counts"]["policy_drift_reports"] == 1
     assert snapshot["reports"]["policy_drift_total"] == 1
     assert (
@@ -2670,16 +2661,12 @@ def test_cli_dashboard_escalates_hero_when_only_policy_drift_exists(
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
     dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
     dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
-    html = dashboard_path.read_text(encoding="utf-8")
     snapshot = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
 
     assert result.exit_code == 0
-    assert 'class="hero hero-attention"' in html
-    assert "Report policy drift needs follow-up" in html
     assert snapshot["reports"]["freshness_severity"] == "clean"
     assert snapshot["reports"]["policy_drift_severity"] == "attention"
     assert snapshot["reports"]["report_summary_severity"] == "attention"
@@ -2800,19 +2787,12 @@ def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Pat
         ["dashboard", "--format", "all"],
         catch_exceptions=False,
     )
-    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
     dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
     dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
-    html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
 
     assert result.exit_code == 0
-    assert "Cleanup result: embedded policy differs from current config" in html
-    assert "Sync audit: embedded policy differs from current config" in html
-    assert "related report details" in html
-    assert "policy drifts" in html
-    assert "refresh raw report exports to align embedded policy metadata" in html
     assert payload["reports"]["entries"][0]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["related_cards"][0]["policy_alignment_status"] == "drift"
     assert payload["reports"]["entries"][1]["details"]["related_report_policy_drifts"] == 1
@@ -4131,8 +4111,8 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "clean",
                 "output_paths": {
-                    "html": str(latest_bundle_dir / "dashboard.html"),
                     "json": str(latest_bundle_dir / "dashboard.json"),
+                    "markdown": str(latest_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 4,
                 "visible_runs": 4,
@@ -4234,7 +4214,7 @@ def _write_ops_snapshot_index(repo_root: Path) -> None:
             "dashboard": {
                 "status": "issues",
                 "output_paths": {
-                    "html": str(previous_bundle_dir / "dashboard.html"),
+                    "markdown": str(previous_bundle_dir / "dashboard.md"),
                 },
                 "total_runs": 2,
                 "visible_runs": 2,

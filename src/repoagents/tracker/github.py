@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import time
 from pathlib import Path
@@ -11,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from repoagents.config.models import TrackerMode
+from repoagents.github_auth import resolve_github_token
 from repoagents.logging import get_logger
 from repoagents.models import ExternalActionResult, IssueComment, IssueRef
 from repoagents.tracker.base import Tracker
@@ -49,6 +49,8 @@ class GitHubTracker(Tracker):
         self.rate_limit_warn_remaining = rate_limit_warn_remaining
         self.client = client or httpx.AsyncClient(timeout=20.0, follow_redirects=True)
         self.logger = get_logger("repoagents.tracker.github")
+        self._token_cached = False
+        self._token_value: str | None = None
 
     async def list_open_issues(self) -> list[IssueRef]:
         if self.mode == TrackerMode.FIXTURE:
@@ -335,7 +337,7 @@ class GitHubTracker(Tracker):
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         method = method.upper()
         headers = kwargs.pop("headers", {})
-        token = os.getenv(self.token_env)
+        token = self._resolve_auth_token()
         if token:
             headers["Authorization"] = f"Bearer {token}"
         headers["Accept"] = "application/vnd.github+json"
@@ -392,6 +394,13 @@ class GitHubTracker(Tracker):
             return response
 
         raise RuntimeError(f"Exhausted retry loop for {method} {url}")
+
+    def _resolve_auth_token(self) -> str | None:
+        if not self._token_cached:
+            resolution = resolve_github_token(self.token_env)
+            self._token_value = resolution.token
+            self._token_cached = True
+        return self._token_value
 
     def _load_fixture_issues(self) -> list[IssueRef]:
         if not self.fixtures_path:

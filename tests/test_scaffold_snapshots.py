@@ -27,7 +27,7 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".github/workflows/repoagents-check.yml": "0825ee10b92f1b603f56cfda7bd85c653095c787307aaa24f47fe1ec87041193",
         ".gitignore": "e5f2ce698888308437b8b9fa572d9308148b7fc446b4ff20208305485ff9a7fc",
         "AGENTS.md": "3084965d71e3d144149f6fe0fbdde59937bb5ffdd4ee6fbba047b66ce8df836a",
-        "WORKFLOW.md": "926ce863a773d571373078caf069fa4891bde5fd74608e311dfe5323d4775b4c"
+        "WORKFLOW.md": "2a0fe77e8bf384c8bbfee65a3f2d37f31858b24dcb87478c9757b6434d2ba43e"
     },
     "docs-only": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -47,7 +47,7 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".github/workflows/repoagents-check.yml": "0825ee10b92f1b603f56cfda7bd85c653095c787307aaa24f47fe1ec87041193",
         ".gitignore": "e5f2ce698888308437b8b9fa572d9308148b7fc446b4ff20208305485ff9a7fc",
         "AGENTS.md": "d56092dbc870b155d5557d789193113f405d4bb3345a2b1c5edd0f5b8f89a3a1",
-        "WORKFLOW.md": "e7f9ba6bcbb8d0724aacae29bedddbd5c50ccdd91fdcffc98ebd014efcd19cfd"
+        "WORKFLOW.md": "c7a9a2a7b04dc4cc4b2059161dd89d302c12d44abcaedb349e7b8c8ce5d108fd"
     },
     "python-library": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -67,7 +67,7 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".github/workflows/repoagents-check.yml": "0825ee10b92f1b603f56cfda7bd85c653095c787307aaa24f47fe1ec87041193",
         ".gitignore": "e5f2ce698888308437b8b9fa572d9308148b7fc446b4ff20208305485ff9a7fc",
         "AGENTS.md": "99c5cd914ca86d9db1e4e444e332283befe07b982039564e4e44fc778246959b",
-        "WORKFLOW.md": "0b5f89aa8cbe6f4b7e060fcc8b347597bd213b1fe820f273fc7655370392be36"
+        "WORKFLOW.md": "e37c5d38b4e3d51cfb350f80e7b93a998fdc9bc48b472887a11d91080ee13b9b"
     },
     "research-project": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -87,7 +87,7 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".github/workflows/repoagents-check.yml": "0825ee10b92f1b603f56cfda7bd85c653095c787307aaa24f47fe1ec87041193",
         ".gitignore": "e5f2ce698888308437b8b9fa572d9308148b7fc446b4ff20208305485ff9a7fc",
         "AGENTS.md": "2efa72decd7a10b02582fd0eef2c5f22eb77788581b4ecb90e2ee912e16d081f",
-        "WORKFLOW.md": "ef813c31b0958e25608091ac5e649b4b09e8f556b7501ec7ac89129d1f4b40d6"
+        "WORKFLOW.md": "b6711b4827b3f8ef7dc6f2d1b3f2cf1041213cb94e924585aff44b2d5fe10c46"
     },
     "web-app": {
         ".ai-repoagents/policies/merge-policy.md": "71236ff6be95eeb0b95280649d2de22d6f398909c666fb10fcd243c04e516cb5",
@@ -107,7 +107,7 @@ EXPECTED_SCAFFOLD_SNAPSHOTS = {
         ".github/workflows/repoagents-check.yml": "0825ee10b92f1b603f56cfda7bd85c653095c787307aaa24f47fe1ec87041193",
         ".gitignore": "e5f2ce698888308437b8b9fa572d9308148b7fc446b4ff20208305485ff9a7fc",
         "AGENTS.md": "8a82498c5d7786e871363590660710d090169a3d784836f2c927f78b2a4069ef",
-        "WORKFLOW.md": "3c7e11de7dcc5dba63521642b68ddfab2a1d6b5fb4b01aea203b43537e21db88"
+        "WORKFLOW.md": "7507b70b1d6683ff06d83bb25d17c4a4a43ec1602c8363e61a4b90b5ac939c97"
     }
 }
 

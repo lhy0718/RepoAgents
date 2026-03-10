@@ -123,6 +123,7 @@ uv run repoagents run --dry-run
 uv run repoagents run --once
 uv run repoagents status
 uv run repoagents dashboard
+uv run repoagents dashboard --tui
 uv run repoagents ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
 uv run repoagents ops status --format all
 cat .ai-repoagents/reports/ops/history.json
@@ -207,7 +208,8 @@ bash ../../scripts/demo_local_markdown_sync.sh
 `uv run repoagents sync check --issue 1`로 applied manifest 무결성을 확인하고, `uv run repoagents sync repair --issue 1 --dry-run`으로 canonicalize/adopt 결과를 미리 볼 수 있습니다.
 `uv run repoagents sync health --issue 1 --format all`은 `sync check`, `sync repair`, `clean`로 들어가기 전에 sync 운영 상태를 한 번에 묶어서 보여줍니다.
 오래된 applied handoff group을 지우기 전에는 `uv run repoagents clean --sync-applied --dry-run`으로 manifest-aware retention 결과를 먼저 확인합니다.
-`uv run repoagents dashboard --format all`을 실행하면 `Sync handoffs`와 함께 `Sync retention`도 볼 수 있고, prunable group 수, prunable bytes, oldest prunable age를 한눈에 확인할 수 있습니다.
+`uv run repoagents dashboard --tui`를 실행하면 터미널 안에서 `Sync handoffs`, `Sync retention`, prunable group 수, prunable bytes, oldest prunable age를 함께 볼 수 있습니다. 자동 새로고침이 필요하면 `--refresh-seconds 30`을 붙이면 됩니다.
+같은 상위 상태를 터미널 안에서 바로 보고 싶다면 `uv run repoagents dashboard --tui`를 사용하면 됩니다.
 
 ## 4. 운영 모드로 전환
 
@@ -225,14 +227,16 @@ codex:
   model: gpt-5.4
 ```
 
-그 다음 토큰을 설정하고 polling을 시작합니다.
+그 다음 GitHub 인증을 준비하고 polling을 시작합니다.
 
 ```bash
-export GITHUB_TOKEN=...
+gh auth login
 uv run repoagents doctor
 uv run repoagents github smoke --require-write-ready
 uv run repoagents run
 ```
+
+`GITHUB_TOKEN`이 비어 있으면 RepoAgents가 자동으로 `gh auth token`을 재사용합니다. 환경변수를 명시적으로 두고 싶거나 CI를 설정하는 경우에는 `export GITHUB_TOKEN="$(gh auth token)"`처럼 설정하면 됩니다.
 
 이제 `github smoke --require-write-ready`는 unattended draft PR publish를 켜기 전에 default branch protection, PR review requirement, required status check, repo metadata push permission까지 함께 확인합니다.
 
@@ -249,9 +253,8 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - debug artifact 활성화 시: `<role>.prompt.txt`, `<role>.raw-output.txt`
 - workspace: `.ai-repoagents/workspaces/issue-<id>/<run-id>/repo/`
 - run state: `.ai-repoagents/state/runs.json`
-- dashboard: `.ai-repoagents/dashboard/index.html`
-- dashboard JSON snapshot: `.ai-repoagents/dashboard/index.json`
 - dashboard Markdown snapshot: `.ai-repoagents/dashboard/index.md`
+- dashboard JSON snapshot: `.ai-repoagents/dashboard/index.json`
 - sync audit reports: `.ai-repoagents/reports/sync-audit.json`, `.ai-repoagents/reports/sync-audit.md`
 - sync health reports: `.ai-repoagents/reports/sync-health.json`, `.ai-repoagents/reports/sync-health.md`
 - ops brief snapshots: `.ai-repoagents/reports/ops-brief.json`, `.ai-repoagents/reports/ops-brief.md`
@@ -284,8 +287,8 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - combined sync-ops snapshot export: `uv run repoagents sync health --issue 123 --format all`
 - sync audit bundle export: `uv run repoagents sync audit --format all`
 - 로컬 대시보드 다시 생성: `uv run repoagents dashboard`
-- timed reload가 있는 대시보드 생성: `uv run repoagents dashboard --refresh-seconds 30`
-- HTML, JSON, Markdown을 함께 export: `uv run repoagents dashboard --format all`
+- 자동 새로고침이 있는 터미널 대시보드 열기: `uv run repoagents dashboard --tui --refresh-seconds 30`
+- JSON과 Markdown을 함께 export: `uv run repoagents dashboard --format all`
 
 ## 프리셋
 

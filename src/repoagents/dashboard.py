@@ -40,7 +40,7 @@ class DashboardBuildResult:
     exported_paths: dict[str, Path]
 
 
-VALID_DASHBOARD_FORMATS = ("html", "json", "markdown")
+VALID_DASHBOARD_FORMATS = ("markdown", "json")
 REPORT_EXPORTS = (
     ("sync-audit", "Sync audit", "sync-audit.json", "sync-audit.md"),
     ("sync-health", "Sync health", "sync-health.json", "sync-health.md"),
@@ -78,29 +78,27 @@ def build_dashboard(
     output_path: Path | None = None,
     limit: int = 50,
     refresh_seconds: int = 0,
-    formats: tuple[str, ...] = ("html",),
+    formats: tuple[str, ...] = ("markdown",),
 ) -> DashboardBuildResult:
     store = RunStateStore(loaded.state_dir / "runs.json")
     all_records = store.all()
     visible_records = all_records[:limit]
     normalized_formats = normalize_dashboard_formats(formats)
-    target = output_path or (loaded.ai_root / "dashboard" / "index.html")
+    target = output_path or (loaded.ai_root / "dashboard" / "index.md")
     export_paths = resolve_dashboard_export_paths(target, normalized_formats)
     snapshot = build_dashboard_snapshot(
         loaded=loaded,
         all_records=all_records,
         visible_records=visible_records,
-        output_path=export_paths.get("html", target),
+        output_path=export_paths.get("markdown", target),
         refresh_seconds=refresh_seconds,
         sync_limit=limit,
     )
-    if "html" in export_paths:
-        write_text_file(export_paths["html"], render_dashboard_html(snapshot=snapshot))
     if "json" in export_paths:
         write_text_file(export_paths["json"], render_dashboard_json(snapshot))
     if "markdown" in export_paths:
         write_text_file(export_paths["markdown"], render_dashboard_markdown(snapshot))
-    primary_path = export_paths.get("html")
+    primary_path = export_paths.get("markdown")
     if primary_path is None:
         primary_path = export_paths[normalized_formats[0]]
     return DashboardBuildResult(
@@ -113,7 +111,7 @@ def build_dashboard(
 
 def normalize_dashboard_formats(formats: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
     if not formats:
-        return ("html",)
+        return ("markdown",)
     normalized: list[str] = []
     for value in formats:
         lowered = value.strip().lower()
@@ -129,15 +127,14 @@ def normalize_dashboard_formats(formats: tuple[str, ...] | list[str] | None) -> 
             raise ValueError(f"Unsupported dashboard format '{value}'. Expected one of: {valid}")
         if lowered not in normalized:
             normalized.append(lowered)
-    return tuple(normalized or ("html",))
+    return tuple(normalized or ("markdown",))
 
 
 def resolve_dashboard_export_paths(base_output: Path, formats: tuple[str, ...]) -> dict[str, Path]:
     target = base_output
-    if target.suffix.lower() not in {".html", ".json", ".md"}:
-        target = target / "index.html"
+    if target.suffix.lower() not in {".json", ".md"}:
+        target = target / "index.md"
     suffix_map = {
-        "html": ".html",
         "json": ".json",
         "markdown": ".md",
     }
@@ -242,7 +239,7 @@ def build_dashboard_snapshot(
 def build_report_health_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
     reports = _load_report_summaries(
         loaded=loaded,
-        output_path=loaded.ai_root / "dashboard" / "index.html",
+        output_path=loaded.ai_root / "dashboard" / "index.md",
         rendered_at=utc_now().isoformat(),
     )
     hero = _build_hero_snapshot(reports)
@@ -257,7 +254,7 @@ def build_report_health_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
 def build_ops_snapshot_status_snapshot(*, loaded: LoadedConfig) -> dict[str, object]:
     return _load_ops_snapshot_summaries(
         loaded=loaded,
-        output_path=loaded.ai_root / "dashboard" / "index.html",
+        output_path=loaded.ai_root / "dashboard" / "index.md",
         rendered_at=utc_now().isoformat(),
     )
 

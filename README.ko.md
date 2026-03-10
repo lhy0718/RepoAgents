@@ -131,7 +131,7 @@ uv run repoagents dashboard
 
 1. `llm.mode: codex`를 유지합니다.
 2. `tracker.repo`를 실제 GitHub 저장소로 지정합니다.
-3. `GITHUB_TOKEN`을 제공합니다.
+3. GitHub 인증을 준비합니다. 로컬에서는 `gh auth login`만 실행하면 되고, `GITHUB_TOKEN`이 비어 있으면 RepoAgents가 자동으로 `gh auth token`을 재사용합니다. CI나 비대화형 환경에서는 `GITHUB_TOKEN`을 명시적으로 설정하세요.
 4. `uv run repoagents run`을 실행합니다.
 
 ## `repoagents init`이 설치하는 것
@@ -301,7 +301,7 @@ REPOREPUBLIC_GITHUB_WRITE_E2E=1 REPOREPUBLIC_GITHUB_WRITE_TEST_REPO=owner/name R
 REPOREPUBLIC_GITHUB_PR_E2E=1 REPOREPUBLIC_GITHUB_PR_TEST_REPO=owner/name REPOREPUBLIC_GITHUB_PR_TEST_ISSUE=123 uv run pytest tests/test_tracker.py -k live_draft_pr_publish -rs
 ```
 
-Codex smoke test는 read-only opt-in 경로이며, Codex CLI가 설치되고 로그인된 경우에만 동작합니다. 기본 live GitHub tracker test도 read-only이며 `GITHUB_TOKEN`이 필요합니다. 특정 이슈를 고정하려면 `REPOREPUBLIC_GITHUB_TEST_ISSUE=<number>`를 함께 지정하면 됩니다. write-path GitHub test는 별도 opt-in 경로이고, 반드시 전용 sandbox repo/issue에서만 돌려야 합니다. comment write test는 검증 후 test comment를 삭제하고, draft PR test는 임시 branch를 push한 뒤 draft PR을 열고 cleanup 단계에서 PR close와 branch delete를 수행합니다.
+Codex smoke test는 read-only opt-in 경로이며, Codex CLI가 설치되고 로그인된 경우에만 동작합니다. 기본 live GitHub tracker test도 read-only이고 `GITHUB_TOKEN` 또는 인증된 `gh` 세션을 사용할 수 있습니다. RepoAgents가 자동으로 `gh auth token`을 읽어오기 때문입니다. 특정 이슈를 고정하려면 `REPOREPUBLIC_GITHUB_TEST_ISSUE=<number>`를 함께 지정하면 됩니다. write-path GitHub test는 별도 opt-in 경로이고, 반드시 전용 sandbox repo/issue에서만 돌려야 합니다. comment write test는 검증 후 test comment를 삭제하고, draft PR test는 임시 branch를 push한 뒤 draft PR을 열고 cleanup 단계에서 PR close와 branch delete를 수행합니다.
 
 </details>
 
@@ -325,7 +325,8 @@ repoagents status
 repoagents retry 123
 repoagents clean --dry-run
 repoagents dashboard
-repoagents dashboard --refresh-seconds 30
+repoagents dashboard --tui
+repoagents dashboard --tui --refresh-seconds 30
 repoagents dashboard --format all
 repoagents ops snapshot --archive
 repoagents ops status
@@ -358,10 +359,12 @@ repoagents sync health --issue 123 --format all
 - `repoagents sync repair --dry-run`은 manifest 재구성과 orphan adoption 결과를 쓰기 전에 미리 보여줍니다.
 - `repoagents sync health --format all`은 pending staged artifact, applied manifest integrity, repair preview, cleanup preview, linked raw report posture를 한 번에 묶은 operator snapshot을 `.ai-repoagents/reports/sync-health.json|md`로 export합니다. `--show-remediation`, `--show-mismatches`를 붙이면 같은 related-report detail block을 터미널에도 바로 출력합니다.
 - `repoagents sync audit --format all`은 `.ai-repoagents/reports/` 아래에 JSON/Markdown sync audit report를 export하고, matching cleanup preview/result export를 연결하며, 다른 `issue_filter`로 생성된 cleanup report가 있으면 warning도 함께 남기고, 관련 cleanup export의 `policy_alignment` metadata도 raw report 안에 직접 기록하며, mismatch/drift/remediation 묶음을 재사용할 수 있는 평문 `related_reports.detail_summary`도 추가하고, linked cleanup policy drift count도 CLI에서 함께 요약합니다. `--show-remediation`을 붙이면 같은 guidance도 바로 출력하고, `--show-mismatches`를 붙이면 linked cleanup issue-filter mismatch warning도 같은 자리에서 바로 출력합니다. 두 플래그를 함께 쓰면 drift와 mismatch detail이 하나의 related-report block으로 묶여 출력됩니다.
-- `repoagents dashboard --format all`은 HTML, JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot은 CLI의 related-report detail block과 같은 구조를 따르고, HTML `Cross references` 패널도 `mismatches / policy drifts / remediation` 의미 단위를 직접 드러내며, JSON export에는 각 report entry별 `related_report_detail_summary` 문자열이 들어갑니다. `.ai-repoagents/reports/ops-status.json`이나 `.ai-repoagents/reports/ops-brief.json`이 존재하면 `Reports` 섹션에 `Ops status`, `Ops brief` 카드가 같이 렌더링되어 최신 ops handoff posture와 incident brief를 같은 화면에서 바로 따라갈 수 있습니다.
+- `repoagents dashboard --tui`는 `Runs`, `Reports`, `Ops`, `Handoffs`, `Retention` 섹션이 있는 인터랙티브 터미널 대시보드를 엽니다. `1-5`, 화살표, `Tab`, `r`, `q`로 이동, 새로고침, 종료를 할 수 있습니다.
+- `repoagents dashboard`는 interactive TTY에서는 기본으로 터미널 대시보드를 엽니다. `--refresh-seconds 30`을 붙이면 TUI가 자동 새로고침되고, 터미널을 명시하고 싶으면 `--tui`를 함께 써도 됩니다.
+- `repoagents dashboard --format all`은 `.ai-repoagents/dashboard/` 아래에 JSON, Markdown snapshot을 함께 export합니다. Markdown snapshot은 CLI의 related-report detail block과 같은 구조를 따르고, JSON export에는 각 report entry별 `related_report_detail_summary` 문자열이 들어갑니다. `.ai-repoagents/reports/ops-status.json`이나 `.ai-repoagents/reports/ops-brief.json`이 있으면 `Reports` 섹션에서 `Ops status`, `Ops brief`를 같은 posture summary 안에서 함께 따라갈 수 있습니다.
 - `repoagents ops snapshot`은 `doctor`, `status`, `dashboard`, `sync-audit`, bundle-local `sync-health`, bundle-local `ops-status`, bundle-local `ops-brief`, live GitHub REST tracker일 때는 bundle-local `github-smoke`, bundle-local landing 파일 `index.html`, `README.md`, 그리고 `bundle.json`, `bundle.md`를 한 디렉터리에 묶어 incident handoff용 번들로 export합니다. `ops-brief` export는 운영자가 bundle을 열었을 때 가장 먼저 보는 landing summary이고, landing page는 이 brief에서 나머지 bundle artifact로 바로 이동할 수 있게 연결됩니다. `--include-cleanup-preview`는 cleanup preview를 같은 번들 안에 생성하고, `--include-cleanup-result`는 기존 `cleanup-result` export를 복사해 넣으며, `--include-sync-check`는 applied manifest integrity snapshot을, `--include-sync-repair-preview`는 dry-run repair preview를 같은 디렉터리에 함께 포함합니다. `--archive`를 붙이면 완성된 번들을 `.tar.gz` handoff archive로 묶고 checksum도 함께 출력합니다. 매 실행마다 `.ai-repoagents/reports/ops/latest.json|md`, `.ai-repoagents/reports/ops/history.json|md`, `.ai-repoagents/reports/ops-status.json|md`, `.ai-repoagents/reports/ops-brief.json|md`, `.ai-repoagents/reports/sync-health.json|md`, 그리고 live GitHub REST tracker일 때는 `.ai-repoagents/reports/github-smoke.json|md`도 갱신되어, bundle directory가 다른 위치에 있어도 automation과 dashboard/report surface가 최신 handoff를 한 경로에서 찾을 수 있습니다. `--history-limit`은 이번 실행에서 유지할 history entry 수를 제한하고, `--prune-history`는 `.ai-repoagents/reports/ops/` 아래의 dropped managed bundle/archive를 함께 정리합니다. 기본 retention은 `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`에서 제어합니다.
 - `repoagents ops status`는 `.ai-repoagents/reports/ops/latest.*`, `.ai-repoagents/reports/ops/history.*`, 그리고 최신 indexed `bundle.json`을 함께 읽어 handoff posture, 최신 bundle health, component summary, recent history, landing path, related report posture를 한 번에 보여주는 operator surface입니다. `repoagents ops status --format all`은 같은 snapshot을 `.ai-repoagents/reports/ops-status.json`, `.ai-repoagents/reports/ops-status.md`로 export합니다.
-- `repoagents github smoke`는 `tracker.repo` 기준 live GitHub REST readiness를 점검하고, open issue를 sample로 읽어오며, comment/draft PR publish preflight 상태를 함께 보여줍니다. REST mode에서는 실제 요구사항이 `GITHUB_TOKEN`이고, `gh auth`만으로는 RepoAgents API 호출이 준비되지 않습니다.
+- `repoagents github smoke`는 `tracker.repo` 기준 live GitHub REST readiness를 점검하고, open issue를 sample로 읽어오며, comment/draft PR publish preflight 상태를 함께 보여줍니다. REST mode에서는 먼저 `GITHUB_TOKEN`을 사용하고, 값이 없으면 `gh auth token`으로 자동 fallback합니다. 다만 CI나 비대화형 환경에서는 `GITHUB_TOKEN`을 명시적으로 설정하는 편이 안전합니다.
 - `repoagents github smoke`는 이제 repo metadata permission도 publish readiness에 반영하므로, token과 origin preflight가 통과해도 `permissions.push=false`인 repo는 draft PR publish 경로에서 계속 warning 상태로 남습니다.
 - `repoagents github smoke`는 이제 default branch policy도 함께 점검합니다. default branch가 보호되지 않았거나, PR review requirement/required status check가 없거나, branch protection detail을 읽지 못하면 `--require-write-ready` 기준에서 draft PR publish가 계속 warning 상태로 남습니다.
 - `repoagents release preview`는 저장소가 `repoagents init`으로 부트스트랩되지 않았어도 maintainer용 public release dry-run을 준비합니다. 현재 버전에 이미 날짜가 있는 changelog section이 있으면 다음 patch tag를 추론하고, `.ai-repoagents/reports/release-preview.json|md`와 바로 쓸 수 있는 GitHub release notes 파일 `.ai-repoagents/reports/release-notes-v<version>.md`를 생성합니다.

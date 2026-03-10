@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from repoagents.config import load_config
+from repoagents.github_auth import GitHubTokenResolution
 from repoagents.github_health import (
     build_github_smoke_snapshot,
     collect_github_branch_policy_snapshot,
@@ -16,7 +17,7 @@ from repoagents.github_health import (
 from repoagents.models import IssueComment, IssueRef
 
 
-def test_collect_github_auth_snapshot_requires_token_for_rest_even_with_gh_auth(
+def test_collect_github_auth_snapshot_accepts_gh_auth_token_for_rest(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
@@ -27,20 +28,22 @@ def test_collect_github_auth_snapshot_requires_token_for_rest_even_with_gh_auth(
     )
     loaded = load_config(demo_repo)
 
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr("repoagents.github_health.shutil.which", lambda command: "/opt/test/gh")
-
-    class Completed:
-        returncode = 0
-        stdout = "ok"
-        stderr = ""
-
-    monkeypatch.setattr("repoagents.github_health.subprocess.run", lambda *args, **kwargs: Completed())
+    monkeypatch.setattr(
+        "repoagents.github_health.resolve_github_token",
+        lambda token_env: GitHubTokenResolution(
+            token="gh-token",
+            source="gh_cli",
+            token_env=token_env,
+            gh_path="/opt/test/gh",
+            gh_authenticated=True,
+        ),
+    )
 
     snapshot = collect_github_auth_snapshot(loaded)
 
-    assert snapshot["status"] == "warn"
-    assert "still requires GITHUB_TOKEN" in snapshot["message"]
+    assert snapshot["status"] == "ok"
+    assert snapshot["source"] == "gh_cli"
+    assert "using `gh auth token`" in snapshot["message"]
     assert snapshot["gh_authenticated"] is True
 
 
