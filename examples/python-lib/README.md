@@ -1,6 +1,6 @@
 # Example Python Library
 
-This sample repository is meant for RepoRepublic demos.
+This sample repository is meant for RepoAgents demos.
 
 ## Files
 
@@ -11,8 +11,8 @@ This sample repository is meant for RepoRepublic demos.
 ## Demo
 
 ```bash
-uv run republic init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
-uv run republic run --dry-run
+uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/python-lib
+uv run repoagents run --dry-run
 ```
 
 Repo-level demo script:

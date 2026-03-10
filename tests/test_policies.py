@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from reporepublic.models import DiffReport, IssueType, PublicationMode
-from reporepublic.policies import PolicyRules, evaluate_policy
+from repoagents.models import DiffReport, IssueType, PublicationMode
+from repoagents.policies import PolicyRules, evaluate_policy
 
 
 def test_policy_blocks_secret_like_file_changes() -> None:
@@ -25,7 +25,7 @@ def test_policy_blocks_ci_cd_changes() -> None:
     evaluation = evaluate_policy(
         issue_type=IssueType.CHORE,
         diff_report=DiffReport(
-            changed_files=[".github/workflows/republic-check.yml"],
+            changed_files=[".github/workflows/repoagents-check.yml"],
             summary="changed=1 added=0 removed=0 +4/-1",
         ),
         allowed_auto_merge_types=["docs", "tests"],

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.release_preview import (
+from repoagents.config import load_config
+from repoagents.release_preview import (
     build_release_preview_exports,
     build_release_preview_snapshot,
 )
@@ -27,7 +27,7 @@ def test_build_release_preview_snapshot_infers_next_patch_from_unreleased_notes(
     assert snapshot["checks"][2]["status"] == "ok"
     assert snapshot["changelog"]["unreleased_entry_count"] == 1
     assert "pyproject.toml" in snapshot["files_to_update"]
-    assert "src/reporepublic/__init__.py" in snapshot["files_to_update"]
+    assert "src/repoagents/__init__.py" in snapshot["files_to_update"]
     assert snapshot["commands"]["publish"][-1].startswith("gh release create v0.1.1")
 
 
@@ -54,7 +54,7 @@ def test_build_release_preview_exports_write_preview_and_notes_files(
 
     result = build_release_preview_exports(
         snapshot=snapshot,
-        output_path=demo_repo / ".ai-republic" / "reports" / "release-preview.json",
+        output_path=demo_repo / ".ai-repoagents" / "reports" / "release-preview.json",
         formats=("json", "markdown"),
     )
 
@@ -77,19 +77,19 @@ def _install_release_metadata(repo_root: Path) -> None:
         "\n".join(
             [
                 "[project]",
-                'name = "reporepublic"',
+                'name = "repoagents"',
                 'version = "0.1.0"',
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    package_init = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init = repo_root / "src" / "repoagents" / "__init__.py"
     package_init.parent.mkdir(parents=True, exist_ok=True)
     package_init.write_text(
         '\n'.join(
             [
-                '"""RepoRepublic package."""',
+                '"""RepoAgents package."""',
                 "",
                 '__all__ = ["__version__"]',
                 "",
@@ -114,7 +114,7 @@ def _install_release_metadata(repo_root: Path) -> None:
                 "",
                 "### Added",
                 "",
-                "- initial public-preview release of RepoRepublic",
+                "- initial public-preview release of RepoAgents",
             ]
         )
         + "\n",

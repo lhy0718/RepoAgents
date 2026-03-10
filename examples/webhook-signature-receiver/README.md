@@ -1,13 +1,13 @@
 # Example Signed Webhook Receiver
 
-This sample repository demonstrates a local HTTP receiver that validates GitHub-style webhook signatures before forwarding payloads into `republic webhook`.
+This sample repository demonstrates a local HTTP receiver that validates GitHub-style webhook signatures before forwarding payloads into `repoagents webhook`.
 
 ## What it shows
 
 - local POST handling at `/github`
 - HMAC SHA-256 verification through `X-Hub-Signature-256`
-- payload capture under `.ai-republic/inbox/webhooks/` only after signature verification
-- forwarding into the existing `republic webhook` command after the request is authenticated
+- payload capture under `.ai-repoagents/inbox/webhooks/` only after signature verification
+- forwarding into the existing `repoagents webhook` command after the request is authenticated
 
 ## Files
 
@@ -25,11 +25,11 @@ bash scripts/demo_webhook_signature_receiver.sh
 Equivalent manual flow:
 
 ```bash
-uv run republic init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
-export REPOREPUBLIC_WEBHOOK_SECRET=reporepublic-demo-secret
-uv run --project /path/to/RepoRepublic python /path/to/RepoRepublic/scripts/webhook_receiver.py \
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+export REPOREPUBLIC_WEBHOOK_SECRET=repoagents-demo-secret
+uv run --project /path/to/RepoAgents python /path/to/RepoAgents/scripts/webhook_receiver.py \
   --repo-root "$PWD" \
-  --project-root /path/to/RepoRepublic \
+  --project-root /path/to/RepoAgents \
   --render-dashboard \
   --secret-env REPOREPUBLIC_WEBHOOK_SECRET
 ```
@@ -44,7 +44,7 @@ from pathlib import Path
 
 import httpx
 
-secret = "reporepublic-demo-secret"
+secret = "repoagents-demo-secret"
 body = Path("payloads/issues-opened.json").read_bytes()
 signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 response = httpx.post(
@@ -64,6 +64,6 @@ PY
 
 After the POST completes, inspect:
 
-- `.ai-republic/inbox/webhooks/`
-- `.ai-republic/state/runs.json`
-- `.ai-republic/dashboard/index.html`
+- `.ai-repoagents/inbox/webhooks/`
+- `.ai-repoagents/state/runs.json`
+- `.ai-repoagents/dashboard/index.html`

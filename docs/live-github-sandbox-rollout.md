@@ -42,21 +42,21 @@ Run the bundled sandbox demo:
 bash scripts/demo_live_publish_sandbox.sh
 ```
 
-This prepares a temporary repository, sets a fake `GITHUB_TOKEN`, points `tracker.smoke_fixture_path` at the phase fixtures, records per-phase `doctor` and `github smoke` exports, builds the readiness bundle under `.ai-republic/reports/ops/sandbox-pr-ready/`, then switches temporarily into `github fixture + mock backend` mode to run one deterministic issue and build a second execution bundle under `.ai-republic/reports/ops/sandbox-issue-201/`.
+This prepares a temporary repository, sets a fake `GITHUB_TOKEN`, points `tracker.smoke_fixture_path` at the phase fixtures, records per-phase `doctor` and `github smoke` exports, builds the readiness bundle under `.ai-repoagents/reports/ops/sandbox-pr-ready/`, then switches temporarily into `github fixture + mock backend` mode to run one deterministic issue and build a second execution bundle under `.ai-repoagents/reports/ops/sandbox-issue-201/`.
 
 During the rehearsal, the helper script creates local commits for each phase transition so `workspace.dirty_policy: block` remains valid while `doctor` is re-run.
 
 The per-phase reports live under:
 
-- `.ai-republic/reports/sandbox-rollout/baseline/`
-- `.ai-republic/reports/sandbox-rollout/comments-ready/`
-- `.ai-republic/reports/sandbox-rollout/pr-gated/`
-- `.ai-republic/reports/sandbox-rollout/pr-ready/`
+- `.ai-repoagents/reports/sandbox-rollout/baseline/`
+- `.ai-repoagents/reports/sandbox-rollout/comments-ready/`
+- `.ai-repoagents/reports/sandbox-rollout/pr-gated/`
+- `.ai-repoagents/reports/sandbox-rollout/pr-ready/`
 
 The critical gate files are:
 
-- `.ai-republic/reports/sandbox-rollout/pr-gated/require-write-ready.exit-code`
-- `.ai-republic/reports/sandbox-rollout/pr-ready/require-write-ready.exit-code`
+- `.ai-repoagents/reports/sandbox-rollout/pr-gated/require-write-ready.exit-code`
+- `.ai-repoagents/reports/sandbox-rollout/pr-ready/require-write-ready.exit-code`
 
 Expected values:
 
@@ -73,18 +73,18 @@ After the publish gate is green, the example runs one issue in offline execution
 
 That path writes:
 
-- `.ai-republic/reports/sandbox-execution/trigger-dry-run.txt`
-- `.ai-republic/reports/sandbox-execution/trigger.txt`
-- `.ai-republic/reports/sandbox-execution/status.json|md`
-- `.ai-republic/artifacts/issue-201/<run-id>/...`
-- `.ai-republic/reports/ops/sandbox-issue-201/`
+- `.ai-repoagents/reports/sandbox-execution/trigger-dry-run.txt`
+- `.ai-repoagents/reports/sandbox-execution/trigger.txt`
+- `.ai-repoagents/reports/sandbox-execution/status.json|md`
+- `.ai-repoagents/artifacts/issue-201/<run-id>/...`
+- `.ai-repoagents/reports/ops/sandbox-issue-201/`
 
 The repo is then restored to live `tracker.mode=rest` and `llm.mode=codex` so the final config still represents publish-enabled sandbox posture.
 
 ## Using the same flow in a real sandbox repository
 
 1. Clone the sandbox repository locally.
-2. Run `republic init` inside it.
+2. Run `repoagents init` inside it.
 3. Switch the config to `tracker.kind: github`, `tracker.mode: rest`, `workspace.strategy: worktree`, `logging.file_enabled: true`.
 4. Start with:
 
@@ -94,13 +94,13 @@ safety:
   allow_open_pr: false
 ```
 
-5. Run `uv run republic doctor`.
-6. Run `uv run republic github smoke --format all`.
+5. Run `uv run repoagents doctor`.
+6. Run `uv run repoagents github smoke --format all`.
 7. Enable comment writes only and repeat the smoke step.
 8. Enable draft-PR writes in the sandbox and require:
 
 ```bash
-uv run republic github smoke --require-write-ready
+uv run repoagents github smoke --require-write-ready
 ```
 
 If this still exits non-zero, keep `allow_open_pr=true` disabled or revert it until the sandbox repo branch policy is corrected.
@@ -128,8 +128,8 @@ Open the execution artifacts in the order pinned by [../examples/live-github-san
 Only after `pr-ready` is clean should you generate a bundle:
 
 ```bash
-uv run republic ops snapshot \
-  --output-dir .ai-republic/reports/ops/sandbox-pr-ready \
+uv run repoagents ops snapshot \
+  --output-dir .ai-repoagents/reports/ops/sandbox-pr-ready \
   --include-sync-check \
   --include-sync-repair-preview \
   --archive
@@ -138,8 +138,8 @@ uv run republic ops snapshot \
 Then refresh:
 
 ```bash
-uv run republic ops status --format all
-uv run republic dashboard --refresh-seconds 30 --format all
+uv run repoagents ops status --format all
+uv run repoagents dashboard --refresh-seconds 30 --format all
 ```
 
 Open the bundle in this order:

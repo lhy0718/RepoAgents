@@ -2,14 +2,14 @@
 set -euo pipefail
 
 PROJECT_ROOT="${REPOREPUBLIC_PROJECT_ROOT:-}"
-REPORT_ROOT="${REPOREPUBLIC_SANDBOX_REPORT_ROOT:-.ai-republic/reports/sandbox-rollout}"
-HANDOFF_DIR="${REPOREPUBLIC_HANDOFF_OUTPUT_DIR:-.ai-republic/reports/ops/sandbox-pr-ready}"
+REPORT_ROOT="${REPOREPUBLIC_SANDBOX_REPORT_ROOT:-.ai-repoagents/reports/sandbox-rollout}"
+HANDOFF_DIR="${REPOREPUBLIC_HANDOFF_OUTPUT_DIR:-.ai-repoagents/reports/ops/sandbox-pr-ready}"
 
 run_republic() {
   if [[ -n "$PROJECT_ROOT" ]]; then
-    uv run --project "$PROJECT_ROOT" republic "$@"
+    uv run --project "$PROJECT_ROOT" repoagents "$@"
   else
-    uv run republic "$@"
+    uv run repoagents "$@"
   fi
 }
 
@@ -23,8 +23,8 @@ set_phase() {
 
 refresh_git_baseline() {
   local phase="$1"
-  git add .ai-republic/reporepublic.yaml
-  if git diff --cached --quiet -- .ai-republic/reporepublic.yaml; then
+  git add .ai-repoagents/repoagents.yaml
+  if git diff --cached --quiet -- .ai-repoagents/repoagents.yaml; then
     return
   fi
   git commit -q -m "sandbox phase: $phase"

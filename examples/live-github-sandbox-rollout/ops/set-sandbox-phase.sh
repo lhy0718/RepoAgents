@@ -54,7 +54,7 @@ from pathlib import Path
 import os
 import yaml
 
-path = Path(".ai-republic/reporepublic.yaml")
+path = Path(".ai-repoagents/repoagents.yaml")
 payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 payload["tracker"]["smoke_fixture_path"] = os.environ["REPOREPUBLIC_SANDBOX_FIXTURE_PATH"]
 payload["safety"]["allow_write_comments"] = os.environ["REPOREPUBLIC_SANDBOX_ALLOW_COMMENTS"] == "true"

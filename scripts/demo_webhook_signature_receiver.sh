@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="$ROOT_DIR/examples/webhook-signature-receiver"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 PORT="${REPOREPUBLIC_WEBHOOK_PORT:-8788}"
-SECRET="${REPOREPUBLIC_WEBHOOK_SECRET:-reporepublic-demo-secret}"
+SECRET="${REPOREPUBLIC_WEBHOOK_SECRET:-repoagents-demo-secret}"
 SERVER_LOG=""
 SERVER_PID=""
 
@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-webhook-signature-receiver-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-webhook-signature-receiver-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -29,7 +29,7 @@ SERVER_LOG="$DEST_DIR/webhook-receiver.log"
 
 pushd "$DEST_DIR" >/dev/null
 
-uv run --project "$ROOT_DIR" republic init \
+uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-kind local_file \
   --tracker-path issues.json \
@@ -92,7 +92,7 @@ PY
 wait "$SERVER_PID"
 SERVER_PID=""
 
-uv run --project "$ROOT_DIR" republic status --issue 1
+uv run --project "$ROOT_DIR" repoagents status --issue 1
 
 popd >/dev/null
 

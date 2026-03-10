@@ -1,6 +1,6 @@
-# Contributing to RepoRepublic
+# Contributing to RepoAgents
 
-RepoRepublic is designed as an issue-driven repository operations framework. Contributions should preserve that bias toward deterministic behavior, conservative safety defaults, and repo-local policy control.
+RepoAgents is designed as an issue-driven repository operations framework. Contributions should preserve that bias toward deterministic behavior, conservative safety defaults, and repo-local policy control.
 
 ## Ground rules
 
@@ -12,8 +12,8 @@ RepoRepublic is designed as an issue-driven repository operations framework. Con
 ## Local setup
 
 ```bash
-git clone <your-fork> RepoRepublic
-cd RepoRepublic
+git clone <your-fork> RepoAgents
+cd RepoAgents
 uv sync --dev
 uv run pytest -q
 ```

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.github_health import (
+from repoagents.config import load_config
+from repoagents.github_health import (
     build_github_smoke_snapshot,
     collect_github_branch_policy_snapshot,
     collect_github_auth_snapshot,
@@ -13,14 +13,14 @@ from reporepublic.github_health import (
     extract_git_remote_repo_slug,
     render_github_smoke_markdown,
 )
-from reporepublic.models import IssueComment, IssueRef
+from repoagents.models import IssueComment, IssueRef
 
 
 def test_collect_github_auth_snapshot_requires_token_for_rest_even_with_gh_auth(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
@@ -28,14 +28,14 @@ def test_collect_github_auth_snapshot_requires_token_for_rest_even_with_gh_auth(
     loaded = load_config(demo_repo)
 
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr("reporepublic.github_health.shutil.which", lambda command: "/opt/test/gh")
+    monkeypatch.setattr("repoagents.github_health.shutil.which", lambda command: "/opt/test/gh")
 
     class Completed:
         returncode = 0
         stdout = "ok"
         stderr = ""
 
-    monkeypatch.setattr("reporepublic.github_health.subprocess.run", lambda *args, **kwargs: Completed())
+    monkeypatch.setattr("repoagents.github_health.subprocess.run", lambda *args, **kwargs: Completed())
 
     snapshot = collect_github_auth_snapshot(loaded)
 
@@ -48,16 +48,16 @@ def test_collect_github_origin_snapshot_detects_mismatched_origin(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
     )
     loaded = load_config(demo_repo)
 
-    monkeypatch.setattr("reporepublic.github_health.is_git_repository", lambda path: True)
+    monkeypatch.setattr("repoagents.github_health.is_git_repository", lambda path: True)
     monkeypatch.setattr(
-        "reporepublic.github_health.run_git",
+        "repoagents.github_health.run_git",
         lambda args, cwd: "git@github.com:demo/other-repo.git",
     )
 
@@ -71,7 +71,7 @@ def test_collect_github_origin_snapshot_detects_mismatched_origin(
 def test_collect_github_publish_readiness_warns_when_pr_publish_is_not_ready(
     demo_repo: Path,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -94,7 +94,7 @@ def test_collect_github_publish_readiness_warns_when_pr_publish_is_not_ready(
 def test_collect_github_publish_readiness_warns_when_repo_permissions_lack_push(
     demo_repo: Path,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -121,7 +121,7 @@ def test_collect_github_publish_readiness_warns_when_repo_permissions_lack_push(
 def test_collect_github_branch_policy_snapshot_warns_when_default_branch_is_unprotected(
     demo_repo: Path,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
@@ -162,7 +162,7 @@ def test_collect_github_branch_policy_snapshot_warns_when_default_branch_is_unpr
 def test_collect_github_live_repo_snapshots_reads_branch_policy_details(
     demo_repo: Path,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -222,7 +222,7 @@ def test_collect_github_live_repo_snapshots_reads_branch_policy_details(
 def test_build_github_smoke_snapshot_collects_repo_and_issue_details(
     demo_repo: Path,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
@@ -354,7 +354,7 @@ def test_build_github_smoke_snapshot_uses_configured_fixture_snapshot(
 """.strip(),
         encoding="utf-8",
     )
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")

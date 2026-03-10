@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from reporepublic.orchestrator import PublicationDraft, PublicationRenderer
+from repoagents.orchestrator import PublicationDraft, PublicationRenderer
 
 
 def test_publication_renderer_uses_consistent_sections() -> None:
@@ -25,13 +25,13 @@ def test_publication_renderer_uses_consistent_sections() -> None:
     pr_body = renderer.render_pr_body(draft)
     pr_title = renderer.render_pr_title(draft)
 
-    assert "## RepoRepublic Run" in comment
+    assert "## RepoAgents Run" in comment
     assert "## Summary" in comment
     assert "## Changed Files" in comment
     assert "## Validation" in comment
     assert "## Review Notes" in comment
-    assert "## RepoRepublic Summary" in pr_body
+    assert "## RepoAgents Summary" in pr_body
     assert "## Changed Files" in pr_body
     assert "## Validation" in pr_body
     assert "## Review Notes" in pr_body
-    assert pr_title == "RepoRepublic: Improve README quickstart (#12)"
+    assert pr_title == "RepoAgents: Improve README quickstart (#12)"

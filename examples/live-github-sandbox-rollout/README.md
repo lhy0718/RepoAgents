@@ -7,7 +7,7 @@ This sample repository demonstrates a staged publish rollout for a sandbox GitHu
 - live GitHub tracker mode with `tracker.kind: github` and `tracker.mode: rest`
 - offline `github smoke` rehearsal driven by `tracker.smoke_fixture_path`
 - progressive policy changes from read-only to comment writes and then draft-PR writes
-- rollout gates captured under `.ai-republic/reports/sandbox-rollout/<phase>/`
+- rollout gates captured under `.ai-repoagents/reports/sandbox-rollout/<phase>/`
 - final `ops snapshot` handoff bundle once draft-PR publish becomes ready
 
 ## Rollout phases
@@ -25,11 +25,11 @@ This sample repository demonstrates a staged publish rollout for a sandbox GitHu
 
 - `parser.py`: tiny helper module kept intentionally simple
 - `tests/test_parser.py`: minimal parser test
-- `ops/republic.env.example`: environment variables to export in a sandbox repo
+- `ops/repoagents.env.example`: environment variables to export in a sandbox repo
 - `ops/preflight.md`: rollout checklist
 - `ops/rollout-order.md`: which artifacts to inspect first during the rehearsal
 - `ops/execution-order.md`: which execution artifacts to inspect after the publish gate turns green
-- `ops/set-sandbox-phase.sh`: phase helper that patches `.ai-republic/reporepublic.yaml`
+- `ops/set-sandbox-phase.sh`: phase helper that patches `.ai-repoagents/repoagents.yaml`
 - `ops/rehearse-rollout.sh`: phase-by-phase rehearsal command
 - `ops/rehearse-execution.sh`: deterministic single-issue execution after the rollout gate passes
 - `ops/github-smoke.*.json`: offline smoke snapshots for each rollout phase
@@ -41,24 +41,24 @@ This sample repository demonstrates a staged publish rollout for a sandbox GitHu
 bash scripts/demo_live_publish_sandbox.sh
 ```
 
-This demo prepares a sandbox repository for staged publish enablement without making external writes. It initializes RepoRepublic, patches the config for live GitHub REST mode, sets a fake `GITHUB_TOKEN`, walks the four rollout phases, records per-phase `doctor` and `github smoke` reports, builds a final handoff bundle only after the `pr-ready` gate passes, then runs one deterministic issue execution and builds a second bundle that includes the real run artifacts.
+This demo prepares a sandbox repository for staged publish enablement without making external writes. It initializes RepoAgents, patches the config for live GitHub REST mode, sets a fake `GITHUB_TOKEN`, walks the four rollout phases, records per-phase `doctor` and `github smoke` reports, builds a final handoff bundle only after the `pr-ready` gate passes, then runs one deterministic issue execution and builds a second bundle that includes the real run artifacts.
 
-The rehearsal scripts create local commits when they change `.ai-republic/reporepublic.yaml`. That keeps `workspace.dirty_policy: block` compatible with repeated `doctor` runs.
+The rehearsal scripts create local commits when they change `.ai-repoagents/repoagents.yaml`. That keeps `workspace.dirty_policy: block` compatible with repeated `doctor` runs.
 
 The generated rehearsal artifacts include:
 
-- `.ai-republic/reports/sandbox-rollout/baseline/doctor.json|md`
-- `.ai-republic/reports/sandbox-rollout/comments-ready/github-smoke.json|md`
-- `.ai-republic/reports/sandbox-rollout/pr-gated/require-write-ready.exit-code`
-- `.ai-republic/reports/sandbox-rollout/pr-ready/require-write-ready.exit-code`
-- `.ai-republic/reports/sandbox-execution/trigger-dry-run.txt`
-- `.ai-republic/reports/sandbox-execution/trigger.txt`
-- `.ai-republic/reports/sandbox-execution/status.json|md`
-- `.ai-republic/reports/ops/sandbox-pr-ready/`
-- `.ai-republic/reports/ops/sandbox-issue-201/`
-- root `.ai-republic/reports/github-smoke.json|md`
-- root `.ai-republic/reports/ops-brief.json|md`
-- root `.ai-republic/reports/ops-status.json|md`
+- `.ai-repoagents/reports/sandbox-rollout/baseline/doctor.json|md`
+- `.ai-repoagents/reports/sandbox-rollout/comments-ready/github-smoke.json|md`
+- `.ai-repoagents/reports/sandbox-rollout/pr-gated/require-write-ready.exit-code`
+- `.ai-repoagents/reports/sandbox-rollout/pr-ready/require-write-ready.exit-code`
+- `.ai-repoagents/reports/sandbox-execution/trigger-dry-run.txt`
+- `.ai-repoagents/reports/sandbox-execution/trigger.txt`
+- `.ai-repoagents/reports/sandbox-execution/status.json|md`
+- `.ai-repoagents/reports/ops/sandbox-pr-ready/`
+- `.ai-repoagents/reports/ops/sandbox-issue-201/`
+- root `.ai-repoagents/reports/github-smoke.json|md`
+- root `.ai-repoagents/reports/ops-brief.json|md`
+- root `.ai-repoagents/reports/ops-status.json|md`
 
 Use [ops/rollout-order.md](./ops/rollout-order.md) as the fixed reading order.
 Use [ops/execution-order.md](./ops/execution-order.md) for the execution rehearsal artifact order.
@@ -68,7 +68,7 @@ Use [ops/execution-order.md](./ops/execution-order.md) for the execution rehears
 1. Replace `tracker.repo` with the real sandbox repository slug.
 2. Replace the fake `GITHUB_TOKEN` with a real sandbox token.
 3. Remove `tracker.smoke_fixture_path` after the offline rehearsal.
-4. Re-run `uv run republic github smoke --require-write-ready` against the real sandbox repo.
+4. Re-run `uv run repoagents github smoke --require-write-ready` against the real sandbox repo.
 5. Keep `allow_open_pr=false` until the sandbox smoke path is clean and reviewed.
 6. Use `bash ops/rehearse-execution.sh` to connect the green sandbox posture to a deterministic issue run.
 7. Follow [../../docs/live-github-sandbox-rollout.md](../../docs/live-github-sandbox-rollout.md) for the full operator walkthrough.

@@ -1,12 +1,12 @@
 # Example Webhook Receiver
 
-This sample repository demonstrates a minimal local HTTP receiver that forwards GitHub-style webhook payloads into `republic webhook`.
+This sample repository demonstrates a minimal local HTTP receiver that forwards GitHub-style webhook payloads into `repoagents webhook`.
 
 ## What it shows
 
 - local POST handling at `/github`
-- payload capture under `.ai-republic/inbox/webhooks/`
-- forwarding into the existing `republic webhook` command
+- payload capture under `.ai-repoagents/inbox/webhooks/`
+- forwarding into the existing `repoagents webhook` command
 - optional dashboard regeneration after each accepted payload
 
 ## Files
@@ -25,8 +25,8 @@ bash scripts/demo_webhook_receiver.sh
 Equivalent manual flow:
 
 ```bash
-uv run republic init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
-uv run --project /path/to/RepoRepublic python /path/to/RepoRepublic/scripts/webhook_receiver.py --repo-root "$PWD" --project-root /path/to/RepoRepublic --render-dashboard
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run --project /path/to/RepoAgents python /path/to/RepoAgents/scripts/webhook_receiver.py --repo-root "$PWD" --project-root /path/to/RepoAgents --render-dashboard
 curl -X POST http://127.0.0.1:8787/github \
   -H 'Content-Type: application/json' \
   -H 'X-GitHub-Event: issues' \
@@ -35,8 +35,8 @@ curl -X POST http://127.0.0.1:8787/github \
 
 After the POST completes, inspect:
 
-- `.ai-republic/inbox/webhooks/`
-- `.ai-republic/state/runs.json`
-- `.ai-republic/dashboard/index.html`
+- `.ai-repoagents/inbox/webhooks/`
+- `.ai-repoagents/state/runs.json`
+- `.ai-repoagents/dashboard/index.html`
 
 For the signed variant with `X-Hub-Signature-256` verification, see [../webhook-signature-receiver/README.md](../webhook-signature-receiver/README.md).

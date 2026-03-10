@@ -6,7 +6,7 @@ SOURCE_DIR="$ROOT_DIR/examples/live-github-sandbox-rollout"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-live-sandbox-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-live-sandbox-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -17,13 +17,13 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 pushd "$DEST_DIR" >/dev/null
 
 git init -q
-git config user.name "RepoRepublic Demo"
-git config user.email "demo@reporepublic.local"
+git config user.name "RepoAgents Demo"
+git config user.email "demo@repoagents.local"
 git remote add origin git@github.com:acme/sandbox-repo.git
 git add .
 git commit -q -m "initial"
 
-uv run --project "$ROOT_DIR" republic init \
+uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-repo acme/sandbox-repo
 
@@ -31,7 +31,7 @@ uv run --project "$ROOT_DIR" python - <<'PY'
 from pathlib import Path
 import yaml
 
-path = Path(".ai-republic/reporepublic.yaml")
+path = Path(".ai-repoagents/repoagents.yaml")
 payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 payload["tracker"]["kind"] = "github"
 payload["tracker"]["repo"] = "acme/sandbox-repo"
@@ -49,18 +49,18 @@ path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 PY
 
 git add .
-git commit -q -m "install reporepublic sandbox rollout"
+git commit -q -m "install repoagents sandbox rollout"
 
-mkdir -p .ai-republic/logs
+mkdir -p .ai-repoagents/logs
 
 export GITHUB_TOKEN="demo-sandbox-token"
 REPOREPUBLIC_PROJECT_ROOT="$ROOT_DIR" \
-REPOREPUBLIC_SANDBOX_REPORT_ROOT=".ai-republic/reports/sandbox-rollout" \
-REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-republic/reports/ops/sandbox-pr-ready" \
+REPOREPUBLIC_SANDBOX_REPORT_ROOT=".ai-repoagents/reports/sandbox-rollout" \
+REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-repoagents/reports/ops/sandbox-pr-ready" \
   bash ops/rehearse-rollout.sh
 REPOREPUBLIC_PROJECT_ROOT="$ROOT_DIR" \
-REPOREPUBLIC_SANDBOX_EXECUTION_REPORT_ROOT=".ai-republic/reports/sandbox-execution" \
-REPOREPUBLIC_EXECUTION_HANDOFF_OUTPUT_DIR=".ai-republic/reports/ops/sandbox-issue-201" \
+REPOREPUBLIC_SANDBOX_EXECUTION_REPORT_ROOT=".ai-repoagents/reports/sandbox-execution" \
+REPOREPUBLIC_EXECUTION_HANDOFF_OUTPUT_DIR=".ai-repoagents/reports/ops/sandbox-issue-201" \
   bash ops/rehearse-execution.sh
 
 popd >/dev/null

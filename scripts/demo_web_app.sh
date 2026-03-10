@@ -6,7 +6,7 @@ SOURCE_DIR="$ROOT_DIR/examples/web-app"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-web-app-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-web-app-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -16,7 +16,7 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 
 pushd "$DEST_DIR" >/dev/null
 
-uv run --project "$ROOT_DIR" republic init \
+uv run --project "$ROOT_DIR" repoagents init \
   --preset web-app \
   --fixture-issues issues.json \
   --tracker-repo demo/web-app
@@ -24,16 +24,16 @@ uv run --project "$ROOT_DIR" republic init \
 python3 - <<'PY'
 from pathlib import Path
 
-path = Path(".ai-republic/reporepublic.yaml")
+path = Path(".ai-repoagents/repoagents.yaml")
 body = path.read_text(encoding="utf-8")
 path.write_text(body.replace("mode: codex", "mode: mock"), encoding="utf-8")
 PY
 
-uv run --project "$ROOT_DIR" republic doctor
-uv run --project "$ROOT_DIR" republic run --dry-run
-uv run --project "$ROOT_DIR" republic run --once
-uv run --project "$ROOT_DIR" republic status
-uv run --project "$ROOT_DIR" republic dashboard
+uv run --project "$ROOT_DIR" repoagents doctor
+uv run --project "$ROOT_DIR" repoagents run --dry-run
+uv run --project "$ROOT_DIR" repoagents run --once
+uv run --project "$ROOT_DIR" repoagents status
+uv run --project "$ROOT_DIR" repoagents dashboard
 
 popd >/dev/null
 

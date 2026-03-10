@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-RepoRepublic is currently maintained as a rolling `0.1.x` line.
+RepoAgents is currently maintained as a rolling `0.1.x` line.
 
 | Version | Supported |
 | --- | --- |

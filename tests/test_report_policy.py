@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.report_policy import (
+from repoagents.config import load_config
+from repoagents.report_policy import (
     build_report_freshness_policy_snapshot,
     build_report_policy_alignment,
     build_report_policy_drift_guidance,
@@ -15,8 +15,8 @@ def test_build_report_policy_drift_guidance_returns_summary_and_detail() -> None
     guidance = build_report_policy_drift_guidance()
 
     assert guidance["summary"] == "refresh raw report exports to align embedded policy metadata"
-    assert "`republic sync audit --format all`" in guidance["detail"]
-    assert "`republic clean --report --report-format all`" in guidance["detail"]
+    assert "`repoagents sync audit --format all`" in guidance["detail"]
+    assert "`repoagents clean --report --report-format all`" in guidance["detail"]
 
 
 def test_build_report_freshness_policy_snapshot_matches_loaded_config(demo_repo: Path) -> None:

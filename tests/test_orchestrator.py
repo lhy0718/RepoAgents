@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.models import ExternalActionResult, IssueRef, PublicationMode, ReviewDecision, ReviewResult, ReviewSignals, RiskLevel, RoleName, RunLifecycle
-from reporepublic.orchestrator import Orchestrator
-from reporepublic.tracker.base import Tracker
+from repoagents.config import load_config
+from repoagents.models import ExternalActionResult, IssueRef, PublicationMode, ReviewDecision, ReviewResult, ReviewSignals, RiskLevel, RoleName, RunLifecycle
+from repoagents.orchestrator import Orchestrator
+from repoagents.tracker.base import Tracker
 
 
 class RecordingTracker(Tracker):
@@ -79,7 +79,7 @@ def test_orchestrator_persists_run_state(demo_repo: Path) -> None:
     orchestrator = Orchestrator(loaded, dry_run=False)
     records = asyncio.run(orchestrator.run_once())
     assert records
-    state_file = demo_repo / ".ai-republic" / "state" / "runs.json"
+    state_file = demo_repo / ".ai-repoagents" / "state" / "runs.json"
     assert state_file.exists()
     payload = state_file.read_text(encoding="utf-8")
     assert '"status": "completed"' in payload

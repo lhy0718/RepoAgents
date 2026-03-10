@@ -1,13 +1,13 @@
 # Example Release Publish Dry-Run
 
-This example documents the local asset-publish dry-run path for RepoRepublic.
+This example documents the local asset-publish dry-run path for RepoAgents.
 
 ## What it shows
 
 - local version-bump rehearsal to the inferred preview target
-- `republic release preview --format all`
-- `republic release announce --format all`
-- `republic release assets --build --smoke-install --format all`
+- `repoagents release preview --format all`
+- `repoagents release announce --format all`
+- `repoagents release assets --build --smoke-install --format all`
 - local annotated tag evidence plus built artifact checksums
 
 ## Demo
@@ -20,15 +20,15 @@ The demo copies the current repository into a temporary workspace, infers the ne
 
 The generated dry-run artifacts include:
 
-- `.ai-republic/reports/release-preview.json|md`
-- `.ai-republic/reports/release-announce.json|md`
-- `.ai-republic/reports/release-assets.json|md`
-- `.ai-republic/reports/release-assets-v<tag>.md`
-- `.ai-republic/reports/release-cut-v<tag>.md`
-- `.ai-republic/reports/release-publish-dry-run/tag.txt`
-- `.ai-republic/reports/release-publish-dry-run/tag-show.txt`
-- `.ai-republic/reports/release-publish-dry-run/release-assets-summary.md`
-- `.ai-republic/reports/release-publish-dry-run/publish-order.md`
+- `.ai-repoagents/reports/release-preview.json|md`
+- `.ai-repoagents/reports/release-announce.json|md`
+- `.ai-repoagents/reports/release-assets.json|md`
+- `.ai-repoagents/reports/release-assets-v<tag>.md`
+- `.ai-repoagents/reports/release-cut-v<tag>.md`
+- `.ai-repoagents/reports/release-publish-dry-run/tag.txt`
+- `.ai-repoagents/reports/release-publish-dry-run/tag-show.txt`
+- `.ai-repoagents/reports/release-publish-dry-run/release-assets-summary.md`
+- `.ai-repoagents/reports/release-publish-dry-run/publish-order.md`
 
 ## Suggested use
 

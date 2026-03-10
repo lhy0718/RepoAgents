@@ -1,6 +1,6 @@
 # Sync Artifacts
 
-RepoRepublic uses `.ai-republic/sync/` as a tracker-agnostic staging area for publish actions that should not be applied directly to an external system.
+RepoAgents uses `.ai-repoagents/sync/` as a tracker-agnostic staging area for publish actions that should not be applied directly to an external system.
 
 ## Why it exists
 
@@ -13,7 +13,7 @@ Use sync artifacts when:
 ## Layout contract
 
 ```text
-.ai-republic/sync/
+.ai-repoagents/sync/
   <tracker>/
     issue-<id>/
       <timestamp>-<action>.json
@@ -32,7 +32,7 @@ Current built-in apply helper:
 
 Implementation note:
 
-- built-in sync apply behavior is registered through `SyncActionRegistry` in [src/reporepublic/sync_artifacts.py](../src/reporepublic/sync_artifacts.py)
+- built-in sync apply behavior is registered through `SyncActionRegistry` in [src/repoagents/sync_artifacts.py](../src/repoagents/sync_artifacts.py)
 - tracker-specific handlers can register action-level effects and bundle resolvers without changing the CLI contract
 
 Contract rules:
@@ -56,38 +56,38 @@ Normalized schema fields:
 List staged artifacts:
 
 ```bash
-uv run republic sync ls
-uv run republic sync ls --issue 1
-uv run republic sync ls --tracker local-file --action comment
-uv run republic sync ls --tracker local-markdown --action pr-body
-uv run republic sync ls --format json
+uv run repoagents sync ls
+uv run repoagents sync ls --issue 1
+uv run repoagents sync ls --tracker local-file --action comment
+uv run repoagents sync ls --tracker local-markdown --action pr-body
+uv run repoagents sync ls --format json
 ```
 
 Inspect one artifact:
 
 ```bash
-uv run republic sync show local-markdown/issue-1/20260308T010101000001Z-comment.md
-uv run republic sync show 20260308T010101000001Z-comment.md
-uv run republic sync show /absolute/path/to/file --raw
+uv run repoagents sync show local-markdown/issue-1/20260308T010101000001Z-comment.md
+uv run repoagents sync show 20260308T010101000001Z-comment.md
+uv run repoagents sync show /absolute/path/to/file --raw
 ```
 
 Apply one pending artifact:
 
 ```bash
-uv run republic sync apply local-markdown/issue-1/20260308T010101000001Z-comment.md
-uv run republic sync apply --issue 1 --tracker local-file --action comment --latest
-uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest
-uv run republic sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle
-uv run republic sync ls --scope applied --issue 1
+uv run repoagents sync apply local-markdown/issue-1/20260308T010101000001Z-comment.md
+uv run repoagents sync apply --issue 1 --tracker local-file --action comment --latest
+uv run repoagents sync apply --issue 1 --tracker local-markdown --action comment --latest
+uv run repoagents sync apply --issue 1 --tracker local-markdown --action pr-body --latest --bundle
+uv run repoagents sync ls --scope applied --issue 1
 ```
 
 Inspect or repair applied manifest integrity:
 
 ```bash
-uv run republic sync check --issue 1
-uv run republic sync repair --issue 1 --dry-run
-uv run republic sync repair --issue 1
-uv run republic sync audit --format all
+uv run repoagents sync check --issue 1
+uv run repoagents sync repair --issue 1 --dry-run
+uv run repoagents sync repair --issue 1
+uv run repoagents sync audit --format all
 ```
 
 ## Current semantics
@@ -107,40 +107,40 @@ The parsed artifact also exposes a normalized metadata block so downstream tooli
 
 For `local_markdown`:
 
-- `comment` artifacts append a `reporepublic` comment entry to the source Markdown issue frontmatter
+- `comment` artifacts append a `repoagents` comment entry to the source Markdown issue frontmatter
 - `labels` artifacts merge staged labels into the source Markdown issue frontmatter
-- `branch`, `pr`, and `pr-body` artifacts are archived into `.ai-republic/sync-applied/` as handled handoff bundles
-- `republic sync apply --bundle` resolves the related `branch`, `pr`, and `pr-body` handoff set and archives them together
+- `branch`, `pr`, and `pr-body` artifacts are archived into `.ai-repoagents/sync-applied/` as handled handoff bundles
+- `repoagents sync apply --bundle` resolves the related `branch`, `pr`, and `pr-body` handoff set and archives them together
 
 For `local_file`:
 
-- `comment` artifacts append a `reporepublic` comment entry to the source `issues.json`
+- `comment` artifacts append a `repoagents` comment entry to the source `issues.json`
 - `labels` artifacts merge staged labels into the source `issues.json`
-- `branch`, `pr`, and `pr-body` artifacts are archived into `.ai-republic/sync-applied/` as handled handoff bundles
-- `republic sync apply --bundle` resolves the related `branch`, `pr`, and `pr-body` handoff set and archives them together
+- `branch`, `pr`, and `pr-body` artifacts are archived into `.ai-repoagents/sync-applied/` as handled handoff bundles
+- `repoagents sync apply --bundle` resolves the related `branch`, `pr`, and `pr-body` handoff set and archives them together
 
 Every apply operation writes or updates:
 
-- `.ai-republic/sync-applied/<tracker>/issue-<id>/manifest.json`
+- `.ai-repoagents/sync-applied/<tracker>/issue-<id>/manifest.json`
 
 Manifest entries now include richer handoff linkage:
 
 - `entry_key`: stable manifest entry id derived from the source artifact path
-- `archived_relative_path`: provider-neutral archive path under `.ai-republic/sync-applied/`
+- `archived_relative_path`: provider-neutral archive path under `.ai-repoagents/sync-applied/`
 - `handoff.group_key`: bundle or singleton grouping key
 - `handoff.group_size` and `handoff.group_index`: ordering inside one handoff group
 - `handoff.related_entry_keys` and `handoff.related_source_paths`: links to sibling artifacts in the same handoff set
 
-The source artifact is moved out of `.ai-republic/sync/` unless `--keep-source` is used.
+The source artifact is moved out of `.ai-repoagents/sync/` unless `--keep-source` is used.
 
 ## Dashboard and exports
 
-`republic dashboard` also reads applied manifests and renders `Sync handoffs`, `Sync retention`, and `Reports` in every export format.
+`repoagents dashboard` also reads applied manifests and renders `Sync handoffs`, `Sync retention`, and `Reports` in every export format.
 
 - HTML: clickable links to `manifest.json`, archived artifacts, normalized link targets, and per-issue retention posture cards
 - JSON: `sync_handoffs[]` plus `sync_retention` with prunable group counts, bytes, integrity state, and per-group age/size data
 - Markdown: a handoff summary plus a retention rollup that can be shared in operator notes or incidents
-- Reports: direct dashboard links to `.ai-republic/reports/sync-audit.*`, `cleanup-preview.*`, and `cleanup-result.*` when those exports exist
+- Reports: direct dashboard links to `.ai-repoagents/reports/sync-audit.*`, `cleanup-preview.*`, and `cleanup-result.*` when those exports exist
 
 For `Sync audit`, the dashboard report card also surfaces applied manifest integrity detail from the exported report:
 
@@ -156,8 +156,8 @@ When the sync audit export already links cleanup previews or cleanup results, th
 
 The `Sync audit` card also translates integrity finding codes into operator hints, for example:
 
-- `missing_manifest`: rebuild manifest state with `republic sync repair --dry-run`
-- `duplicate_entry_key`: canonicalize duplicate entries with `republic sync repair --dry-run`
+- `missing_manifest`: rebuild manifest state with `repoagents sync repair --dry-run`
+- `duplicate_entry_key`: canonicalize duplicate entries with `repoagents sync repair --dry-run`
 - `orphan_archive_file`: review and adopt orphan archives before applying cleanup
 
 Cleanup report cards also expose freshness metadata:
@@ -226,15 +226,15 @@ These severity decisions are repo-configurable through `dashboard.report_freshne
 
 The dashboard hero banner also mirrors the effective severity, title, and reason so operators see report-health posture before scanning the detailed `Reports` cards. That dashboard-only severity now also folds in raw export policy drift, so embedded-policy mismatches can raise the hero to `attention` even when freshness counts are otherwise clean.
 
-`republic doctor` now reports the effective `dashboard.report_freshness_policy` thresholds as well, warns when issue escalation is configured so loosely that stale or unknown reports may stay below `issues` longer than expected, flags raw `sync-audit.json` / `cleanup-*.json` exports whose embedded policy summary no longer matches the live config, and emits a combined `Report policy health` summary that rolls both signals into one operator-facing line. The alignment check now also emits the same related-report detail block shape used by `sync audit` / `clean --report`, so policy drift warnings and remediation read the same way across CLI surfaces.
+`repoagents doctor` now reports the effective `dashboard.report_freshness_policy` thresholds as well, warns when issue escalation is configured so loosely that stale or unknown reports may stay below `issues` longer than expected, flags raw `sync-audit.json` / `cleanup-*.json` exports whose embedded policy summary no longer matches the live config, and emits a combined `Report policy health` summary that rolls both signals into one operator-facing line. The alignment check now also emits the same related-report detail block shape used by `sync audit` / `clean --report`, so policy drift warnings and remediation read the same way across CLI surfaces.
 
-`republic doctor --format all` now exports the same operator health snapshot as JSON and Markdown under `.ai-republic/reports/doctor.json` and `.ai-republic/reports/doctor.md`, so CI or handoff automation can consume the same diagnostics without scraping terminal output.
+`repoagents doctor --format all` now exports the same operator health snapshot as JSON and Markdown under `.ai-repoagents/reports/doctor.json` and `.ai-repoagents/reports/doctor.md`, so CI or handoff automation can consume the same diagnostics without scraping terminal output.
 
-`republic status` now reuses the same report-health snapshot and prints the current report freshness severity, reason, cleanup report posture, active policy summary, and a combined `policy_health` line alongside persisted run state. When raw report exports still carry an older embedded policy summary, `status` also prints a `policy_warning` line followed by the same related-report detail block shape used by the sync/cleanup commands, including the mismatched file summaries and remediation guidance.
+`repoagents status` now reuses the same report-health snapshot and prints the current report freshness severity, reason, cleanup report posture, active policy summary, and a combined `policy_health` line alongside persisted run state. When raw report exports still carry an older embedded policy summary, `status` also prints a `policy_warning` line followed by the same related-report detail block shape used by the sync/cleanup commands, including the mismatched file summaries and remediation guidance.
 
-`republic status --format all` exports JSON and Markdown status snapshots under `.ai-republic/reports/status.json` and `.ai-republic/reports/status.md`, including filtered run selection, report-health state, policy-alignment details, and persisted run metadata.
+`repoagents status --format all` exports JSON and Markdown status snapshots under `.ai-repoagents/reports/status.json` and `.ai-repoagents/reports/status.md`, including filtered run selection, report-health state, policy-alignment details, and persisted run metadata.
 
-`republic sync audit` now also prints linked cleanup policy drift counts in its CLI summary, and `republic clean --report` prints linked sync-audit policy drift counts next to the export paths so operators can spot cross-report drift without opening the raw JSON first. Add `--show-remediation` to either command when you also want the recommended re-export guidance inline. Add `--show-mismatches` when you also want linked issue-filter mismatch warnings printed inline in the same CLI summary. When both flags are enabled, the CLI emits one related-report detail block that groups mismatch warnings, policy-drift warnings, and remediation guidance together.
+`repoagents sync audit` now also prints linked cleanup policy drift counts in its CLI summary, and `repoagents clean --report` prints linked sync-audit policy drift counts next to the export paths so operators can spot cross-report drift without opening the raw JSON first. Add `--show-remediation` to either command when you also want the recommended re-export guidance inline. Add `--show-mismatches` when you also want linked issue-filter mismatch warnings printed inline in the same CLI summary. When both flags are enabled, the CLI emits one related-report detail block that groups mismatch warnings, policy-drift warnings, and remediation guidance together.
 
 Dashboard exports now also include explicit `policy.report_freshness_policy` metadata and a rendered summary string, so downstream automation or shared snapshots can see the exact thresholds that produced the current severity.
 
@@ -265,13 +265,13 @@ The dashboard also breaks out stale cleanup exports into a dedicated summary car
 Useful commands:
 
 ```bash
-uv run republic dashboard
-uv run republic dashboard --format all
-uv run republic clean --sync-applied --dry-run
-uv run republic clean --sync-applied --dry-run --report --report-format all
+uv run repoagents dashboard
+uv run repoagents dashboard --format all
+uv run repoagents clean --sync-applied --dry-run
+uv run repoagents clean --sync-applied --dry-run --report --report-format all
 ```
 
-When the original staged file has already moved out of `.ai-republic/sync/`, the dashboard resolves normalized links such as `self` and `metadata_artifact` against the applied archive.
+When the original staged file has already moved out of `.ai-repoagents/sync/`, the dashboard resolves normalized links such as `self` and `metadata_artifact` against the applied archive.
 
 The `Sync retention` snapshot uses `cleanup.sync_applied_keep_groups_per_issue` to classify each applied issue archive as:
 
@@ -286,23 +286,23 @@ Each retention entry reports:
 - newest group age, oldest group age, and oldest prunable group age
 - sample grouped actions such as `branch,pr` or `comment`
 
-`republic clean --sync-applied` is manifest-aware:
+`repoagents clean --sync-applied` is manifest-aware:
 
 - retention is computed per `handoff.group_key`, not per single manifest entry
 - older groups beyond `cleanup.sync_applied_keep_groups_per_issue` are pruned together
 - orphan archived files and dangling manifest entries are removed conservatively
 
-When `--report` is enabled, cleanup also exports `.ai-republic/reports/cleanup-preview.json|md` or `.ai-republic/reports/cleanup-result.json|md`:
+When `--report` is enabled, cleanup also exports `.ai-repoagents/reports/cleanup-preview.json|md` or `.ai-repoagents/reports/cleanup-result.json|md`:
 
 - JSON: action list, affected issues, and manifest replacement counts
 - Markdown: operator-friendly cleanup summary
 
-`republic sync check` and `republic sync repair` focus on integrity instead of retention:
+`repoagents sync check` and `repoagents sync repair` focus on integrity instead of retention:
 
 - `sync check` reports malformed manifests, duplicate `entry_key`, dangling archive references, handoff linkage mismatches, and orphan archive files
 - `sync repair` canonicalizes surviving entries, reconstructs missing metadata, rebuilds handoff linkage, and adopts orphan archives into `manifest.json`
 
-`republic sync audit` exports a consolidated report under `.ai-republic/reports/`:
+`repoagents sync audit` exports a consolidated report under `.ai-repoagents/reports/`:
 
 - JSON: pending staged inventory, applied manifest integrity findings, and retention summary in one payload
 - Markdown: incident-friendly operator summary for handoff or async review

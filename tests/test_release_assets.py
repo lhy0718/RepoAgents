@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-import reporepublic.release_assets as release_assets
-from reporepublic.release_assets import (
+import repoagents.release_assets as release_assets
+from repoagents.release_assets import (
     build_release_asset_exports,
     build_release_asset_snapshot,
 )
@@ -33,7 +33,7 @@ def test_build_release_asset_exports_write_report_and_summary(tmp_path: Path) ->
 
     result = build_release_asset_exports(
         snapshot=snapshot,
-        output_path=tmp_path / ".ai-republic" / "reports" / "release-assets.json",
+        output_path=tmp_path / ".ai-repoagents" / "reports" / "release-assets.json",
         formats=("json", "markdown"),
     )
 
@@ -76,8 +76,8 @@ def test_build_release_asset_snapshot_prefers_target_version_artifacts_for_smoke
     assert snapshot["summary"]["status"] == "clean"
     assert snapshot["summary"]["target_wheel_count"] == 1
     assert snapshot["summary"]["target_sdist_count"] == 1
-    assert captured["wheel_path"].endswith("reporepublic-0.1.1-py3-none-any.whl")
-    assert "reporepublic-0.1.1-py3-none-any.whl" in snapshot["smoke_install"]["command"]
+    assert captured["wheel_path"].endswith("repoagents-0.1.1-py3-none-any.whl")
+    assert "repoagents-0.1.1-py3-none-any.whl" in snapshot["smoke_install"]["command"]
 
 
 def _install_release_metadata(repo_root: Path, *, version: str) -> None:
@@ -85,19 +85,19 @@ def _install_release_metadata(repo_root: Path, *, version: str) -> None:
         "\n".join(
             [
                 "[project]",
-                'name = "reporepublic"',
+                'name = "repoagents"',
                 f'version = "{version}"',
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    package_init = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init = repo_root / "src" / "repoagents" / "__init__.py"
     package_init.parent.mkdir(parents=True, exist_ok=True)
     package_init.write_text(
         '\n'.join(
             [
-                '"""RepoRepublic package."""',
+                '"""RepoAgents package."""',
                 "",
                 '__all__ = ["__version__"]',
                 "",
@@ -127,11 +127,11 @@ def _install_release_metadata(repo_root: Path, *, version: str) -> None:
 def _install_fake_dist(repo_root: Path, *, version: str) -> None:
     dist_dir = repo_root / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
-    (dist_dir / f"reporepublic-{version}-py3-none-any.whl").write_text(
+    (dist_dir / f"repoagents-{version}-py3-none-any.whl").write_text(
         "fake wheel payload\n",
         encoding="utf-8",
     )
-    (dist_dir / f"reporepublic-{version}.tar.gz").write_text(
+    (dist_dir / f"repoagents-{version}.tar.gz").write_text(
         "fake sdist payload\n",
         encoding="utf-8",
     )

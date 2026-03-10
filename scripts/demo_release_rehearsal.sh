@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
-REPORT_ROOT_REL="${REPOREPUBLIC_RELEASE_REHEARSAL_REPORT_ROOT:-.ai-republic/reports/release-rehearsal}"
+REPORT_ROOT_REL="${REPOREPUBLIC_RELEASE_REHEARSAL_REPORT_ROOT:-.ai-repoagents/reports/release-rehearsal}"
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-release-rehearsal-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-release-rehearsal-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -18,41 +18,41 @@ tar \
   --exclude=".venv" \
   --exclude=".pytest_cache" \
   --exclude="dist" \
-  --exclude=".ai-republic/artifacts" \
-  --exclude=".ai-republic/dashboard" \
-  --exclude=".ai-republic/inbox" \
-  --exclude=".ai-republic/logs" \
-  --exclude=".ai-republic/reports" \
-  --exclude=".ai-republic/state" \
-  --exclude=".ai-republic/sync" \
-  --exclude=".ai-republic/sync-applied" \
-  --exclude=".ai-republic/workspaces" \
+  --exclude=".ai-repoagents/artifacts" \
+  --exclude=".ai-repoagents/dashboard" \
+  --exclude=".ai-repoagents/inbox" \
+  --exclude=".ai-repoagents/logs" \
+  --exclude=".ai-repoagents/reports" \
+  --exclude=".ai-repoagents/state" \
+  --exclude=".ai-repoagents/sync" \
+  --exclude=".ai-repoagents/sync-applied" \
+  --exclude=".ai-repoagents/workspaces" \
   -cf - . | tar -C "$DEST_DIR" -xf -
 
 pushd "$DEST_DIR" >/dev/null
 
 git init -q
-git config user.name "RepoRepublic Demo"
-git config user.email "demo@reporepublic.local"
+git config user.name "RepoAgents Demo"
+git config user.email "demo@repoagents.local"
 git add .
 git commit -q -m "initial release rehearsal snapshot"
 
 mkdir -p "$REPORT_ROOT_REL"
 
-uv run republic release preview --format all >"$REPORT_ROOT_REL/release-preview.stdout.txt"
-uv run republic release announce --format all >"$REPORT_ROOT_REL/release-announce.stdout.txt"
+uv run repoagents release preview --format all >"$REPORT_ROOT_REL/release-preview.stdout.txt"
+uv run repoagents release announce --format all >"$REPORT_ROOT_REL/release-announce.stdout.txt"
 
 TAG="$(
   uv run python - <<'PY'
 from pathlib import Path
 import json
 
-payload = json.loads(Path(".ai-republic/reports/release-preview.json").read_text(encoding="utf-8"))
+payload = json.loads(Path(".ai-repoagents/reports/release-preview.json").read_text(encoding="utf-8"))
 print(payload["target"]["tag"])
 PY
 )"
 
-git tag -a "$TAG" -m "RepoRepublic ${TAG} rehearsal"
+git tag -a "$TAG" -m "RepoAgents ${TAG} rehearsal"
 git tag -n99 "$TAG" >"$REPORT_ROOT_REL/tag.txt"
 git show "$TAG" --stat >"$REPORT_ROOT_REL/tag-show.txt"
 
@@ -65,9 +65,9 @@ fi
 cat >"$REPORT_ROOT_REL/rehearsal-order.md" <<EOF
 # Release Rehearsal Order
 
-1. Open \`.ai-republic/reports/release-preview.md\`
-2. Open \`.ai-republic/reports/release-announce.md\`
-3. Copy \`.ai-republic/reports/release-cut-${TAG}.md\`
+1. Open \`.ai-repoagents/reports/release-preview.md\`
+2. Open \`.ai-repoagents/reports/release-announce.md\`
+3. Copy \`.ai-repoagents/reports/release-cut-${TAG}.md\`
 4. Inspect \`${REPORT_ROOT_REL}/tag.txt\` and \`${REPORT_ROOT_REL}/tag-show.txt\`
 5. Inspect \`${REPORT_ROOT_REL}/dist.sha256.txt\`
 EOF

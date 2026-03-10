@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from reporepublic.models import ReviewSignals
-from reporepublic.roles.review_criteria import evaluate_review_criteria
+from repoagents.models import ReviewSignals
+from repoagents.roles.review_criteria import evaluate_review_criteria
 
 
 def test_review_criteria_requires_changes_for_code_without_tests() -> None:

@@ -1,32 +1,32 @@
 # Release Checklist
 
-이 문서는 RepoRepublic 공개 릴리스를 준비하는 maintainer용 체크리스트입니다.
+이 문서는 RepoAgents 공개 릴리스를 준비하는 maintainer용 체크리스트입니다.
 
 ## 한 번에 돌리는 preflight
 
 태그를 자르기 직전 한 번에 체크리스트를 실행하고 필요한 artifact까지 남기고 싶다면 아래 경로를 기본으로 사용합니다.
 
 ```bash
-uv run republic release check --format all
+uv run repoagents release check --format all
 bash scripts/release_preflight.sh
 ```
 
-기본 `republic release check`는 다음을 한 번에 실행합니다.
+기본 `repoagents release check`는 다음을 한 번에 실행합니다.
 
 - release preview target 추론
 - release announcement copy pack 생성
 - `uv run pytest -q`
 - `uv build`
-- temporary wheel install 기준 `republic --help` smoke
+- temporary wheel install 기준 `repoagents --help` smoke
 - 오픈소스 governance/CI 파일 존재 여부 점검
 
 생성되는 파일:
 
-- `.ai-republic/reports/release-checklist.json`
-- `.ai-republic/reports/release-checklist.md`
-- `.ai-republic/reports/release-preview.json`
-- `.ai-republic/reports/release-announce.json`
-- `.ai-republic/reports/release-assets.json`
+- `.ai-repoagents/reports/release-checklist.json`
+- `.ai-repoagents/reports/release-checklist.md`
+- `.ai-repoagents/reports/release-preview.json`
+- `.ai-repoagents/reports/release-announce.json`
+- `.ai-repoagents/reports/release-assets.json`
 
 저장소가 실제 publish-ready 상태일 때만 exit code가 `0`이고, blocking issue나 follow-up이 남아 있으면 non-zero로 끝나므로 태그 직전 마지막 로컬 gate로 사용할 수 있습니다.
 
@@ -35,38 +35,38 @@ bash scripts/release_preflight.sh
 태그를 자르기 전에 내장 preview를 먼저 실행합니다.
 
 ```bash
-uv run republic release preview
-uv run republic release preview --format all
-uv run republic release announce --format all
-uv run republic release check --format all
+uv run repoagents release preview
+uv run repoagents release preview --format all
+uv run repoagents release announce --format all
+uv run repoagents release check --format all
 ```
 
-이 preview는 `republic init`으로 부트스트랩되지 않은 저장소에서도 동작합니다.
+이 preview는 `repoagents init`으로 부트스트랩되지 않은 저장소에서도 동작합니다.
 
 생성되는 파일:
 
-- `.ai-republic/reports/release-preview.json`
-- `.ai-republic/reports/release-preview.md`
-- `.ai-republic/reports/release-notes-v<version>.md`
-- `.ai-republic/reports/release-announce.json`
-- `.ai-republic/reports/release-announce.md`
-- `.ai-republic/reports/announcement-v<version>.md`
-- `.ai-republic/reports/discussion-v<version>.md`
-- `.ai-republic/reports/social-v<version>.md`
-- `.ai-republic/reports/release-cut-v<version>.md`
+- `.ai-repoagents/reports/release-preview.json`
+- `.ai-repoagents/reports/release-preview.md`
+- `.ai-repoagents/reports/release-notes-v<version>.md`
+- `.ai-repoagents/reports/release-announce.json`
+- `.ai-repoagents/reports/release-announce.md`
+- `.ai-repoagents/reports/announcement-v<version>.md`
+- `.ai-repoagents/reports/discussion-v<version>.md`
+- `.ai-repoagents/reports/social-v<version>.md`
+- `.ai-repoagents/reports/release-cut-v<version>.md`
 
 preview가 점검하는 항목:
 
-- `pyproject.toml`과 `src/reporepublic/__init__.py`의 버전 정합성
+- `pyproject.toml`과 `src/repoagents/__init__.py`의 버전 정합성
 - `CHANGELOG.md`의 `Unreleased` 노트가 실제 release body로 쓸 수 있는 상태인지
 - 요청하거나 추론한 target tag가 이미 changelog에 존재하는지
 - 현재 branch와 working tree가 release-ready 상태인지
 
-현재 프로젝트 버전에 이미 날짜가 있는 changelog section이 있고 `Unreleased`에 새 노트가 남아 있으면, RepoRepublic는 preview에서 다음 patch tag를 자동 추론합니다. 예를 들어 `0.1.0`이 이미 release section으로 존재하고 `Unreleased`에 새 항목이 있으면 preview target은 `v0.1.1`이 됩니다.
+현재 프로젝트 버전에 이미 날짜가 있는 changelog section이 있고 `Unreleased`에 새 노트가 남아 있으면, RepoAgents는 preview에서 다음 patch tag를 자동 추론합니다. 예를 들어 `0.1.0`이 이미 release section으로 존재하고 `Unreleased`에 새 항목이 있으면 preview target은 `v0.1.1`이 됩니다.
 
 ## Announcement copy pack
 
-`republic release announce --format all`은 같은 inferred target tag를 재사용해서 maintainer용 copy pack을 생성합니다.
+`repoagents release announce --format all`은 같은 inferred target tag를 재사용해서 maintainer용 copy pack을 생성합니다.
 
 - short public announcement
 - pinned discussion draft
@@ -82,22 +82,22 @@ preview가 점검하는 항목:
 bash scripts/demo_release_rehearsal.sh
 ```
 
-이 스크립트는 현재 저장소를 임시 workspace로 복사하고, preview/announcement artifact를 생성하고, local annotated rehearsal tag를 만들고, `uv build`를 실행한 뒤, tag/build evidence를 `.ai-republic/reports/release-rehearsal/` 아래에 남깁니다.
+이 스크립트는 현재 저장소를 임시 workspace로 복사하고, preview/announcement artifact를 생성하고, local annotated rehearsal tag를 만들고, `uv build`를 실행한 뒤, tag/build evidence를 `.ai-repoagents/reports/release-rehearsal/` 아래에 남깁니다.
 
 ## Asset publish dry-run
 
 external package index를 건드리지 않고 wheel/sdist와 post-tag upload command를 검증하려면 asset report를 사용합니다.
 
 ```bash
-uv run republic release assets --format all
-uv run republic release assets --build --smoke-install --format all
+uv run repoagents release assets --format all
+uv run repoagents release assets --build --smoke-install --format all
 ```
 
 생성되는 파일:
 
-- `.ai-republic/reports/release-assets.json`
-- `.ai-republic/reports/release-assets.md`
-- `.ai-republic/reports/release-assets-v<tag>.md`
+- `.ai-repoagents/reports/release-assets.json`
+- `.ai-repoagents/reports/release-assets.md`
+- `.ai-repoagents/reports/release-assets-v<tag>.md`
 
 asset report가 담는 내용:
 
@@ -114,7 +114,7 @@ disposable end-to-end rehearsal이 필요하면 아래를 실행합니다.
 bash scripts/demo_release_publish_dry_run.sh
 ```
 
-이 스크립트는 복사한 workspace를 inferred preview version으로 맞추고, local annotated rehearsal tag를 만든 다음, `republic release assets --build --smoke-install --format all`을 실행하고, tag/build evidence를 `.ai-republic/reports/release-publish-dry-run/` 아래에 남깁니다.
+이 스크립트는 복사한 workspace를 inferred preview version으로 맞추고, local annotated rehearsal tag를 만든 다음, `repoagents release assets --build --smoke-install --format all`을 실행하고, tag/build evidence를 `.ai-repoagents/reports/release-publish-dry-run/` 아래에 남깁니다.
 
 ## 릴리스를 자르기 전
 
@@ -136,9 +136,9 @@ uv build
 선택 사항이지만 권장되는 install smoke:
 
 ```bash
-python3.12 -m venv /tmp/reporepublic-release-smoke
-/tmp/reporepublic-release-smoke/bin/pip install dist/*.whl
-/tmp/reporepublic-release-smoke/bin/republic --help
+python3.12 -m venv /tmp/repoagents-release-smoke
+/tmp/repoagents-release-smoke/bin/pip install dist/*.whl
+/tmp/repoagents-release-smoke/bin/repoagents --help
 ```
 
 live GitHub나 Codex surface를 건드렸다면 아래 opt-in smoke도 고려합니다.
@@ -172,11 +172,11 @@ write-path live GitHub check는 반드시 전용 sandbox repo에서만 실행합
 preview는 바로 복사할 수 있는 GitHub release body 파일도 생성합니다. 기본 publish 명령은 다음과 같습니다.
 
 ```bash
-gh release create v0.1.1 --title "RepoRepublic v0.1.1" --notes-file .ai-republic/reports/release-notes-v0.1.1.md
+gh release create v0.1.1 --title "RepoAgents v0.1.1" --notes-file .ai-repoagents/reports/release-notes-v0.1.1.md
 ```
 
 ## 릴리스 후
 
-- 릴리스 artifact로 install 후 `republic --help`를 다시 확인합니다.
+- 릴리스 artifact로 install 후 `repoagents --help`를 다시 확인합니다.
 - GitHub release description의 docs 링크를 확인합니다.
 - 릴리스 때문에 바뀐 roadmap이나 backlog 메모를 갱신합니다.

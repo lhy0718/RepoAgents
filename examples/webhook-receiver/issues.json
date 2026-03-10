@@ -11,7 +11,7 @@
     "id": 2,
     "number": 2,
     "title": "Improve offline quickstart",
-    "body": "Document how to drive RepoRepublic from a local webhook receiver without GitHub network access.",
+    "body": "Document how to drive RepoAgents from a local webhook receiver without GitHub network access.",
     "labels": ["docs"],
     "comments": []
   }

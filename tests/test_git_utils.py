@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporepublic.utils import has_dirty_working_tree, list_dirty_working_tree_entries
+from repoagents.utils import has_dirty_working_tree, list_dirty_working_tree_entries
 
 
-def test_dirty_working_tree_ignores_reporepublic_runtime_paths(demo_git_repo: Path) -> None:
-    runtime_state = demo_git_repo / ".ai-republic" / "state" / "runs.json"
+def test_dirty_working_tree_ignores_repoagents_runtime_paths(demo_git_repo: Path) -> None:
+    runtime_state = demo_git_repo / ".ai-repoagents" / "state" / "runs.json"
     runtime_state.write_text('{\n  "runs": {"1": "dirty"}\n}\n', encoding="utf-8")
     (demo_git_repo / "parser.py").write_text(
         "def parse_items(raw: str) -> list[str]:\n    return []\n",

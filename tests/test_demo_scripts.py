@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from reporepublic.config import load_config
+from repoagents.config import load_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,9 +27,9 @@ def test_demo_python_lib_script_runs_in_temp_workspace(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
 
 
 def test_demo_web_app_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -48,9 +48,9 @@ def test_demo_web_app_script_runs_in_temp_workspace(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
 
 
 def test_demo_local_file_tracker_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -69,9 +69,9 @@ def test_demo_local_file_tracker_script_runs_in_temp_workspace(tmp_path: Path) -
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
 
 
 def test_demo_local_markdown_tracker_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -90,9 +90,9 @@ def test_demo_local_markdown_tracker_script_runs_in_temp_workspace(tmp_path: Pat
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
 
 
 def test_demo_local_markdown_sync_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -109,13 +109,13 @@ def test_demo_local_markdown_sync_script_runs_in_temp_workspace(tmp_path: Path) 
         },
     )
 
-    sync_dir = dest / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
-    applied_dir = dest / ".ai-republic" / "sync-applied" / "local-markdown" / "issue-1"
+    sync_dir = dest / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
+    applied_dir = dest / ".ai-repoagents" / "sync-applied" / "local-markdown" / "issue-1"
     manifest_payload = json.loads((applied_dir / "manifest.json").read_text(encoding="utf-8")) if (applied_dir / "manifest.json").exists() else []
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
     assert sync_dir.exists()
     assert not list(sync_dir.glob("*-pr-body.md"))
     assert applied_dir.exists()
@@ -143,21 +143,21 @@ def test_demo_local_file_sync_script_runs_in_temp_workspace(tmp_path: Path) -> N
         },
     )
 
-    sync_dir = dest / ".ai-republic" / "sync" / "local-file" / "issue-1"
-    applied_dir = dest / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    sync_dir = dest / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
+    applied_dir = dest / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     issue_payload = load_config(dest).resolve(Path("issues.json"))
     issue_data = json.loads(issue_payload.read_text(encoding="utf-8"))
     manifest_payload = json.loads((applied_dir / "manifest.json").read_text(encoding="utf-8")) if (applied_dir / "manifest.json").exists() else []
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
     assert sync_dir.exists()
     assert applied_dir.exists()
     assert list(applied_dir.glob("*-comment.md"))
     assert (applied_dir / "manifest.json").exists()
     assert manifest_payload[-1]["handoff"]["group_size"] == 1
-    assert issue_data[0]["comments"][-1]["author"] == "reporepublic"
+    assert issue_data[0]["comments"][-1]["author"] == "repoagents"
     assert "Applied sync artifact:" in completed.stdout
 
 
@@ -177,11 +177,11 @@ def test_demo_qa_role_pack_script_runs_in_temp_workspace(tmp_path: Path) -> None
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-1/*/qa.json"))
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-1/*/qa.md"))
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-1/*/qa.json"))
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-1/*/qa.md"))
 
 
 def test_demo_docs_maintainer_pack_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -200,15 +200,15 @@ def test_demo_docs_maintainer_pack_script_runs_in_temp_workspace(tmp_path: Path)
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "artifacts").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert (dest / ".ai-republic" / "prompts" / "planner.txt.j2").exists()
-    assert (dest / ".ai-republic" / "policies" / "scope-policy.md").read_text(encoding="utf-8").startswith(
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "artifacts").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "prompts" / "planner.txt.j2").exists()
+    assert (dest / ".ai-repoagents" / "policies" / "scope-policy.md").read_text(encoding="utf-8").startswith(
         "# Scope Policy\n\nPack: `docs-maintainer-pack`"
     )
     assert "## Docs Maintainer Pack" in (dest / "AGENTS.md").read_text(encoding="utf-8")
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-1/*/planner.md"))
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-1/*/planner.md"))
 
 
 def test_demo_webhook_receiver_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -228,9 +228,9 @@ def test_demo_webhook_receiver_script_runs_in_temp_workspace(tmp_path: Path) -> 
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert list((dest / ".ai-republic" / "inbox" / "webhooks").glob("*.json"))
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert list((dest / ".ai-repoagents" / "inbox" / "webhooks").glob("*.json"))
 
 
 def test_demo_webhook_signature_receiver_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -245,15 +245,15 @@ def test_demo_webhook_signature_receiver_script_runs_in_temp_workspace(tmp_path:
             **os.environ,
             "REPOREPUBLIC_DEMO_DEST": str(dest),
             "REPOREPUBLIC_WEBHOOK_PORT": "8792",
-            "REPOREPUBLIC_WEBHOOK_SECRET": "reporepublic-test-secret",
+            "REPOREPUBLIC_WEBHOOK_SECRET": "repoagents-test-secret",
         },
     )
 
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
-    assert (dest / ".ai-republic" / "state" / "runs.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert list((dest / ".ai-republic" / "inbox" / "webhooks").glob("*.json"))
+    assert (dest / ".ai-repoagents" / "state" / "runs.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert list((dest / ".ai-repoagents" / "inbox" / "webhooks").glob("*.json"))
 
 
 def test_demo_live_ops_script_prepares_live_blueprint(tmp_path: Path) -> None:
@@ -274,21 +274,21 @@ def test_demo_live_ops_script_prepares_live_blueprint(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
     assert (dest / ".git").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "github-smoke.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops-brief.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops-status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "bundle.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "github-smoke.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "ops-brief.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "ops-status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "README.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "live-handoff-demo" / "index.html").exists()
-    assert list((dest / ".ai-republic" / "reports" / "ops").glob("live-handoff-demo*.tar.gz"))
-    assert (dest / ".ai-republic" / "logs").exists()
-    assert (dest / "ops" / "republic.env.example").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "github-smoke.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops-brief.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops-status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "bundle.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "github-smoke.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "ops-brief.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "ops-status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "README.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "live-handoff-demo" / "index.html").exists()
+    assert list((dest / ".ai-repoagents" / "reports" / "ops").glob("live-handoff-demo*.tar.gz"))
+    assert (dest / ".ai-repoagents" / "logs").exists()
+    assert (dest / "ops" / "repoagents.env.example").exists()
     assert (dest / "ops" / "handoff-order.md").exists()
     assert loaded.data.tracker.kind.value == "github"
     assert loaded.data.tracker.mode.value == "rest"
@@ -313,7 +313,7 @@ def test_demo_release_rehearsal_script_runs_in_temp_workspace(tmp_path: Path) ->
         },
     )
 
-    reports_dir = dest / ".ai-republic" / "reports"
+    reports_dir = dest / ".ai-repoagents" / "reports"
     rehearsal_dir = reports_dir / "release-rehearsal"
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
@@ -333,7 +333,7 @@ def test_demo_release_rehearsal_script_runs_in_temp_workspace(tmp_path: Path) ->
     assert (rehearsal_dir / "rehearsal-order.md").exists()
     assert list((dest / "dist").glob("*.whl"))
     assert list((dest / "dist").glob("*.tar.gz"))
-    assert "RepoRepublic v0.1.1 rehearsal" in (rehearsal_dir / "tag-show.txt").read_text(encoding="utf-8")
+    assert "RepoAgents v0.1.1 rehearsal" in (rehearsal_dir / "tag-show.txt").read_text(encoding="utf-8")
 
 
 def test_demo_release_publish_dry_run_script_runs_in_temp_workspace(tmp_path: Path) -> None:
@@ -350,7 +350,7 @@ def test_demo_release_publish_dry_run_script_runs_in_temp_workspace(tmp_path: Pa
         },
     )
 
-    reports_dir = dest / ".ai-republic" / "reports"
+    reports_dir = dest / ".ai-repoagents" / "reports"
     rehearsal_dir = reports_dir / "release-publish-dry-run"
     assert completed.returncode == 0, completed.stderr
     assert "Demo workspace:" in completed.stdout
@@ -393,47 +393,47 @@ def test_demo_live_publish_sandbox_script_rehearses_publish_rollout(tmp_path: Pa
     assert "Sandbox rollout reports:" in completed.stdout
     assert "Sandbox execution reports:" in completed.stdout
     assert (dest / ".git").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.html").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.json").exists()
-    assert (dest / ".ai-republic" / "dashboard" / "index.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "doctor.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "github-smoke.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops-brief.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops-status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-rollout" / "baseline" / "doctor.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-rollout" / "comments-ready" / "github-smoke.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-rollout" / "pr-gated" / "github-smoke.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-rollout" / "pr-ready" / "github-smoke.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-execution" / "trigger-dry-run.txt").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-execution" / "trigger.txt").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-execution" / "status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "sandbox-execution" / "status.md").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.json").exists()
+    assert (dest / ".ai-repoagents" / "dashboard" / "index.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "doctor.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "github-smoke.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops-brief.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops-status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "baseline" / "doctor.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "comments-ready" / "github-smoke.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "pr-gated" / "github-smoke.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "pr-ready" / "github-smoke.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-execution" / "trigger-dry-run.txt").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-execution" / "trigger.txt").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-execution" / "status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "sandbox-execution" / "status.md").exists()
     assert (
-        dest / ".ai-republic" / "reports" / "sandbox-rollout" / "pr-gated" / "require-write-ready.exit-code"
+        dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "pr-gated" / "require-write-ready.exit-code"
     ).read_text(encoding="utf-8").strip() == "1"
     assert (
-        dest / ".ai-republic" / "reports" / "sandbox-rollout" / "pr-ready" / "require-write-ready.exit-code"
+        dest / ".ai-repoagents" / "reports" / "sandbox-rollout" / "pr-ready" / "require-write-ready.exit-code"
     ).read_text(encoding="utf-8").strip() == "0"
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "bundle.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "github-smoke.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "ops-brief.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "ops-status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "README.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-pr-ready" / "index.html").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-issue-201" / "bundle.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-issue-201" / "ops-brief.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-issue-201" / "ops-status.json").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-issue-201" / "README.md").exists()
-    assert (dest / ".ai-republic" / "reports" / "ops" / "sandbox-issue-201" / "index.html").exists()
-    assert list((dest / ".ai-republic" / "reports" / "ops").glob("sandbox-pr-ready*.tar.gz"))
-    assert list((dest / ".ai-republic" / "reports" / "ops").glob("sandbox-issue-201*.tar.gz"))
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "bundle.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "github-smoke.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "ops-brief.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "ops-status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "README.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-pr-ready" / "index.html").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-issue-201" / "bundle.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-issue-201" / "ops-brief.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-issue-201" / "ops-status.json").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-issue-201" / "README.md").exists()
+    assert (dest / ".ai-repoagents" / "reports" / "ops" / "sandbox-issue-201" / "index.html").exists()
+    assert list((dest / ".ai-repoagents" / "reports" / "ops").glob("sandbox-pr-ready*.tar.gz"))
+    assert list((dest / ".ai-repoagents" / "reports" / "ops").glob("sandbox-issue-201*.tar.gz"))
     assert (dest / "ops" / "rollout-order.md").exists()
     assert (dest / "ops" / "execution-order.md").exists()
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-201/*/triage.json"))
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-201/*/planner.md"))
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-201/*/engineer.md"))
-    assert list((dest / ".ai-republic" / "artifacts").glob("issue-201/*/reviewer.json"))
-    assert "Triggered issue #201." in (dest / ".ai-republic" / "reports" / "sandbox-execution" / "trigger.txt").read_text(
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-201/*/triage.json"))
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-201/*/planner.md"))
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-201/*/engineer.md"))
+    assert list((dest / ".ai-repoagents" / "artifacts").glob("issue-201/*/reviewer.json"))
+    assert "Triggered issue #201." in (dest / ".ai-repoagents" / "reports" / "sandbox-execution" / "trigger.txt").read_text(
         encoding="utf-8"
     )
     assert loaded.data.tracker.kind.value == "github"

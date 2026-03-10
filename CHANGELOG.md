@@ -16,7 +16,7 @@ The format follows Keep a Changelog and the project uses semantic-style version 
 
 ### Added
 
-- initial public-preview release of RepoRepublic
+- initial public-preview release of RepoAgents
 - Typer CLI with `init`, `doctor`, `run`, `status`, `trigger`, `webhook`, `dashboard`, `ops`, `sync`, and `github smoke`
 - Codex CLI default backend plus deterministic mock backend
 - GitHub, `local_file`, and `local_markdown` tracker adapters

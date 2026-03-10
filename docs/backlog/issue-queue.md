@@ -141,7 +141,7 @@
 - Area: Logging / Orchestrator
 - Problem: 장기 실행 시 stderr만으로는 관찰성과 보존성이 부족하다.
 - Scope:
-  - `.ai-republic/logs/` 출력 추가
+  - `.ai-repoagents/logs/` 출력 추가
   - run-id/issue-id 포함 로그 포맷 추가
 - Acceptance criteria:
   - [x] 설정으로 파일 로그 활성화 가능
@@ -242,7 +242,7 @@
   - [x] 승인 단계가 설정으로 제어됨
   - [x] 기본값은 여전히 보수적임
 
-### RR-017. `republic init` 대화형 모드
+### RR-017. `repoagents init` 대화형 모드
 
 - Status: done
 - Priority: P2
@@ -255,7 +255,7 @@
   - [x] 플래그 없이 실행해도 초기화 가능
   - [x] 비대화형 플래그 경로는 유지됨
 
-### RR-018. `republic doctor` 진단 강화
+### RR-018. `repoagents doctor` 진단 강화
 
 - Status: done
 - Priority: P2
@@ -355,7 +355,7 @@
 - Status: done
 - Priority: P2
 - Area: Templates / Tests
-- Problem: `republic init` 생성 결과가 의도치 않게 바뀌는 것을 막을 장치가 약하다.
+- Problem: `repoagents init` 생성 결과가 의도치 않게 바뀌는 것을 막을 장치가 약하다.
 - Scope:
   - preset별 생성 결과 스냅샷
   - 핵심 파일 diff 검증
@@ -458,7 +458,7 @@
 - Status: done
 - Priority: P3
 - Area: Examples / Integrations / Docs
-- Problem: `republic webhook` 명령은 있지만, 실제 HTTP receiver 형태로 연결하는 예제가 없었다.
+- Problem: `repoagents webhook` 명령은 있지만, 실제 HTTP receiver 형태로 연결하는 예제가 없었다.
 - Scope:
   - 로컬 webhook receiver 예제 스크립트 추가
   - 전용 example repo와 sample payload 추가
@@ -479,7 +479,7 @@
   - timed reload 옵션 추가
 - Acceptance criteria:
   - [x] 브라우저에서 run card를 검색/상태별로 필터링할 수 있음
-  - [x] `republic dashboard --refresh-seconds <n>` 경로가 존재함
+  - [x] `repoagents dashboard --refresh-seconds <n>` 경로가 존재함
 
 ### RR-035. live deployment/ops examples 추가
 
@@ -547,7 +547,7 @@
 - Area: Dashboard / CLI / Docs
 - Problem: 현재 대시보드는 정적 HTML 위주라 운영 스냅샷을 자동화나 공유 문맥으로 넘길 수 있는 형식이 부족하다.
 - Scope:
-  - `republic dashboard --format` 경로 추가
+  - `repoagents dashboard --format` 경로 추가
   - JSON/Markdown export 추가
   - live ops helper와 문서, 테스트 갱신
 - Acceptance criteria:
@@ -577,7 +577,7 @@
 - Area: Tracker / Sync staging / Examples / Docs
 - Problem: `local_markdown` tracker는 issue inbox는 읽을 수 있지만, publish 결과를 로컬 워크플로에 넘길 write-back staging 경로가 없다.
 - Scope:
-  - `.ai-republic/sync/local-markdown/issue-<id>/` sidecar staging 추가
+  - `.ai-repoagents/sync/local-markdown/issue-<id>/` sidecar staging 추가
   - comment, branch, label, draft PR proposal을 로컬 파일로 기록
   - demo script, tracker tests, 문서 갱신
 - Acceptance criteria:
@@ -592,7 +592,7 @@
 - Area: Tracker / CLI / Sync operations
 - Problem: sidecar sync artifact가 생겨도 운영자가 어떤 staged action이 있는지 보고 적용 흐름으로 넘길 표준 CLI가 없다.
 - Scope:
-  - `.ai-republic/sync/` inventory를 보여주는 CLI 추가 검토
+  - `.ai-repoagents/sync/` inventory를 보여주는 CLI 추가 검토
   - staged artifact export 또는 apply helper 경로 설계
   - `local_file`과 `local_markdown`에서 재사용 가능한 sync contract 정의
 - Acceptance criteria:
@@ -637,7 +637,7 @@
 - Area: Sync operations / CLI / Examples
 - Problem: branch, PR metadata, PR body artifact가 따로 떨어져 있어 handoff archive를 운영자가 여러 번 적용해야 했다.
 - Scope:
-  - `republic sync apply --bundle` 경로 추가
+  - `repoagents sync apply --bundle` 경로 추가
   - 관련 `branch`, `pr`, `pr-body` artifact를 한 묶음으로 해석하는 helper 구현
   - CLI 테스트와 demo script 보강
 - Acceptance criteria:
@@ -701,7 +701,7 @@
   - HTML/JSON/Markdown export에 `Sync handoffs` 섹션 추가
   - manifest, archived artifact, normalized link target 연결
 - Acceptance criteria:
-  - [x] dashboard가 `.ai-republic/sync-applied/**/manifest.json`을 읽음
+  - [x] dashboard가 `.ai-repoagents/sync-applied/**/manifest.json`을 읽음
   - [x] HTML/JSON/Markdown export에 sync handoff 정보가 노출됨
   - [x] `metadata_artifact` 같은 normalized link가 archive 기준으로 다시 연결됨
 
@@ -713,7 +713,7 @@
 - Problem: applied sync archive가 계속 쌓이면 운영자가 bundle 단위를 잃지 않고 오래된 handoff를 정리하기 어려웠다.
 - Scope:
   - `cleanup.sync_applied_keep_groups_per_issue` 설정 추가
-  - `republic clean --sync-applied` 경로 추가
+  - `repoagents clean --sync-applied` 경로 추가
   - manifest entry, archive file, orphan file을 handoff group 기준으로 함께 정리
 - Acceptance criteria:
   - [x] retention이 manifest entry가 아니라 `handoff.group_key` 단위로 계산됨
@@ -727,8 +727,8 @@
 - Area: Sync operations / CLI / Integrity
 - Problem: applied sync archive는 보관되지만, manifest drift나 orphan 파일이 생기면 운영자가 retention 전에 무결성 상태를 따로 진단하고 복구할 경로가 없었다.
 - Scope:
-  - `republic sync check` read-only integrity command 추가
-  - `republic sync repair` canonicalize/adopt helper 추가
+  - `repoagents sync check` read-only integrity command 추가
+  - `repoagents sync repair` canonicalize/adopt helper 추가
   - duplicate key, dangling archive, orphan file, handoff linkage mismatch 검사
 - Acceptance criteria:
   - [x] `sync check`가 applied manifest integrity finding을 보고하고 비정상이면 non-zero로 종료함
@@ -757,11 +757,11 @@
 - Area: Sync operations / Reporting / CLI
 - Problem: 운영자가 pending staged artifact, applied manifest integrity, retention 상태를 각각 따로 봐야 해서 incident handoff나 자동화 입력으로 쓰기 어려웠다.
 - Scope:
-  - `republic sync audit` command 추가
+  - `repoagents sync audit` command 추가
   - JSON/Markdown export 추가
   - pending inventory, integrity finding, retention summary를 하나의 report로 묶기
 - Acceptance criteria:
-  - [x] `.ai-republic/reports/sync-audit.json`과 `.md` export 경로가 동작함
+  - [x] `.ai-repoagents/reports/sync-audit.json`과 `.md` export 경로가 동작함
   - [x] report가 pending inventory, integrity finding, retention summary를 포함함
   - [x] integrity issue가 있으면 command가 non-zero로 종료함
 
@@ -776,8 +776,8 @@
   - cleanup preview/result JSON/Markdown export 추가
   - action list, affected issue, manifest rewrite count를 report로 남기기
 - Acceptance criteria:
-  - [x] `republic clean --sync-applied --dry-run --report`가 `.ai-republic/reports/cleanup-preview.json|md`를 생성함
-  - [x] 실제 cleanup도 `.ai-republic/reports/cleanup-result.json|md`를 생성할 수 있음
+  - [x] `repoagents clean --sync-applied --dry-run --report`가 `.ai-repoagents/reports/cleanup-preview.json|md`를 생성함
+  - [x] 실제 cleanup도 `.ai-repoagents/reports/cleanup-result.json|md`를 생성할 수 있음
   - [x] 테스트와 문서가 추가됨
 
 ### RR-055. sync audit / cleanup report를 dashboard에서 바로 열 수 있게 연결
@@ -789,9 +789,9 @@
 - Scope:
   - dashboard snapshot에 available report summary 추가
   - HTML/JSON/Markdown export에 `Reports` 섹션 추가
-  - `.ai-republic/reports/` 아래 sync audit/cleanup export 링크와 status/metric summary 노출
+  - `.ai-repoagents/reports/` 아래 sync audit/cleanup export 링크와 status/metric summary 노출
 - Acceptance criteria:
-  - [x] dashboard가 `.ai-republic/reports/`를 읽어 `sync-audit`, `cleanup-preview`, `cleanup-result` export를 탐지함
+  - [x] dashboard가 `.ai-repoagents/reports/`를 읽어 `sync-audit`, `cleanup-preview`, `cleanup-result` export를 탐지함
   - [x] HTML/JSON/Markdown export에 report label, status, summary, metrics가 노출됨
   - [x] 테스트와 문서가 추가됨
 
@@ -806,7 +806,7 @@
   - JSON/Markdown export에 cleanup preview/result path, status, metric summary 노출
   - CLI summary에 linked cleanup report count 노출
 - Acceptance criteria:
-  - [x] `republic sync audit`가 matching cleanup preview/result export를 감지함
+  - [x] `repoagents sync audit`가 matching cleanup preview/result export를 감지함
   - [x] JSON/Markdown export에 related cleanup report summary가 포함됨
   - [x] 테스트와 문서가 추가됨
 
@@ -1087,26 +1087,26 @@
 - Area: Doctor / Dashboard / Ops UX
 - Problem: `dashboard.report_freshness_policy`가 repo별로 조정 가능해졌지만, operator가 현재 threshold가 기본값인지 완화된 값인지 `doctor`만으로는 빠르게 판단할 수 없었다.
 - Scope:
-  - `republic doctor`에 report freshness policy diagnostic check 추가
+  - `repoagents doctor`에 report freshness policy diagnostic check 추가
   - 현재 threshold를 요약하고, 지나치게 느슨한 escalation은 WARN으로 표시
   - CLI 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic doctor`가 current report freshness threshold를 출력함
+  - [x] `repoagents doctor`가 current report freshness threshold를 출력함
   - [x] 느슨한 threshold는 WARN과 hint로 surfaced 됨
   - [x] 테스트와 문서가 추가됨
 
-### RR-076. report freshness severity를 `republic status` export와 연결
+### RR-076. report freshness severity를 `repoagents status` export와 연결
 
 - Status: done
 - Priority: P3
 - Area: Status / Dashboard / Ops UX
-- Problem: report freshness severity가 dashboard에만 집중되어 있어서, operator가 `republic status`만 볼 때는 현재 report health posture를 같이 읽을 수 없었다.
+- Problem: report freshness severity가 dashboard에만 집중되어 있어서, operator가 `repoagents status`만 볼 때는 현재 report health posture를 같이 읽을 수 없었다.
 - Scope:
-  - `republic status`가 dashboard와 같은 report-health snapshot을 재사용하도록 연결
+  - `repoagents status`가 dashboard와 같은 report-health snapshot을 재사용하도록 연결
   - overall/cleanup freshness severity, summary, reason을 CLI status output에 노출
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic status`가 report health severity/title을 함께 출력함
+  - [x] `repoagents status`가 report health severity/title을 함께 출력함
   - [x] overall/cleanup freshness summary와 reason이 status output에 포함됨
   - [x] 테스트와 문서가 추가됨
 
@@ -1145,12 +1145,12 @@
 - Status: done
 - Priority: P3
 - Area: Status / Reporting / Metadata
-- Problem: `republic status`가 report health severity와 reason은 보여줘도, 그 severity가 어떤 threshold baseline 위에서 계산됐는지 한 화면에서 바로 확인할 수 없었다.
+- Problem: `repoagents status`가 report health severity와 reason은 보여줘도, 그 severity가 어떤 threshold baseline 위에서 계산됐는지 한 화면에서 바로 확인할 수 없었다.
 - Scope:
-  - `republic status` output에 active report freshness policy summary 추가
+  - `repoagents status` output에 active report freshness policy summary 추가
   - status 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic status`가 policy threshold summary를 출력함
+  - [x] `repoagents status`가 policy threshold summary를 출력함
   - [x] 테스트와 문서가 추가됨
 
 ### RR-080. sync audit/cleanup raw export에도 policy metadata를 직접 심기
@@ -1177,12 +1177,12 @@
 - Problem: raw `sync-audit.json` / `cleanup-*.json` export가 예전 `report_freshness_policy` threshold로 생성된 뒤 config만 바뀌면, operator는 CLI에서 현재 severity baseline과 raw report embedded policy가 엇갈린 사실을 바로 보지 못했다.
 - Scope:
   - raw report export의 embedded `policy.summary`를 읽는 helper 추가
-  - `republic doctor`에 embedded policy mismatch 경고 추가
-  - `republic status`에 `policy_warning` block 추가
+  - `repoagents doctor`에 embedded policy mismatch 경고 추가
+  - `repoagents status`에 `policy_warning` block 추가
   - 테스트와 문서 반영
 - Acceptance criteria:
   - [x] raw report export가 현재 config와 다른 embedded policy를 가지면 `doctor`가 WARN을 출력함
-  - [x] `republic status`가 mismatch file name과 summary를 함께 출력함
+  - [x] `repoagents status`가 mismatch file name과 summary를 함께 출력함
   - [x] embedded policy metadata가 없는 오래된 export는 mismatch로 취급하지 않음
   - [x] 테스트와 문서가 추가됨
 
@@ -1242,15 +1242,15 @@
 - Status: done
 - Priority: P3
 - Area: CLI / Reporting / Ops UX
-- Problem: raw report와 dashboard에는 linked report policy drift가 들어가도, CLI에서 `republic sync audit`나 `republic clean --report`를 실행한 직후에는 drift count를 바로 읽기 어려웠다.
+- Problem: raw report와 dashboard에는 linked report policy drift가 들어가도, CLI에서 `repoagents sync audit`나 `repoagents clean --report`를 실행한 직후에는 drift count를 바로 읽기 어려웠다.
 - Scope:
   - `SyncAuditBuildResult`와 `CleanupReportBuildResult`에 related policy drift count 추가
-  - `republic sync audit` CLI summary에 linked cleanup policy drift count 출력
-  - `republic clean --report` CLI summary에 linked sync-audit policy drift count 출력
+  - `repoagents sync audit` CLI summary에 linked cleanup policy drift count 출력
+  - `repoagents clean --report` CLI summary에 linked sync-audit policy drift count 출력
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic sync audit`가 linked cleanup policy drift count를 출력함
-  - [x] `republic clean --report`가 linked sync-audit policy drift count를 출력함
+  - [x] `repoagents sync audit`가 linked cleanup policy drift count를 출력함
+  - [x] `repoagents clean --report`가 linked sync-audit policy drift count를 출력함
   - [x] 테스트와 문서가 추가됨
 
 ### RR-086. report policy drift를 dashboard hero/report summary severity와 연결하기
@@ -1277,12 +1277,12 @@
 - Problem: dashboard에는 drift가 summary severity로 반영돼도, `doctor`와 `status`에서는 threshold posture와 embedded-policy drift가 별도 줄로만 보여서 운영자가 CLI에서 policy health를 한 번에 판단하기 어려웠다.
 - Scope:
   - `Report policy health` aggregate helper 추가
-  - `republic doctor`에 threshold relaxation + embedded-policy drift를 합친 summary check 추가
-  - `republic status`에 `policy_health` summary line 추가
+  - `repoagents doctor`에 threshold relaxation + embedded-policy drift를 합친 summary check 추가
+  - `repoagents status`에 `policy_health` summary line 추가
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic doctor`가 threshold posture와 embedded-policy drift를 합친 `Report policy health` check를 출력함
-  - [x] `republic status`가 `policy_health` line으로 같은 summary를 출력함
+  - [x] `repoagents doctor`가 threshold posture와 embedded-policy drift를 합친 `Report policy health` check를 출력함
+  - [x] `repoagents status`가 `policy_health` line으로 같은 summary를 출력함
   - [x] 테스트와 문서가 추가됨
 
 ### RR-088. report policy drift remediation guidance를 doctor/status/dashboard에서 공통 helper로 정리하기
@@ -1322,15 +1322,15 @@
 - Status: done
 - Priority: P3
 - Area: CLI / Reporting / Ops UX
-- Problem: raw export와 dashboard에는 remediation guidance가 들어가도, `republic sync audit`와 `republic clean --report` 실행 직후에는 count만 보이고 guidance는 파일을 열어야 확인할 수 있었다.
+- Problem: raw export와 dashboard에는 remediation guidance가 들어가도, `repoagents sync audit`와 `repoagents clean --report` 실행 직후에는 count만 보이고 guidance는 파일을 열어야 확인할 수 있었다.
 - Scope:
-  - `republic sync audit --show-remediation` 추가
-  - `republic clean --report --show-remediation` 추가
+  - `repoagents sync audit --show-remediation` 추가
+  - `repoagents clean --report --show-remediation` 추가
   - drift count가 있을 때만 guidance를 inline 출력
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic sync audit --show-remediation`이 policy drift guidance를 출력함
-- [x] `republic clean --report --show-remediation`이 policy drift guidance를 출력함
+  - [x] `repoagents sync audit --show-remediation`이 policy drift guidance를 출력함
+- [x] `repoagents clean --report --show-remediation`이 policy drift guidance를 출력함
 - [x] 기본 출력은 기존 verbosity를 유지함
 - [x] 테스트와 문서가 추가됨
 
@@ -1339,15 +1339,15 @@
 - Status: done
 - Priority: P3
 - Area: CLI / Reporting / Ops UX
-- Problem: `republic sync audit`와 `republic clean --report`가 mismatch count는 보여줘도, 어떤 linked report가 왜 mismatch인지 확인하려면 raw export를 다시 열어야 했다.
+- Problem: `repoagents sync audit`와 `repoagents clean --report`가 mismatch count는 보여줘도, 어떤 linked report가 왜 mismatch인지 확인하려면 raw export를 다시 열어야 했다.
 - Scope:
-  - `republic sync audit --show-mismatches` 추가
-  - `republic clean --report --show-mismatches` 추가
+  - `repoagents sync audit --show-mismatches` 추가
+  - `repoagents clean --report --show-mismatches` 추가
   - linked report mismatch warning을 build result에서 직접 노출
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic sync audit --show-mismatches`가 linked cleanup mismatch warning을 출력함
-- [x] `republic clean --report --show-mismatches`가 linked sync audit mismatch warning을 출력함
+  - [x] `repoagents sync audit --show-mismatches`가 linked cleanup mismatch warning을 출력함
+- [x] `repoagents clean --report --show-mismatches`가 linked sync audit mismatch warning을 출력함
 - [x] 기본 출력은 기존 verbosity를 유지함
 - [x] 테스트와 문서가 추가됨
 
@@ -1363,8 +1363,8 @@
   - `--show-mismatches`와 `--show-remediation`를 함께 켰을 때 mismatch/drift/remediation을 한 블록으로 출력
   - 테스트와 문서 반영
 - Acceptance criteria:
-  - [x] `republic sync audit`가 related cleanup mismatch/drift/remediation을 한 블록으로 출력함
-- [x] `republic clean --report`가 related sync-audit mismatch/drift/remediation을 한 블록으로 출력함
+  - [x] `repoagents sync audit`가 related cleanup mismatch/drift/remediation을 한 블록으로 출력함
+- [x] `repoagents clean --report`가 related sync-audit mismatch/drift/remediation을 한 블록으로 출력함
 - [x] 단일 플래그만 켠 경우에도 같은 block 구조에서 해당 섹션만 출력함
 - [x] 테스트와 문서가 추가됨
 
@@ -1710,7 +1710,7 @@
 - Scope:
   - `_related_report_details/` package 생성
   - `models.py`, `rendering.py`, `html.py`, `__init__.py`로 책임 분리
-  - 기존 import 표면은 `reporepublic._related_report_details`에서 유지
+  - 기존 import 표면은 `repoagents._related_report_details`에서 유지
   - 회귀 테스트 유지
 - Acceptance criteria:
   - [x] related-report internal module이 package 구조로 분리됨
@@ -1741,7 +1741,7 @@
 - Scope:
   - `doctor --format json|markdown|all --output ...` 추가
   - `status --format json|markdown|all --output ...` 추가
-  - `.ai-republic/reports/doctor.*`, `status.*` 기본 export 경로 제공
+  - `.ai-repoagents/reports/doctor.*`, `status.*` 기본 export 경로 제공
   - CLI integration test와 문서 갱신
 - Acceptance criteria:
   - [x] `doctor`가 structured operator snapshot을 export함
@@ -1755,12 +1755,12 @@
 - Area: Ops UX / Reporting / Handoff
 - Problem: `doctor`, `status`, `dashboard`, `sync audit`는 각각 export할 수 있었지만, incident handoff나 automation 입력용으로 한 디렉터리에 묶인 운영 번들이 없어 operator가 여러 명령과 경로를 따로 조합해야 했다.
 - Scope:
-  - `republic ops snapshot` subcommand 추가
+  - `repoagents ops snapshot` subcommand 추가
   - `doctor/status/dashboard/sync-audit` export를 한 bundle directory로 묶기
   - `bundle.json`, `bundle.md` manifest 추가
   - bundle summary/exit code, unit/CLI 테스트, 문서 갱신
 - Acceptance criteria:
-  - [x] `republic ops snapshot`이 bundle directory를 생성함
+  - [x] `repoagents ops snapshot`이 bundle directory를 생성함
   - [x] bundle manifest가 component status와 output path를 포함함
   - [x] 전체 흐름에 대한 테스트가 추가됨
 
@@ -1803,7 +1803,7 @@
 - Area: Ops UX / Reporting / Handoff
 - Problem: `ops snapshot bundle` directory는 풍부했지만, incident handoff나 외부 업로드에 바로 전달 가능한 단일 archive가 없어 operator가 bundle directory를 별도로 압축하고 checksum을 수동으로 계산해야 했다.
 - Scope:
-  - `republic ops snapshot --archive` 추가
+  - `repoagents ops snapshot --archive` 추가
   - optional `--archive-output` 경로 지원
   - `.tar.gz` archive 생성과 sha256/size/member count 출력
   - unit/CLI 테스트와 문서 갱신
@@ -1819,25 +1819,25 @@
 - Area: Ops UX / Reporting / Automation
 - Problem: `ops snapshot` bundle과 archive를 만들 수 있어도, operator나 automation이 가장 최근 handoff를 찾으려면 timestamped directory를 직접 탐색해야 해서 최신 snapshot lookup이 불안정했다.
 - Scope:
-  - `.ai-republic/reports/ops/latest.json|md` pointer 추가
-  - `.ai-republic/reports/ops/history.json|md` bounded history index 추가
+  - `.ai-repoagents/reports/ops/latest.json|md` pointer 추가
+  - `.ai-repoagents/reports/ops/history.json|md` bounded history index 추가
   - latest entry에 bundle path, archive path, component statuses 기록
   - unit/CLI 테스트와 문서 갱신
 - Acceptance criteria:
   - [x] `ops snapshot` 실행 시 latest pointer가 갱신됨
   - [x] history index가 최신 순으로 누적됨
-  - [x] custom output dir를 써도 index는 `.ai-republic/reports/ops/` 아래에서 조회 가능함
+  - [x] custom output dir를 써도 index는 `.ai-repoagents/reports/ops/` 아래에서 조회 가능함
 
 ### RR-122. `ops snapshot bundle` history retention/prune policy 연결하기
 
 - Status: done
 - Priority: P2
 - Area: Ops UX / Reporting / Cleanup
-- Problem: latest/history index가 추가된 뒤에도 오래된 bundle/archive는 계속 누적되어, operator가 handoff를 많이 만들면 `.ai-republic/reports/ops/` 아래 managed artifact가 자동으로 줄지 않았다.
+- Problem: latest/history index가 추가된 뒤에도 오래된 bundle/archive는 계속 누적되어, operator가 handoff를 많이 만들면 `.ai-repoagents/reports/ops/` 아래 managed artifact가 자동으로 줄지 않았다.
 - Scope:
-  - `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`를 `republic ops snapshot` 실행 경로에 연결
+  - `cleanup.ops_snapshot_keep_entries`, `cleanup.ops_snapshot_prune_managed`를 `repoagents ops snapshot` 실행 경로에 연결
   - `--history-limit`, `--prune-history` CLI override 추가
-  - dropped history entry 중 `.ai-republic/reports/ops/` 아래 managed bundle/archive만 안전하게 prune
+  - dropped history entry 중 `.ai-repoagents/reports/ops/` 아래 managed bundle/archive만 안전하게 prune
   - unit/CLI 테스트와 문서 갱신
 - Acceptance criteria:
   - [x] `ops snapshot`이 config 기본 retention limit를 사용함
@@ -1853,29 +1853,29 @@
 - Scope:
   - dashboard snapshot에 `ops_snapshots` section과 count 추가
   - HTML/JSON/Markdown dashboard에 latest ops snapshot, bounded history, dropped entry count 노출
-  - `republic status`와 `status.json|md` export에 ops snapshot summary 추가
+  - `repoagents status`와 `status.json|md` export에 ops snapshot summary 추가
   - 테스트와 문서 갱신
 - Acceptance criteria:
-  - [x] dashboard가 `.ai-republic/reports/ops/latest.*`, `history.*`를 읽어 `Ops snapshots` section을 렌더링함
+  - [x] dashboard가 `.ai-repoagents/reports/ops/latest.*`, `history.*`를 읽어 `Ops snapshots` section을 렌더링함
   - [x] dashboard JSON/Markdown snapshot이 ops snapshot count와 latest entry를 포함함
-  - [x] `republic status`와 `status.md`가 같은 ops snapshot summary를 표시함
+  - [x] `repoagents status`와 `status.md`가 같은 ops snapshot summary를 표시함
 
 ## 권장 다음 순서
 
-### RR-124. dedicated `republic ops status` surface 추가하기
+### RR-124. dedicated `repoagents ops status` surface 추가하기
 
 - Status: done
 - Priority: P2
 - Area: Ops UX / Reporting / Visibility
 - Problem: `ops snapshot` latest/history index는 dashboard와 `status`에서 요약만 보이고, 최신 indexed bundle manifest의 component summary와 recent history preview를 보려면 operator가 다시 `bundle.json`과 `latest/history` 파일을 각각 열어야 했다.
 - Scope:
-  - `republic ops status` subcommand 추가
-  - `.ai-republic/reports/ops/latest.*`, `history.*`, 최신 indexed `bundle.json`을 함께 읽는 snapshot builder 추가
+  - `repoagents ops status` subcommand 추가
+  - `.ai-repoagents/reports/ops/latest.*`, `history.*`, 최신 indexed `bundle.json`을 함께 읽는 snapshot builder 추가
   - text + JSON/Markdown export 추가
   - 테스트와 문서 갱신
 - Acceptance criteria:
-  - [x] `republic ops status`가 latest/history index posture와 latest bundle manifest summary를 함께 출력함
-  - [x] `republic ops status --format all`이 `.ai-republic/reports/ops-status.json|md`를 생성함
+  - [x] `repoagents ops status`가 latest/history index posture와 latest bundle manifest summary를 함께 출력함
+  - [x] `repoagents ops status --format all`이 `.ai-repoagents/reports/ops-status.json|md`를 생성함
   - [x] 최신 bundle component summary와 recent history preview가 snapshot/export에 포함됨
 
 ## 권장 다음 순서
@@ -1893,7 +1893,7 @@
   - 테스트와 문서 갱신
 - Acceptance criteria:
   - [x] dashboard가 `ops-status.json|md`를 report card로 렌더링함
-  - [x] `republic ops snapshot`이 root `ops-status` export를 자동 갱신함
+  - [x] `repoagents ops snapshot`이 root `ops-status` export를 자동 갱신함
   - [x] `ops-status` report card가 `sync-audit` 같은 관련 report export와 cross-link됨
 
 ### RR-126. `ops snapshot` bundle 내부에도 `ops-status` export를 포함하기
@@ -1903,7 +1903,7 @@
 - Area: Ops UX / Reporting / Handoff
 - Problem: root `ops-status` export와 dashboard card는 생겼지만, incident handoff용 `ops snapshot` bundle 자체에는 같은 operator summary가 없어 bundle만 전달받은 사람이 latest/history posture를 다시 root reports에서 찾아야 했다.
 - Scope:
-  - `republic ops snapshot`이 bundle-local `ops-status.json|md`를 생성
+  - `repoagents ops snapshot`이 bundle-local `ops-status.json|md`를 생성
   - bundle manifest `components.ops_status`에 output path와 metrics 기록
   - bundle cross-link가 `ops_status`와 `sync_audit` / cleanup component 관계를 함께 반영
   - 테스트와 문서 갱신
@@ -1922,12 +1922,12 @@
 - Problem: live GitHub adapter는 동작했지만, `doctor`가 실제 repo access와 publish preflight를 충분히 분리해서 보여주지 못했고, operator가 `tracker.repo`, issue sampling, comment/PR write readiness를 한 번에 점검할 dedicated smoke surface도 부족했다.
 - Scope:
   - `doctor`에 `GitHub repo access`, `GitHub publish readiness` 진단 추가
-  - `republic github smoke` subcommand 추가
+  - `repoagents github smoke` subcommand 추가
   - live REST mode에서 `GITHUB_TOKEN` requirement를 명확히 하고 `gh auth` only 상태를 warning으로 노출
   - 테스트와 문서 갱신
 - Acceptance criteria:
   - [x] `doctor`가 repo access와 live publish preflight를 별도 line item으로 출력함
-  - [x] `republic github smoke`가 sampled issue, repo metadata, publish readiness를 출력/export함
+  - [x] `repoagents github smoke`가 sampled issue, repo metadata, publish readiness를 출력/export함
   - [x] `--require-write-ready`가 publish preflight warning을 non-zero exit로 바꿀 수 있음
 
 ## 권장 다음 순서
@@ -1941,13 +1941,13 @@
 - Area: Sync / Ops UX / Reporting
 - Problem: sync 운영에 필요한 surface가 `sync check`, `sync repair`, `sync audit`, `clean --sync-applied --report`로 나뉘어 있어서 operator가 한 번에 현재 posture를 보기 어렵고, 어떤 명령으로 들어가야 할지 판단하려면 여러 snapshot을 따로 열어야 했다.
 - Scope:
-  - `republic sync health` subcommand 추가
+  - `repoagents sync health` subcommand 추가
   - pending staged artifact, applied manifest integrity, repair preview, cleanup preview, linked raw report posture를 한 snapshot으로 묶는 builder 추가
   - text + JSON/Markdown export와 related-report mismatch/remediation 출력 추가
   - 테스트와 문서 갱신
 - Acceptance criteria:
-  - [x] `republic sync health --issue <id>`가 sync 운영 posture를 한 번에 요약함
-  - [x] `republic sync health --format all`이 `.ai-republic/reports/sync-health.json|md`를 생성함
+  - [x] `repoagents sync health --issue <id>`가 sync 운영 posture를 한 번에 요약함
+  - [x] `repoagents sync health --format all`이 `.ai-repoagents/reports/sync-health.json|md`를 생성함
   - [x] `--show-remediation`, `--show-mismatches`가 cleanup/sync-audit related-report detail block을 같은 규약으로 출력함
 
 ## 권장 다음 순서
@@ -1959,9 +1959,9 @@
 - Status: done
 - Priority: P2
 - Area: Sync / Ops UX / Handoff
-- Problem: `republic sync health`는 별도 surface로 존재했지만, `ops snapshot` bundle과 dashboard/report flow는 여전히 `sync-audit` 중심이라 operator가 최신 sync posture를 handoff bundle, dashboard, `ops status` 사이에서 자연스럽게 따라가기 어려웠다.
+- Problem: `repoagents sync health`는 별도 surface로 존재했지만, `ops snapshot` bundle과 dashboard/report flow는 여전히 `sync-audit` 중심이라 operator가 최신 sync posture를 handoff bundle, dashboard, `ops status` 사이에서 자연스럽게 따라가기 어려웠다.
 - Scope:
-  - `republic ops snapshot`이 bundle-local `sync-health.json|md`와 root `.ai-republic/reports/sync-health.json|md`를 함께 갱신
+  - `repoagents ops snapshot`이 bundle-local `sync-health.json|md`와 root `.ai-repoagents/reports/sync-health.json|md`를 함께 갱신
   - bundle manifest / cross-link / `ops status` related report snapshot에 `sync_health` component 반영
   - dashboard `Reports`에 `sync-health` card와 related cleanup/sync-audit cross-link 추가
   - 테스트와 문서 갱신
@@ -1977,13 +1977,13 @@
 - Area: Ops UX / Handoff / Incident Summary
 - Problem: `ops snapshot` bundle은 풍부한 운영 artifact를 담고 있었지만, operator가 bundle을 열었을 때 바로 읽을 landing summary가 없어 `bundle.json`, `ops-status`, `sync-health`, `sync-audit`를 다시 열어 top finding과 next action을 조합해야 했다.
 - Scope:
-  - bundle-local `ops-brief.json|md`와 root `.ai-republic/reports/ops-brief.json|md` export 추가
+  - bundle-local `ops-brief.json|md`와 root `.ai-repoagents/reports/ops-brief.json|md` export 추가
   - `sync health`, `report health`, `doctor/status`, latest ops history를 합친 operator-facing brief snapshot builder 추가
   - bundle manifest / latest-history index / `ops status`가 같은 brief severity/headline/top findings/next actions를 함께 노출
   - 테스트와 문서 갱신
 - Acceptance criteria:
   - [x] `ops snapshot` bundle directory에 `ops-brief.json|md`가 포함됨
-  - [x] root `.ai-republic/reports/ops-brief.json|md`가 함께 갱신됨
+  - [x] root `.ai-repoagents/reports/ops-brief.json|md`가 함께 갱신됨
   - [x] `bundle.json`, ops history index, `ops status` snapshot이 같은 brief severity/headline을 기록함
 
 ## 권장 다음 순서
@@ -2036,7 +2036,7 @@
   - live publish branch staging이 repo default branch를 우선 기준으로 삼도록 정리
   - 테스트와 문서 갱신
 - Acceptance criteria:
-  - [x] `republic github smoke`가 default branch policy를 report/export에 포함함
+  - [x] `repoagents github smoke`가 default branch policy를 report/export에 포함함
   - [x] `doctor`가 GitHub branch policy를 별도 진단함
   - [x] draft PR publish readiness가 branch protection posture를 반영함
   - [x] GitHub branch staging이 repo default branch를 우선 사용함
@@ -2046,7 +2046,7 @@
 - Status: done
 - Priority: P2
 - Area: GitHub / Ops UX / Handoff
-- Problem: `republic github smoke`는 live readiness를 잘 보여주지만, incident handoff용 `ops snapshot` bundle과 dashboard/report flow는 이 신호를 별도 surface로 취급해서 operator가 latest bundle, ops brief, dashboard report card 사이에서 live publish posture를 자연스럽게 따라가기 어려웠다.
+- Problem: `repoagents github smoke`는 live readiness를 잘 보여주지만, incident handoff용 `ops snapshot` bundle과 dashboard/report flow는 이 신호를 별도 surface로 취급해서 operator가 latest bundle, ops brief, dashboard report card 사이에서 live publish posture를 자연스럽게 따라가기 어려웠다.
 - Scope:
   - live GitHub REST tracker에서 `ops snapshot`이 bundle-local/root `github-smoke.json|md`를 함께 생성
   - bundle manifest, landing page, `ops status`, `ops brief`, dashboard `Reports`에서 같은 artifact graph로 노출
@@ -2095,7 +2095,7 @@
 - Status: done
 - Priority: P1
 - Area: Release / OSS Hygiene / CI
-- Problem: RepoRepublic는 기능과 문서는 충분했지만, 공개 저장소와 첫 릴리스에 필요한 governance 문서, changelog, release checklist, CI build/test gate가 빠져 있어 오픈소스 배포 표면이 불완전했다.
+- Problem: RepoAgents는 기능과 문서는 충분했지만, 공개 저장소와 첫 릴리스에 필요한 governance 문서, changelog, release checklist, CI build/test gate가 빠져 있어 오픈소스 배포 표면이 불완전했다.
 - Scope:
   - `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` 추가
   - `docs/release.md`, `docs/release.ko.md`에 release checklist 추가
@@ -2132,29 +2132,29 @@
 - Area: Release / CLI / Docs
 - Problem: 공개 준비 문서와 checklist는 있었지만, maintainers가 실제 tag 후보를 기준으로 release notes와 command order를 즉시 확인할 수 있는 runnable dry-run surface가 없었다.
 - Scope:
-  - `republic release preview` CLI 추가
-  - `pyproject.toml`, `src/reporepublic/__init__.py`, `CHANGELOG.md`, git working tree를 묶은 release preview snapshot 생성
-  - `.ai-republic/reports/release-preview.json|md`와 `release-notes-v<version>.md` export
+  - `repoagents release preview` CLI 추가
+  - `pyproject.toml`, `src/repoagents/__init__.py`, `CHANGELOG.md`, git working tree를 묶은 release preview snapshot 생성
+  - `.ai-repoagents/reports/release-preview.json|md`와 `release-notes-v<version>.md` export
   - config가 없는 저장소에서도 동작하도록 fallback 경로 지원
   - release 문서와 quickstart/README 갱신
 - Acceptance criteria:
-  - [x] `republic release preview --format all`이 release preview report와 GitHub notes markdown을 생성함
+  - [x] `repoagents release preview --format all`이 release preview report와 GitHub notes markdown을 생성함
   - [x] 현재 버전에 이미 dated changelog section이 있으면 다음 patch tag를 preview target으로 추론함
-  - [x] `.ai-republic/reporepublic.yaml`이 없는 저장소에서도 command가 동작함
+  - [x] `.ai-repoagents/repoagents.yaml`이 없는 저장소에서도 command가 동작함
 
 ### RR-140. 첫 공개 프리뷰 announcement/release-cut 문안 정리
 
 - Status: done
 - Priority: P1
 - Area: Release / CLI / Comms
-- Problem: `republic release preview`는 tag/notes/checklist dry-run을 제공하지만, 공개 직전 maintainer가 실제로 복사해 써야 하는 short announcement, pinned discussion, social copy, release-cut message set은 별도 손작업이 필요했다.
+- Problem: `repoagents release preview`는 tag/notes/checklist dry-run을 제공하지만, 공개 직전 maintainer가 실제로 복사해 써야 하는 short announcement, pinned discussion, social copy, release-cut message set은 별도 손작업이 필요했다.
 - Scope:
-  - `republic release announce` CLI 추가
+  - `repoagents release announce` CLI 추가
   - release preview target을 재사용해서 announcement/discussion/social/release-cut copy pack export
-  - `.ai-republic/reports/release-announce.json|md`와 snippet markdown files 생성
+  - `.ai-repoagents/reports/release-announce.json|md`와 snippet markdown files 생성
   - release guide와 quickstart/README 갱신
 - Acceptance criteria:
-  - [x] `republic release announce --format all`이 copy pack report와 channel snippet files를 생성함
+  - [x] `repoagents release announce --format all`이 copy pack report와 channel snippet files를 생성함
   - [x] command가 config 없는 저장소에서도 동작함
   - [x] release docs가 preview + announce artifact를 모두 설명함
 
@@ -2181,12 +2181,12 @@
 - Area: Release / Assets / Examples
 - Problem: preview/announcement/tag rehearsal은 준비됐지만, 실제 wheel/sdist artifact와 post-tag upload command를 external index 없이 검증하는 runnable dry-run surface는 없었다.
 - Scope:
-  - `republic release assets` CLI 추가
+  - `repoagents release assets` CLI 추가
   - dist artifact metadata, sha256, optional `uv build`, optional smoke install, upload command 초안 export
   - `scripts/demo_release_publish_dry_run.sh`와 example README 추가
   - quickstart/release guide/examples index 갱신
 - Acceptance criteria:
-  - [x] `republic release assets --format all`이 asset report와 `release-assets-v<tag>.md`를 생성함
+  - [x] `repoagents release assets --format all`이 asset report와 `release-assets-v<tag>.md`를 생성함
   - [x] `--build --smoke-install` 경로가 build와 wheel install smoke 결과를 snapshot에 포함함
   - [x] runnable demo가 local annotated rehearsal tag와 build evidence를 함께 남김
 
@@ -2197,12 +2197,12 @@
 - Area: Release / CLI / Docs
 - Problem: release preview, announcement, asset dry-run surface는 각각 준비됐지만, maintainer가 배포 직전에 “이 명령만 돌리면 된다”는 일관된 preflight gate와 checklist report가 없어 여전히 수동 조합이 필요했다.
 - Scope:
-  - `republic release check` CLI 추가
+  - `repoagents release check` CLI 추가
   - release preview, announcement copy pack, pytest, build, smoke install, governance/CI 파일 점검을 한 snapshot으로 통합
-  - `.ai-republic/reports/release-checklist.json|md` export와 companion release report 생성
+  - `.ai-repoagents/reports/release-checklist.json|md` export와 companion release report 생성
   - `scripts/release_preflight.sh` wrapper와 release guide/README/quickstart 갱신
 - Acceptance criteria:
-  - [x] `republic release check --format all`이 release-checklist report와 companion release preview/announce/assets report를 함께 생성함
+  - [x] `repoagents release check --format all`이 release-checklist report와 companion release preview/announce/assets report를 함께 생성함
   - [x] command가 clean일 때만 exit code `0`을 반환함
   - [x] `scripts/release_preflight.sh`로 같은 flow를 한 줄로 실행할 수 있음
 

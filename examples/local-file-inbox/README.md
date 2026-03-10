@@ -1,6 +1,6 @@
 # Example Local File Inbox
 
-This sample repository demonstrates RepoRepublic with the `local_file` tracker.
+This sample repository demonstrates RepoAgents with the `local_file` tracker.
 
 ## Files
 
@@ -11,11 +11,11 @@ This sample repository demonstrates RepoRepublic with the `local_file` tracker.
 ## Demo
 
 ```bash
-uv run republic init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
-uv run republic doctor
-uv run republic run --dry-run
-uv run republic trigger 1
-uv run republic dashboard
+uv run repoagents init --preset python-library --tracker-kind local_file --tracker-path issues.json --backend mock
+uv run repoagents doctor
+uv run repoagents run --dry-run
+uv run repoagents trigger 1
+uv run repoagents dashboard
 ```
 
 Repo-level demo script:

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 
-from reporepublic.config import load_config
-from reporepublic.sync_audit import build_sync_audit_report, build_sync_audit_snapshot
+from repoagents.config import load_config
+from repoagents.sync_audit import build_sync_audit_report, build_sync_audit_snapshot
 
 
 def test_build_sync_audit_report_writes_json_and_markdown_exports(demo_repo: Path) -> None:
@@ -30,7 +30,7 @@ def test_build_sync_audit_report_writes_json_and_markdown_exports(demo_repo: Pat
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-older",
+                "branch_name": "repoagents/issue-1-older",
                 "staged_at": "20260308T010001000001Z",
             },
             indent=2,
@@ -49,7 +49,7 @@ def test_build_sync_audit_report_writes_json_and_markdown_exports(demo_repo: Pat
                     applied_at="2026-03-08T01:00:01+00:00",
                     staged_at="20260308T010001000001Z",
                     archived_path=older_branch,
-                    group_key="issue:1|head:reporepublic/issue-1-older",
+                    group_key="issue:1|head:repoagents/issue-1-older",
                     artifact_role="branch-proposal",
                 ),
                 _manifest_entry(
@@ -88,7 +88,7 @@ def test_build_sync_audit_report_writes_json_and_markdown_exports(demo_repo: Pat
     assert payload["related_reports"]["entries"][1]["label"] == "Cleanup result"
     assert payload["related_reports"]["detail_summary"] is None
     assert payload["retention"]["entries"][0]["status"] == "prunable"
-    assert "# RepoRepublic Sync Audit" in markdown
+    assert "# RepoAgents Sync Audit" in markdown
     assert "## Policy" in markdown
     assert "- report_freshness_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
     assert "## Pending staged artifacts" in markdown
@@ -139,7 +139,7 @@ def test_build_sync_audit_snapshot_reports_integrity_issues(demo_repo: Path) -> 
 
 
 def test_build_sync_audit_snapshot_cross_links_cleanup_policy_drift(demo_repo: Path) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -157,7 +157,7 @@ def test_build_sync_audit_snapshot_cross_links_cleanup_policy_drift(demo_repo: P
         encoding="utf-8",
     )
     _write_cleanup_reports(demo_repo)
-    preview_path = demo_repo / ".ai-republic" / "reports" / "cleanup-preview.json"
+    preview_path = demo_repo / ".ai-repoagents" / "reports" / "cleanup-preview.json"
     payload = json.loads(preview_path.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -180,24 +180,24 @@ def test_build_sync_audit_snapshot_cross_links_cleanup_policy_drift(demo_repo: P
     assert snapshot["related_reports"]["policy_drift_reports"] == 1
     assert (
         snapshot["related_reports"]["policy_drift_guidance"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["related_reports"]["policy_drifts"][0]["label"] == "Cleanup preview"
     assert (
         snapshot["related_reports"]["policy_drifts"][0]["remediation"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert (
         snapshot["related_reports"]["detail_summary"]
         == "related report details\n"
         "policy drifts\n"
         "- Cleanup preview: embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)\n"
-        "remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        "remediation: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["related_reports"]["entries"][0]["policy_alignment"]["status"] == "drift"
     assert (
         snapshot["related_reports"]["entries"][0]["policy_alignment"]["remediation"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert (
         snapshot["related_reports"]["entries"][0]["policy_alignment"]["embedded_summary"]
@@ -206,13 +206,13 @@ def test_build_sync_audit_snapshot_cross_links_cleanup_policy_drift(demo_repo: P
     assert "### Cleanup report policy drifts" in markdown
     assert "- policy_alignment: drift" in markdown
     assert "- embedded_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
-    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
-    assert "- policy_remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
-    assert "- remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_remediation: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- remediation: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
 
 
 def _configure_sync_retention(repo_root: Path, *, keep_groups: int) -> None:
-    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
     payload = load_config(repo_root).data.model_dump(mode="json")
     payload.setdefault("cleanup", {})["sync_applied_keep_groups_per_issue"] = keep_groups
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -271,7 +271,7 @@ def _write_cleanup_reports(
     result_issue_filter: int | None = None,
     cleanup_result: bool = True,
 ) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "cleanup-preview.json").write_text(
         json.dumps(

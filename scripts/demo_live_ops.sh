@@ -6,7 +6,7 @@ SOURCE_DIR="$ROOT_DIR/examples/live-github-ops"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-live-ops-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-live-ops-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -17,13 +17,13 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 pushd "$DEST_DIR" >/dev/null
 
 git init -q
-git config user.name "RepoRepublic Demo"
-git config user.email "demo@reporepublic.local"
+git config user.name "RepoAgents Demo"
+git config user.email "demo@repoagents.local"
 git remote add origin git@github.com:acme/example-repo.git
 git add .
 git commit -q -m "initial"
 
-uv run --project "$ROOT_DIR" republic init \
+uv run --project "$ROOT_DIR" repoagents init \
   --preset python-library \
   --tracker-repo acme/example-repo
 
@@ -31,7 +31,7 @@ uv run --project "$ROOT_DIR" python - <<'PY'
 from pathlib import Path
 import yaml
 
-path = Path(".ai-republic/reporepublic.yaml")
+path = Path(".ai-repoagents/repoagents.yaml")
 payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 payload["tracker"]["kind"] = "github"
 payload["tracker"]["repo"] = "acme/example-repo"
@@ -48,15 +48,15 @@ payload["llm"]["mode"] = "codex"
 path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 PY
 
-mkdir -p .ai-republic/logs
+mkdir -p .ai-repoagents/logs
 
 export GITHUB_TOKEN="demo-live-token"
-uv run --project "$ROOT_DIR" republic github smoke --format all
+uv run --project "$ROOT_DIR" repoagents github smoke --format all
 REPOREPUBLIC_PROJECT_ROOT="$ROOT_DIR" \
-REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-republic/reports/ops/live-handoff-demo" \
+REPOREPUBLIC_HANDOFF_OUTPUT_DIR=".ai-repoagents/reports/ops/live-handoff-demo" \
   bash ops/build-handoff.sh
-uv run --project "$ROOT_DIR" republic ops status --format all
-uv run --project "$ROOT_DIR" republic dashboard --refresh-seconds 30 --format all
+uv run --project "$ROOT_DIR" repoagents ops status --format all
+uv run --project "$ROOT_DIR" repoagents dashboard --refresh-seconds 30 --format all
 
 popd >/dev/null
 

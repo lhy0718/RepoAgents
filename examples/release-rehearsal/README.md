@@ -1,11 +1,11 @@
 # Example Release Rehearsal
 
-This example documents the local public-preview tag rehearsal path for RepoRepublic itself.
+This example documents the local public-preview tag rehearsal path for RepoAgents itself.
 
 ## What it shows
 
-- `republic release preview --format all`
-- `republic release announce --format all`
+- `repoagents release preview --format all`
+- `repoagents release announce --format all`
 - local annotated tag creation in a disposable clone
 - build artifact generation plus checksum capture
 - a fixed read order for the release-cut artifacts
@@ -16,21 +16,21 @@ This example documents the local public-preview tag rehearsal path for RepoRepub
 bash scripts/demo_release_rehearsal.sh
 ```
 
-The demo copies the current repository into a temporary workspace, initializes a fresh local git history, generates release preview and announcement artifacts, creates a local annotated rehearsal tag, runs `uv build`, and records the resulting tag/build evidence under `.ai-republic/reports/release-rehearsal/`.
+The demo copies the current repository into a temporary workspace, initializes a fresh local git history, generates release preview and announcement artifacts, creates a local annotated rehearsal tag, runs `uv build`, and records the resulting tag/build evidence under `.ai-repoagents/reports/release-rehearsal/`.
 
 The generated rehearsal artifacts include:
 
-- `.ai-republic/reports/release-preview.json|md`
-- `.ai-republic/reports/release-announce.json|md`
-- `.ai-republic/reports/announcement-v<version>.md`
-- `.ai-republic/reports/discussion-v<version>.md`
-- `.ai-republic/reports/social-v<version>.md`
-- `.ai-republic/reports/release-cut-v<version>.md`
-- `.ai-republic/reports/release-rehearsal/tag.txt`
-- `.ai-republic/reports/release-rehearsal/tag-show.txt`
-- `.ai-republic/reports/release-rehearsal/build.txt`
-- `.ai-republic/reports/release-rehearsal/dist.sha256.txt`
-- `.ai-republic/reports/release-rehearsal/rehearsal-order.md`
+- `.ai-repoagents/reports/release-preview.json|md`
+- `.ai-repoagents/reports/release-announce.json|md`
+- `.ai-repoagents/reports/announcement-v<version>.md`
+- `.ai-repoagents/reports/discussion-v<version>.md`
+- `.ai-repoagents/reports/social-v<version>.md`
+- `.ai-repoagents/reports/release-cut-v<version>.md`
+- `.ai-repoagents/reports/release-rehearsal/tag.txt`
+- `.ai-repoagents/reports/release-rehearsal/tag-show.txt`
+- `.ai-repoagents/reports/release-rehearsal/build.txt`
+- `.ai-repoagents/reports/release-rehearsal/dist.sha256.txt`
+- `.ai-repoagents/reports/release-rehearsal/rehearsal-order.md`
 
 ## Suggested use
 

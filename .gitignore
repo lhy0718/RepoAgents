@@ -33,14 +33,16 @@ pip-wheel-metadata/
 .idea/
 .vscode/
 
-# RepoRepublic runtime outputs
-.ai-republic/artifacts/
-.ai-republic/branches/
-.ai-republic/dashboard/
-.ai-republic/inbox/
-.ai-republic/logs/
-.ai-republic/reports/
-.ai-republic/sync/
-.ai-republic/sync-applied/
-.ai-republic/workspaces/
-.ai-republic/state/runs.json
+# RepoAgents runtime outputs
+.ai-republic/
+.ai-repoagents/artifacts/
+.ai-repoagents/branches/
+.ai-repoagents/dashboard/
+.ai-repoagents/inbox/
+.ai-repoagents/logs/
+.ai-repoagents/reports/
+.ai-repoagents/sync/
+.ai-repoagents/sync-applied/
+.ai-repoagents/workspaces/
+.ai-repoagents/state/runs.json
+.ai-repoagents/ops/

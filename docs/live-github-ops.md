@@ -8,14 +8,14 @@ Use this document when you want to:
 
 - move from fixture or mock demos into live GitHub issue polling
 - keep Codex CLI as the default worker runtime
-- run RepoRepublic continuously with conservative human approval
+- run RepoAgents continuously with conservative human approval
 - operate from a local machine, VM, or simple process manager before building a larger platform
 
 ## Prerequisites
 
 Before touching a live repository, confirm:
 
-- `uv sync --dev` completed in the RepoRepublic checkout
+- `uv sync --dev` completed in the RepoAgents checkout
 - `codex --version` and `codex login` both work
 - `GITHUB_TOKEN` is exported with read access to issues and write access only if you intend to post comments or open draft PRs
 - the target repository is cloned locally and has a clean baseline
@@ -34,7 +34,7 @@ The live blueprint example is here:
 
 - [../examples/live-github-ops/README.md](../examples/live-github-ops/README.md)
 - [../examples/live-github-ops/ops/preflight.md](../examples/live-github-ops/ops/preflight.md)
-- [../examples/live-github-ops/ops/republic.env.example](../examples/live-github-ops/ops/republic.env.example)
+- [../examples/live-github-ops/ops/repoagents.env.example](../examples/live-github-ops/ops/repoagents.env.example)
 - [../examples/live-github-ops/ops/build-handoff.sh](../examples/live-github-ops/ops/build-handoff.sh)
 - [../examples/live-github-ops/ops/handoff-order.md](../examples/live-github-ops/ops/handoff-order.md)
 - [../examples/live-github-ops/ops/run-loop.sh](../examples/live-github-ops/ops/run-loop.sh)
@@ -42,7 +42,7 @@ The live blueprint example is here:
 
 ## Step 1. Clone the target repository
 
-Work from the real repository you want RepoRepublic to maintain.
+Work from the real repository you want RepoAgents to maintain.
 
 ```bash
 git clone git@github.com:OWNER/REPO.git
@@ -52,12 +52,12 @@ git status --short
 
 If the working tree is already dirty, either clean it first or set `workspace.dirty_policy` deliberately. For live operation, `block` is the safest default.
 
-## Step 2. Initialize RepoRepublic into the repository
+## Step 2. Initialize RepoAgents into the repository
 
 Run initialization from inside the target repository.
 
 ```bash
-uv run --project /path/to/RepoRepublic republic init \
+uv run --project /path/to/RepoAgents repoagents init \
   --preset python-library \
   --tracker-repo OWNER/REPO
 ```
@@ -66,16 +66,16 @@ Adjust the preset if the repository is closer to `web-app`, `docs-only`, or `res
 
 This creates:
 
-- `.ai-republic/reporepublic.yaml`
+- `.ai-repoagents/repoagents.yaml`
 - `AGENTS.md`
 - `WORKFLOW.md`
-- `.ai-republic/roles/`
-- `.ai-republic/prompts/`
-- `.ai-republic/policies/`
+- `.ai-repoagents/roles/`
+- `.ai-repoagents/prompts/`
+- `.ai-repoagents/policies/`
 
 ## Step 3. Switch the config to live GitHub mode
 
-Open `.ai-republic/reporepublic.yaml` and confirm the live path values.
+Open `.ai-repoagents/repoagents.yaml` and confirm the live path values.
 
 Recommended baseline:
 
@@ -109,7 +109,7 @@ Why these settings:
 
 - `tracker.mode: rest` uses the live GitHub adapter
 - `workspace.strategy: worktree` is more practical for larger repositories
-- `logging.file_enabled: true` leaves an operator trail in `.ai-republic/logs/reporepublic.jsonl`
+- `logging.file_enabled: true` leaves an operator trail in `.ai-repoagents/logs/repoagents.jsonl`
 - `human_approval` keeps merge and publication conservative during rollout
 
 ## Step 4. Export environment variables
@@ -117,7 +117,7 @@ Why these settings:
 Use the blueprint env file as the starting point.
 
 ```bash
-cp /path/to/RepoRepublic/examples/live-github-ops/ops/republic.env.example ./.ai-republic/republic.env
+cp /path/to/RepoAgents/examples/live-github-ops/ops/repoagents.env.example ./.ai-repoagents/repoagents.env
 ```
 
 Then export the variables through your shell, direnv, systemd environment, or another secrets manager.
@@ -135,7 +135,7 @@ If Codex CLI is already logged in locally, you do not need to place Codex creden
 Before a single issue is executed, validate the environment.
 
 ```bash
-uv run --project /path/to/RepoRepublic republic doctor
+uv run --project /path/to/RepoAgents repoagents doctor
 ```
 
 The expected healthy path is:
@@ -163,14 +163,14 @@ tracker:
 Then generate the handoff bundle:
 
 ```bash
-bash /path/to/RepoRepublic/examples/live-github-ops/ops/build-handoff.sh
+bash /path/to/RepoAgents/examples/live-github-ops/ops/build-handoff.sh
 ```
 
 This writes:
 
-- root `.ai-republic/reports/github-smoke.json|md`
-- root `.ai-republic/reports/ops-status.json|md`
-- root `.ai-republic/reports/ops-brief.json|md`
+- root `.ai-repoagents/reports/github-smoke.json|md`
+- root `.ai-repoagents/reports/ops-status.json|md`
+- root `.ai-repoagents/reports/ops-brief.json|md`
 - bundle-local `github-smoke.json|md`, `ops-status.json|md`, `ops-brief.json|md`
 - bundle landing files `index.html`, `README.md`
 
@@ -183,7 +183,7 @@ Remove `tracker.smoke_fixture_path` again before real live rollout.
 Use a targeted dry-run before starting the polling loop.
 
 ```bash
-uv run --project /path/to/RepoRepublic republic trigger 123 --dry-run
+uv run --project /path/to/RepoAgents repoagents trigger 123 --dry-run
 ```
 
 Look for:
@@ -194,23 +194,23 @@ Look for:
 - blocked side effects match policy
 - the backend is `codex`, not `mock`
 
-If the repo is not ready for a specific issue number yet, `republic run --dry-run --once` is also useful for previewing the next poll cycle.
+If the repo is not ready for a specific issue number yet, `repoagents run --dry-run --once` is also useful for previewing the next poll cycle.
 
 ## Step 8. Execute one issue before enabling the loop
 
 After a clean dry-run, execute exactly one issue.
 
 ```bash
-uv run --project /path/to/RepoRepublic republic trigger 123
-uv run --project /path/to/RepoRepublic republic status --issue 123
+uv run --project /path/to/RepoAgents repoagents trigger 123
+uv run --project /path/to/RepoAgents repoagents status --issue 123
 ```
 
 Inspect the produced data:
 
-- artifacts under `.ai-republic/artifacts/issue-123/<run-id>/`
-- workspace under `.ai-republic/workspaces/issue-123/<run-id>/repo/` or the worktree path
-- state in `.ai-republic/state/runs.json`
-- logs in `.ai-republic/logs/reporepublic.jsonl`
+- artifacts under `.ai-repoagents/artifacts/issue-123/<run-id>/`
+- workspace under `.ai-repoagents/workspaces/issue-123/<run-id>/repo/` or the worktree path
+- state in `.ai-repoagents/state/runs.json`
+- logs in `.ai-repoagents/logs/repoagents.jsonl`
 
 If reviewer or policy guardrails request changes, treat that as the intended safety behavior during rollout.
 
@@ -219,13 +219,13 @@ If reviewer or policy guardrails request changes, treat that as the intended saf
 Once a single issue behaves as expected, start the loop.
 
 ```bash
-bash /path/to/RepoRepublic/examples/live-github-ops/ops/run-loop.sh
+bash /path/to/RepoAgents/examples/live-github-ops/ops/run-loop.sh
 ```
 
 That helper script is a thin wrapper around:
 
 ```bash
-uv run republic run
+uv run repoagents run
 ```
 
 Run it under a process supervisor for real operations, for example `systemd`, `launchd`, a container runtime, or a CI scheduled runner.
@@ -235,16 +235,16 @@ Run it under a process supervisor for real operations, for example `systemd`, `l
 Generate the operator dashboard regularly.
 
 ```bash
-bash /path/to/RepoRepublic/examples/live-github-ops/ops/render-dashboard.sh
+bash /path/to/RepoAgents/examples/live-github-ops/ops/render-dashboard.sh
 ```
 
 Or directly:
 
 ```bash
-uv run republic dashboard --refresh-seconds 30
+uv run repoagents dashboard --refresh-seconds 30
 ```
 
-Open `.ai-republic/dashboard/index.html` in a browser and use:
+Open `.ai-repoagents/dashboard/index.html` in a browser and use:
 
 - search to find one issue quickly
 - the status filter to isolate failures or retries
@@ -257,17 +257,17 @@ Use the least destructive recovery path first.
 For a failed or retry-pending issue:
 
 ```bash
-uv run republic status --issue 123
-uv run republic retry 123
-uv run republic trigger 123 --dry-run
-uv run republic trigger 123
+uv run repoagents status --issue 123
+uv run repoagents retry 123
+uv run repoagents trigger 123 --dry-run
+uv run repoagents trigger 123
 ```
 
 Use `clean --dry-run` before any workspace cleanup:
 
 ```bash
-uv run republic clean --dry-run
-uv run republic clean
+uv run repoagents clean --dry-run
+uv run repoagents clean
 ```
 
 If the problem is GitHub auth, Codex login, rate limiting, or dirty worktree state, fix that cause before re-running the issue.
@@ -296,7 +296,7 @@ Relevant paths:
 Validate webhook payloads with:
 
 ```bash
-uv run republic webhook --event issues --payload webhook.json --dry-run
+uv run repoagents webhook --event issues --payload webhook.json --dry-run
 ```
 
 before wiring them into a live receiver.
@@ -310,7 +310,7 @@ Before calling the deployment live, verify:
 - artifacts and logs are readable by operators
 - the dashboard renders correctly
 - `dirty_policy`, publication policy, and safety flags match the repo risk profile
-- the human reviewer path is clear when RepoRepublic requests changes
+- the human reviewer path is clear when RepoAgents requests changes
 
 ## Related documents
 

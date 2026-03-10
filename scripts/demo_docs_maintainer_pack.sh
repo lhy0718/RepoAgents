@@ -6,7 +6,7 @@ SOURCE_DIR="$ROOT_DIR/examples/docs-maintainer-pack"
 DEST_DIR="${REPOREPUBLIC_DEMO_DEST:-}"
 
 if [[ -z "$DEST_DIR" ]]; then
-  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reporepublic-docs-maintainer-pack-XXXXXX")"
+  DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/repoagents-docs-maintainer-pack-XXXXXX")"
 else
   rm -rf "$DEST_DIR"
   mkdir -p "$DEST_DIR"
@@ -16,21 +16,21 @@ cp -R "$SOURCE_DIR/." "$DEST_DIR/"
 
 pushd "$DEST_DIR" >/dev/null
 
-uv run --project "$ROOT_DIR" republic init \
+uv run --project "$ROOT_DIR" repoagents init \
   --preset docs-only \
   --fixture-issues issues.json \
   --tracker-repo demo/docs-maintainer-pack \
   --backend mock
 
-cp -R pack/roles/. .ai-republic/roles/
-cp -R pack/prompts/. .ai-republic/prompts/
-cp -R pack/policies/. .ai-republic/policies/
+cp -R pack/roles/. .ai-repoagents/roles/
+cp -R pack/prompts/. .ai-repoagents/prompts/
+cp -R pack/policies/. .ai-repoagents/policies/
 cat pack/AGENTS.append.md >> AGENTS.md
 
-uv run --project "$ROOT_DIR" republic doctor
-uv run --project "$ROOT_DIR" republic trigger 1
-uv run --project "$ROOT_DIR" republic status --issue 1
-uv run --project "$ROOT_DIR" republic dashboard
+uv run --project "$ROOT_DIR" repoagents doctor
+uv run --project "$ROOT_DIR" repoagents trigger 1
+uv run --project "$ROOT_DIR" repoagents status --issue 1
+uv run --project "$ROOT_DIR" repoagents dashboard
 
 popd >/dev/null
 

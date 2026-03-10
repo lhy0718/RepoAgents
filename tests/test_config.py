@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from reporepublic.config import ConfigLoadError, load_config
+from repoagents.config import ConfigLoadError, load_config
 
 
 def test_load_config_success(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
     assert loaded.data.tracker.repo == "demo/repo"
     assert loaded.data.llm.mode.value == "mock"
-    assert loaded.workspace_root == (demo_repo / ".ai-republic" / "workspaces").resolve()
-    assert loaded.logs_dir == (demo_repo / ".ai-republic" / "logs").resolve()
+    assert loaded.workspace_root == (demo_repo / ".ai-repoagents" / "workspaces").resolve()
+    assert loaded.logs_dir == (demo_repo / ".ai-repoagents" / "logs").resolve()
     assert loaded.data.agent.debug_artifacts is False
     assert loaded.data.logging.file_enabled is False
     assert loaded.data.cleanup.sync_applied_keep_groups_per_issue == 20
@@ -22,9 +22,9 @@ def test_load_config_success(demo_repo: Path) -> None:
 
 
 def test_load_config_local_file_tracker_success(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "tracker:\n  kind: local_file\n  path: issues.json\n",
         encoding="utf-8",
     )
@@ -37,9 +37,9 @@ def test_load_config_local_file_tracker_success(tmp_path: Path) -> None:
 
 
 def test_load_config_validation_error(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "tracker:\n  kind: github\n  repo: invalid\n",
         encoding="utf-8",
     )
@@ -49,9 +49,9 @@ def test_load_config_validation_error(tmp_path: Path) -> None:
 
 
 def test_load_config_local_file_requires_path(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "tracker:\n  kind: local_file\n",
         encoding="utf-8",
     )
@@ -63,9 +63,9 @@ def test_load_config_local_file_requires_path(tmp_path: Path) -> None:
 
 
 def test_load_config_accepts_optional_qa_role_between_engineer_and_reviewer(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",
@@ -96,9 +96,9 @@ def test_load_config_accepts_optional_qa_role_between_engineer_and_reviewer(tmp_
 
 
 def test_load_config_rejects_qa_outside_supported_order(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",
@@ -124,9 +124,9 @@ def test_load_config_rejects_qa_outside_supported_order(tmp_path: Path) -> None:
 
 
 def test_load_config_accepts_cleanup_sync_retention_override(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",
@@ -146,9 +146,9 @@ def test_load_config_accepts_cleanup_sync_retention_override(tmp_path: Path) -> 
 
 
 def test_load_config_accepts_ops_snapshot_cleanup_override(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",
@@ -170,9 +170,9 @@ def test_load_config_accepts_ops_snapshot_cleanup_override(tmp_path: Path) -> No
 
 
 def test_load_config_accepts_dashboard_report_freshness_policy_override(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",
@@ -195,9 +195,9 @@ def test_load_config_accepts_dashboard_report_freshness_policy_override(tmp_path
 
 
 def test_load_config_accepts_github_smoke_fixture_path(tmp_path: Path) -> None:
-    ai_root = tmp_path / ".ai-republic"
+    ai_root = tmp_path / ".ai-repoagents"
     ai_root.mkdir(parents=True)
-    (ai_root / "reporepublic.yaml").write_text(
+    (ai_root / "repoagents.yaml").write_text(
         "\n".join(
             [
                 "tracker:",

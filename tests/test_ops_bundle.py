@@ -4,15 +4,15 @@ import json
 import tarfile
 from pathlib import Path
 
-from reporepublic.dashboard import DashboardBuildResult
-from reporepublic.operator_reports import OperatorReportBuildResult
-from reporepublic.ops_bundle import (
+from repoagents.dashboard import DashboardBuildResult
+from repoagents.operator_reports import OperatorReportBuildResult
+from repoagents.ops_bundle import (
     build_ops_snapshot_archive,
     build_ops_snapshot_bundle,
     build_ops_snapshot_index,
     prune_ops_snapshot_history,
 )
-from reporepublic.sync_audit import SyncAuditBuildResult
+from repoagents.sync_audit import SyncAuditBuildResult
 
 
 def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_path: Path) -> None:
@@ -43,7 +43,7 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
     result = build_ops_snapshot_bundle(
         bundle_dir=bundle_dir,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=7,
         tracker_filter="local-markdown",
         dashboard_limit=25,
@@ -110,9 +110,9 @@ def test_build_ops_snapshot_bundle_writes_manifest_and_combines_statuses(tmp_pat
     assert payload["components"]["sync_audit"]["integrity_issue_count"] == 1
     assert payload["components"]["status"]["selected_runs"] == 1
     assert payload["components"]["dashboard"]["available_reports"] == 3
-    assert "# RepoRepublic Ops Snapshot Bundle" in manifest_md.read_text(encoding="utf-8")
-    assert "# RepoRepublic Ops Handoff" in landing_markdown.read_text(encoding="utf-8")
-    assert "<title>RepoRepublic Ops Handoff</title>" in landing_html.read_text(encoding="utf-8")
+    assert "# RepoAgents Ops Snapshot Bundle" in manifest_md.read_text(encoding="utf-8")
+    assert "# RepoAgents Ops Handoff" in landing_markdown.read_text(encoding="utf-8")
+    assert "<title>RepoAgents Ops Handoff</title>" in landing_html.read_text(encoding="utf-8")
 
 
 def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp_path: Path) -> None:
@@ -167,7 +167,7 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
     result = build_ops_snapshot_bundle(
         bundle_dir=bundle_dir,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=None,
         tracker_filter=None,
         dashboard_limit=10,
@@ -248,7 +248,7 @@ def test_build_ops_snapshot_bundle_includes_extra_components_and_cross_links(tmp
                     "Cleanup preview would remove 2 stale runtime path(s).",
                 ],
                 "next_actions": [
-                    "Run `republic sync repair --dry-run --issue 1`.",
+                    "Run `repoagents sync repair --dry-run --issue 1`.",
                 ],
                 "link_targets": ("status", "sync_audit", "sync_health", "ops_status"),
             },
@@ -340,7 +340,7 @@ def test_build_ops_snapshot_bundle_links_sync_components_without_duplicates(tmp_
     build_ops_snapshot_bundle(
         bundle_dir=bundle_dir,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=1,
         tracker_filter="local-markdown",
         dashboard_limit=10,
@@ -460,7 +460,7 @@ def test_build_ops_snapshot_bundle_includes_github_smoke_component_and_links(tmp
     build_ops_snapshot_bundle(
         bundle_dir=bundle_dir,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=3,
         tracker_filter=None,
         dashboard_limit=10,
@@ -598,7 +598,7 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
     first_bundle_result = build_ops_snapshot_bundle(
         bundle_dir=bundle_one,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=1,
         tracker_filter="local-file",
         dashboard_limit=10,
@@ -629,7 +629,7 @@ def test_build_ops_snapshot_index_tracks_latest_bundle_and_history(tmp_path: Pat
     second_bundle_result = build_ops_snapshot_bundle(
         bundle_dir=bundle_two,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=1,
         tracker_filter="local-file",
         dashboard_limit=10,
@@ -714,7 +714,7 @@ def test_build_ops_snapshot_index_preserves_additional_dropped_entries(tmp_path:
     bundle_result = build_ops_snapshot_bundle(
         bundle_dir=bundle_dir,
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=None,
         tracker_filter=None,
         dashboard_limit=10,

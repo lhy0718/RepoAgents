@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from reporepublic.models import IssueRef
-from reporepublic.utils.duplicates import rank_duplicate_candidates, render_duplicate_candidates_context
+from repoagents.models import IssueRef
+from repoagents.utils.duplicates import rank_duplicate_candidates, render_duplicate_candidates_context
 
 
 def test_rank_duplicate_candidates_finds_similar_open_issue() -> None:

@@ -3,14 +3,14 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "reporepublic"
+name = "repoagents"
 version = "0.1.1"
 description = "Install an AI maintainer team into any repo."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
-  { name = "RepoRepublic Maintainers" }
+  { name = "RepoAgents Maintainers" }
 ]
 keywords = ["ai", "codex", "github", "orchestrator", "automation"]
 classifiers = [
@@ -36,10 +36,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/lhy0718/RepoRepublic"
-Repository = "https://github.com/lhy0718/RepoRepublic"
-Documentation = "https://github.com/lhy0718/RepoRepublic/tree/main/docs"
-Issues = "https://github.com/lhy0718/RepoRepublic/issues"
+Homepage = "https://github.com/lhy0718/RepoAgents"
+Repository = "https://github.com/lhy0718/RepoAgents"
+Documentation = "https://github.com/lhy0718/RepoAgents/tree/main/docs"
+Issues = "https://github.com/lhy0718/RepoAgents/issues"
 
 [dependency-groups]
 dev = [
@@ -47,16 +47,16 @@ dev = [
 ]
 
 [project.scripts]
-republic = "reporepublic.cli.app:main"
+repoagents = "repoagents.cli.app:main"
 
 [tool.hatch.build]
 include = [
-  "src/reporepublic/**/*.py",
-  "src/reporepublic/templates/**/*",
+  "src/repoagents/**/*.py",
+  "src/repoagents/templates/**/*",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/reporepublic"]
+packages = ["src/repoagents"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

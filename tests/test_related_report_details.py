@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from reporepublic._related_report_details.html import (
+from repoagents._related_report_details.html import (
     _format_related_report_detail_html_attributes,
     _format_related_report_detail_html_style,
     _render_related_report_detail_html_wrapper,
 )
-from reporepublic._related_report_details.models import (
+from repoagents._related_report_details.models import (
     RELATED_REPORT_DETAIL_SECTION_ORDER,
     RelatedReportDetailBlock,
     RelatedReportDetailHtmlLayoutPolicy,
     RelatedReportDetailLineLayoutPolicy,
     RelatedReportDetailSection,
 )
-from reporepublic._related_report_details.rendering import (
+from repoagents._related_report_details.rendering import (
     build_related_report_detail_block,
     build_related_report_detail_html_layout,
     build_related_report_detail_line_layout,

@@ -11,7 +11,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "webhook_receiver.py"
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("reporepublic_webhook_receiver", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("repoagents_webhook_receiver", SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

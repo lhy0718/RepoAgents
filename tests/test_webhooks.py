@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from reporepublic.orchestrator import load_webhook_payload, parse_github_webhook
+from repoagents.orchestrator import load_webhook_payload, parse_github_webhook
 
 
 def test_parse_github_issues_webhook_accepts_supported_issue_actions() -> None:

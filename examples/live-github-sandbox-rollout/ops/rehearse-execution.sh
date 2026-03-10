@@ -2,15 +2,15 @@
 set -euo pipefail
 
 PROJECT_ROOT="${REPOREPUBLIC_PROJECT_ROOT:-}"
-REPORT_ROOT="${REPOREPUBLIC_SANDBOX_EXECUTION_REPORT_ROOT:-.ai-republic/reports/sandbox-execution}"
-HANDOFF_DIR="${REPOREPUBLIC_EXECUTION_HANDOFF_OUTPUT_DIR:-.ai-republic/reports/ops/sandbox-issue-201}"
+REPORT_ROOT="${REPOREPUBLIC_SANDBOX_EXECUTION_REPORT_ROOT:-.ai-repoagents/reports/sandbox-execution}"
+HANDOFF_DIR="${REPOREPUBLIC_EXECUTION_HANDOFF_OUTPUT_DIR:-.ai-repoagents/reports/ops/sandbox-issue-201}"
 ISSUE_ID="${REPOREPUBLIC_SANDBOX_EXECUTION_ISSUE_ID:-201}"
 
 run_republic() {
   if [[ -n "$PROJECT_ROOT" ]]; then
-    uv run --project "$PROJECT_ROOT" republic "$@"
+    uv run --project "$PROJECT_ROOT" repoagents "$@"
   else
-    uv run republic "$@"
+    uv run repoagents "$@"
   fi
 }
 
@@ -24,21 +24,21 @@ run_python() {
 
 refresh_git_baseline() {
   local label="$1"
-  git add .ai-republic/reporepublic.yaml
-  if git diff --cached --quiet -- .ai-republic/reporepublic.yaml; then
+  git add .ai-repoagents/repoagents.yaml
+  if git diff --cached --quiet -- .ai-repoagents/repoagents.yaml; then
     return
   fi
   git commit -q -m "$label"
 }
 
 mkdir -p "$REPORT_ROOT"
-cp .ai-republic/reporepublic.yaml "$REPORT_ROOT/reporepublic.pre-execution.yaml"
+cp .ai-repoagents/repoagents.yaml "$REPORT_ROOT/repoagents.pre-execution.yaml"
 
 run_python - <<'PY'
 from pathlib import Path
 import yaml
 
-path = Path(".ai-republic/reporepublic.yaml")
+path = Path(".ai-repoagents/repoagents.yaml")
 payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 payload["tracker"]["mode"] = "fixture"
 payload["tracker"]["fixtures_path"] = "issues.json"
@@ -59,7 +59,7 @@ run_republic ops snapshot \
   --include-sync-repair-preview \
   --archive
 
-cp "$REPORT_ROOT/reporepublic.pre-execution.yaml" .ai-republic/reporepublic.yaml
+cp "$REPORT_ROOT/repoagents.pre-execution.yaml" .ai-repoagents/repoagents.yaml
 refresh_git_baseline "sandbox execution restore live mode"
 
 run_republic doctor --format all

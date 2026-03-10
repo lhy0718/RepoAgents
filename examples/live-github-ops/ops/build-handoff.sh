@@ -2,13 +2,13 @@
 set -euo pipefail
 
 PROJECT_ROOT="${REPOREPUBLIC_PROJECT_ROOT:-}"
-HANDOFF_DIR="${REPOREPUBLIC_HANDOFF_OUTPUT_DIR:-.ai-republic/reports/ops/live-handoff-demo}"
+HANDOFF_DIR="${REPOREPUBLIC_HANDOFF_OUTPUT_DIR:-.ai-repoagents/reports/ops/live-handoff-demo}"
 
 run_republic() {
   if [[ -n "$PROJECT_ROOT" ]]; then
-    uv run --project "$PROJECT_ROOT" republic "$@"
+    uv run --project "$PROJECT_ROOT" repoagents "$@"
   else
-    uv run republic "$@"
+    uv run repoagents "$@"
   fi
 }
 

@@ -10,16 +10,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 import yaml
 
-from reporepublic.cli.app import app
-from reporepublic.config import load_config
-from reporepublic.models import ExternalActionResult, IssueComment, IssueRef, RunLifecycle, RunRecord
-from reporepublic.models.domain import utc_now
-from reporepublic.orchestrator import RunStateStore
-from reporepublic.sync_audit import SyncAuditBuildResult
+from repoagents.cli.app import app
+from repoagents.config import load_config
+from repoagents.models import ExternalActionResult, IssueComment, IssueRef, RunLifecycle, RunRecord
+from repoagents.models.domain import utc_now
+from repoagents.orchestrator import RunStateStore
+from repoagents.sync_audit import SyncAuditBuildResult
 
 
 runner = CliRunner()
-app_module = importlib.import_module("reporepublic.cli.app")
+app_module = importlib.import_module("repoagents.cli.app")
 
 
 def test_cli_init_creates_files(tmp_path: Path, monkeypatch) -> None:
@@ -39,12 +39,12 @@ def test_cli_init_creates_files(tmp_path: Path, monkeypatch) -> None:
         catch_exceptions=False,
     )
     assert result.exit_code == 0
-    assert (tmp_path / ".ai-republic" / "reporepublic.yaml").exists()
+    assert (tmp_path / ".ai-repoagents" / "repoagents.yaml").exists()
     assert (tmp_path / "AGENTS.md").exists()
     assert (tmp_path / "WORKFLOW.md").exists()
-    assert (tmp_path / ".github" / "workflows" / "republic-check.yml").exists()
-    assert (tmp_path / ".ai-republic" / "roles" / "qa.md").exists()
-    assert (tmp_path / ".ai-republic" / "prompts" / "qa.txt.j2").exists()
+    assert (tmp_path / ".github" / "workflows" / "repoagents-check.yml").exists()
+    assert (tmp_path / ".ai-repoagents" / "roles" / "qa.md").exists()
+    assert (tmp_path / ".ai-repoagents" / "prompts" / "qa.txt.j2").exists()
 
 
 def test_cli_init_interactive_prompts_for_missing_values(tmp_path: Path, monkeypatch) -> None:
@@ -60,7 +60,7 @@ def test_cli_init_interactive_prompts_for_missing_values(tmp_path: Path, monkeyp
 
     loaded = load_config(tmp_path)
     assert result.exit_code == 0
-    assert "Interactive RepoRepublic initialization" in result.stdout
+    assert "Interactive RepoAgents initialization" in result.stdout
     assert "Preset [docs-only/python-library/research-project/web-app]" in result.stdout
     assert "Tracker kind [github/local_file/local_markdown]" in result.stdout
     assert "Tracker repo" in result.stdout
@@ -132,16 +132,16 @@ def test_cli_init_backend_flag_updates_config_mode(tmp_path: Path, monkeypatch) 
 
 def test_cli_init_upgrade_preserves_local_drift_and_restores_missing_files(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    drifted = demo_repo / ".ai-republic" / "roles" / "triage.md"
+    drifted = demo_repo / ".ai-repoagents" / "roles" / "triage.md"
     drifted.write_text("custom local triage guidance\n", encoding="utf-8")
-    missing = demo_repo / ".ai-republic" / "prompts" / "reviewer.txt.j2"
+    missing = demo_repo / ".ai-repoagents" / "prompts" / "reviewer.txt.j2"
     missing.unlink()
 
     result = runner.invoke(app, ["init", "--upgrade"], catch_exceptions=False)
 
     assert result.exit_code == 0
-    assert "preserve: .ai-republic/roles/triage.md" in result.stdout
-    assert "create: .ai-republic/prompts/reviewer.txt.j2" in result.stdout
+    assert "preserve: .ai-repoagents/roles/triage.md" in result.stdout
+    assert "create: .ai-repoagents/prompts/reviewer.txt.j2" in result.stdout
     assert "Local modifications were preserved." in result.stdout
     assert drifted.read_text(encoding="utf-8") == "custom local triage guidance\n"
     assert missing.exists()
@@ -149,13 +149,13 @@ def test_cli_init_upgrade_preserves_local_drift_and_restores_missing_files(demo_
 
 def test_cli_init_upgrade_force_refreshes_drifted_managed_files(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    drifted = demo_repo / ".ai-republic" / "roles" / "triage.md"
+    drifted = demo_repo / ".ai-repoagents" / "roles" / "triage.md"
     drifted.write_text("custom local triage guidance\n", encoding="utf-8")
 
     result = runner.invoke(app, ["init", "--upgrade", "--force"], catch_exceptions=False)
 
     assert result.exit_code == 0
-    assert "refresh: .ai-republic/roles/triage.md" in result.stdout
+    assert "refresh: .ai-repoagents/roles/triage.md" in result.stdout
     assert "Applied upgrades:" in result.stdout
     assert "custom local triage guidance" not in drifted.read_text(encoding="utf-8")
 
@@ -177,7 +177,7 @@ def test_cli_trigger_runs_single_issue(demo_repo: Path, monkeypatch) -> None:
 
     result = runner.invoke(app, ["trigger", "1"], catch_exceptions=False)
 
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     assert result.exit_code == 0
     assert "Triggered issue #1." in result.stdout
     assert "issue=1" in result.stdout
@@ -245,9 +245,9 @@ def test_cli_release_preview_exports_report_and_notes(demo_repo: Path, monkeypat
         catch_exceptions=False,
     )
 
-    preview_json = demo_repo / ".ai-republic" / "reports" / "release-preview.json"
-    preview_markdown = demo_repo / ".ai-republic" / "reports" / "release-preview.md"
-    notes_markdown = demo_repo / ".ai-republic" / "reports" / "release-notes-v0.1.1.md"
+    preview_json = demo_repo / ".ai-repoagents" / "reports" / "release-preview.json"
+    preview_markdown = demo_repo / ".ai-repoagents" / "reports" / "release-preview.md"
+    notes_markdown = demo_repo / ".ai-repoagents" / "reports" / "release-notes-v0.1.1.md"
     payload = json.loads(preview_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -262,7 +262,7 @@ def test_cli_release_preview_exports_report_and_notes(demo_repo: Path, monkeypat
     assert "## Highlights" in notes_markdown.read_text(encoding="utf-8")
 
 
-def test_cli_release_preview_works_without_reporepublic_config(
+def test_cli_release_preview_works_without_repoagents_config(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -276,9 +276,9 @@ def test_cli_release_preview_works_without_reporepublic_config(
     )
 
     assert result.exit_code == 0
-    assert (tmp_path / ".ai-republic" / "reports" / "release-preview.json").exists()
-    assert (tmp_path / ".ai-republic" / "reports" / "release-preview.md").exists()
-    assert (tmp_path / ".ai-republic" / "reports" / "release-notes-v0.1.1.md").exists()
+    assert (tmp_path / ".ai-repoagents" / "reports" / "release-preview.json").exists()
+    assert (tmp_path / ".ai-repoagents" / "reports" / "release-preview.md").exists()
+    assert (tmp_path / ".ai-repoagents" / "reports" / "release-notes-v0.1.1.md").exists()
 
 
 def test_cli_release_announce_exports_copy_pack(demo_repo: Path, monkeypatch) -> None:
@@ -291,7 +291,7 @@ def test_cli_release_announce_exports_copy_pack(demo_repo: Path, monkeypatch) ->
         catch_exceptions=False,
     )
 
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     announce_json = reports_dir / "release-announce.json"
     announce_markdown = reports_dir / "release-announce.md"
     announcement = reports_dir / "announcement-v0.1.1.md"
@@ -320,8 +320,8 @@ def test_cli_release_assets_exports_report_and_summary(tmp_path: Path, monkeypat
     _install_release_metadata(tmp_path)
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
-    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
-    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
 
     result = runner.invoke(
         app,
@@ -329,7 +329,7 @@ def test_cli_release_assets_exports_report_and_summary(tmp_path: Path, monkeypat
         catch_exceptions=False,
     )
 
-    reports_dir = tmp_path / ".ai-republic" / "reports"
+    reports_dir = tmp_path / ".ai-repoagents" / "reports"
     payload = json.loads((reports_dir / "release-assets.json").read_text(encoding="utf-8"))
     assert result.exit_code == 0
     assert "Release assets exports:" in result.stdout
@@ -346,12 +346,12 @@ def test_cli_release_check_exports_preflight_and_companion_reports(tmp_path: Pat
     _install_release_governance_files(tmp_path)
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
-    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
-    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "RepoRepublic Tests"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "RepoAgents Tests"], cwd=tmp_path, check=True)
     subprocess.run(
-        ["git", "config", "user.email", "tests@reporepublic.local"],
+        ["git", "config", "user.email", "tests@repoagents.local"],
         cwd=tmp_path,
         check=True,
     )
@@ -372,7 +372,7 @@ def test_cli_release_check_exports_preflight_and_companion_reports(tmp_path: Pat
         catch_exceptions=False,
     )
 
-    reports_dir = tmp_path / ".ai-republic" / "reports"
+    reports_dir = tmp_path / ".ai-repoagents" / "reports"
     payload = json.loads((reports_dir / "release-checklist.json").read_text(encoding="utf-8"))
     assert result.exit_code == 0
     assert "Release checklist exports:" in result.stdout
@@ -391,12 +391,12 @@ def test_cli_release_check_fails_when_governance_files_are_missing(tmp_path: Pat
     _set_release_version(tmp_path, "0.1.1")
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
-    (dist_dir / "reporepublic-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
-    (dist_dir / "reporepublic-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1-py3-none-any.whl").write_text("fake wheel\n", encoding="utf-8")
+    (dist_dir / "repoagents-0.1.1.tar.gz").write_text("fake sdist\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "RepoRepublic Tests"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "RepoAgents Tests"], cwd=tmp_path, check=True)
     subprocess.run(
-        ["git", "config", "user.email", "tests@reporepublic.local"],
+        ["git", "config", "user.email", "tests@repoagents.local"],
         cwd=tmp_path,
         check=True,
     )
@@ -417,7 +417,7 @@ def test_cli_release_check_fails_when_governance_files_are_missing(tmp_path: Pat
         catch_exceptions=False,
     )
 
-    payload = json.loads((tmp_path / ".ai-republic" / "reports" / "release-checklist.json").read_text(encoding="utf-8"))
+    payload = json.loads((tmp_path / ".ai-repoagents" / "reports" / "release-checklist.json").read_text(encoding="utf-8"))
     assert result.exit_code == 1
     assert payload["summary"]["status"] == "issues"
     assert any(
@@ -445,7 +445,7 @@ def test_cli_run_blocks_on_dirty_working_tree_when_configured(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_git_repo)
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("dirty_policy: warn", "dirty_policy: block"),
         encoding="utf-8",
@@ -463,7 +463,7 @@ def test_cli_run_blocks_on_dirty_working_tree_when_configured(
 
 def test_cli_status_filters_single_issue(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -484,7 +484,7 @@ def test_cli_status_filters_single_issue(demo_repo: Path, monkeypatch) -> None:
             status=RunLifecycle.RETRY_PENDING,
             backend_mode="codex",
             next_retry_at=utc_now(),
-            workspace_path="/tmp/republic/workspace",
+            workspace_path="/tmp/repoagents/workspace",
             last_error="temporary failure",
             external_actions=[
                 ExternalActionResult(
@@ -502,19 +502,19 @@ def test_cli_status_filters_single_issue(demo_repo: Path, monkeypatch) -> None:
     assert "issue=2 run_id=run-2" in result.stdout
     assert "issue=1 run_id=run-1" not in result.stdout
     assert "next_retry_at:" in result.stdout
-    assert "workspace: /tmp/republic/workspace" in result.stdout
+    assert "workspace: /tmp/repoagents/workspace" in result.stdout
     assert "external_actions:" in result.stdout
 
 
 def test_cli_status_includes_report_health_summary(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
     _write_dashboard_reports(demo_repo)
     _write_ops_snapshot_index(demo_repo)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -546,7 +546,7 @@ def test_cli_status_includes_report_health_summary(demo_repo: Path, monkeypatch)
     ) in result.stdout
     assert "Ops snapshots: status=available entries=2/5 archives=1 dropped=1" in result.stdout
     assert "latest: 20260309T101500Z | clean | age=" in result.stdout
-    assert f"bundle: {demo_repo / '.ai-republic' / 'reports' / 'ops' / '20260309T101500Z'}" in result.stdout
+    assert f"bundle: {demo_repo / '.ai-repoagents' / 'reports' / 'ops' / '20260309T101500Z'}" in result.stdout
 
 
 def test_cli_status_warns_on_report_policy_export_mismatch(
@@ -555,10 +555,10 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -576,7 +576,7 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
         encoding="utf-8",
     )
     _write_dashboard_reports(demo_repo)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -589,7 +589,7 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
     }
     report_json.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -625,7 +625,7 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
     ) in result.stdout
     assert (
         "    remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in result.stdout
 
@@ -633,7 +633,7 @@ def test_cli_status_warns_on_report_policy_export_mismatch(
 def test_cli_status_exports_json_and_markdown(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     _write_ops_snapshot_index(demo_repo)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -648,8 +648,8 @@ def test_cli_status_exports_json_and_markdown(demo_repo: Path, monkeypatch) -> N
 
     result = runner.invoke(app, ["status", "--format", "all"], catch_exceptions=False)
 
-    report_json = demo_repo / ".ai-republic" / "reports" / "status.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "status.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "status.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "status.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -670,7 +670,7 @@ def test_cli_status_exports_json_and_markdown(demo_repo: Path, monkeypatch) -> N
 
 def test_cli_status_exports_filtered_issue_to_custom_path(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -713,11 +713,11 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
 
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-1",
@@ -747,12 +747,12 @@ def test_cli_ops_snapshot_exports_bundle(demo_repo: Path, monkeypatch) -> None:
     bundle_landing_markdown = output_dir / "README.md"
     bundle_sync_health_json = output_dir / "sync-health.json"
     bundle_sync_health_markdown = output_dir / "sync-health.md"
-    ops_brief_json = demo_repo / ".ai-republic" / "reports" / "ops-brief.json"
-    ops_brief_markdown = demo_repo / ".ai-republic" / "reports" / "ops-brief.md"
-    ops_status_json = demo_repo / ".ai-republic" / "reports" / "ops-status.json"
-    ops_status_markdown = demo_repo / ".ai-republic" / "reports" / "ops-status.md"
-    sync_health_json = demo_repo / ".ai-republic" / "reports" / "sync-health.json"
-    sync_health_markdown = demo_repo / ".ai-republic" / "reports" / "sync-health.md"
+    ops_brief_json = demo_repo / ".ai-repoagents" / "reports" / "ops-brief.json"
+    ops_brief_markdown = demo_repo / ".ai-repoagents" / "reports" / "ops-brief.md"
+    ops_status_json = demo_repo / ".ai-repoagents" / "reports" / "ops-status.json"
+    ops_status_markdown = demo_repo / ".ai-repoagents" / "reports" / "ops-status.md"
+    sync_health_json = demo_repo / ".ai-repoagents" / "reports" / "sync-health.json"
+    sync_health_markdown = demo_repo / ".ai-repoagents" / "reports" / "sync-health.md"
     payload = json.loads(manifest_json.read_text(encoding="utf-8"))
     ops_brief_payload = json.loads(ops_brief_json.read_text(encoding="utf-8"))
     ops_status_payload = json.loads(ops_status_json.read_text(encoding="utf-8"))
@@ -831,7 +831,7 @@ def test_cli_ops_snapshot_exports_github_smoke_for_live_github_tracker(
 ) -> None:
     monkeypatch.chdir(demo_git_repo)
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest"),
@@ -923,10 +923,10 @@ def test_cli_ops_snapshot_exports_github_smoke_for_live_github_tracker(
     )
 
     bundle_github_smoke_json = output_dir / "github-smoke.json"
-    root_github_smoke_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
+    root_github_smoke_json = demo_git_repo / ".ai-repoagents" / "reports" / "github-smoke.json"
     manifest_payload = json.loads((output_dir / "bundle.json").read_text(encoding="utf-8"))
     ops_status_payload = json.loads(
-        (demo_git_repo / ".ai-republic" / "reports" / "ops-status.json").read_text(encoding="utf-8")
+        (demo_git_repo / ".ai-repoagents" / "reports" / "ops-status.json").read_text(encoding="utf-8")
     )
     github_smoke_payload = json.loads(root_github_smoke_json.read_text(encoding="utf-8"))
 
@@ -1004,9 +1004,9 @@ def test_cli_ops_snapshot_can_include_cleanup_preview_and_existing_result(
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
 
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-cleanup-1",
@@ -1075,7 +1075,7 @@ def test_cli_ops_snapshot_can_include_sync_check_and_repair_preview(
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
 
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     (applied_root / "20260308T010105000001Z-comment.md").write_text(
         "---\nissue_id: 1\n---\n\nOrphan handoff.\n",
@@ -1127,7 +1127,7 @@ def test_cli_ops_snapshot_can_write_archive_handoff(
 
     output_dir = demo_repo / "tmp" / "ops-bundle-archive"
     archive_path = demo_repo / "tmp" / "handoff.tar.gz"
-    ops_index_root = demo_repo / ".ai-republic" / "reports" / "ops"
+    ops_index_root = demo_repo / ".ai-repoagents" / "reports" / "ops"
     result = runner.invoke(
         app,
         [
@@ -1166,7 +1166,7 @@ def test_cli_ops_status_prints_latest_history_and_bundle_manifest(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     _write_ops_snapshot_index(demo_repo)
@@ -1202,15 +1202,15 @@ def test_cli_ops_status_exports_json_and_markdown(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     _write_ops_snapshot_index(demo_repo)
 
     result = runner.invoke(app, ["ops", "status", "--format", "all"], catch_exceptions=False)
 
-    report_json = demo_repo / ".ai-republic" / "reports" / "ops-status.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "ops-status.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "ops-status.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "ops-status.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -1240,7 +1240,7 @@ def test_cli_github_smoke_exports_json_and_markdown(
 ) -> None:
     monkeypatch.chdir(demo_git_repo)
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
@@ -1307,8 +1307,8 @@ def test_cli_github_smoke_exports_json_and_markdown(
         catch_exceptions=False,
     )
 
-    report_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
-    report_markdown = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.md"
+    report_json = demo_git_repo / ".ai-repoagents" / "reports" / "github-smoke.json"
+    report_markdown = demo_git_repo / ".ai-repoagents" / "reports" / "github-smoke.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -1328,7 +1328,7 @@ def test_cli_github_smoke_requires_write_ready_when_requested(
 ) -> None:
     monkeypatch.chdir(demo_git_repo)
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -1426,7 +1426,7 @@ def test_cli_github_smoke_uses_configured_fixture_snapshot(
         ),
         encoding="utf-8",
     )
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -1449,7 +1449,7 @@ def test_cli_github_smoke_uses_configured_fixture_snapshot(
         catch_exceptions=False,
     )
 
-    report_json = demo_git_repo / ".ai-republic" / "reports" / "github-smoke.json"
+    report_json = demo_git_repo / ".ai-repoagents" / "reports" / "github-smoke.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -1467,7 +1467,7 @@ def test_cli_ops_snapshot_can_prune_managed_history_entries(
     monkeypatch.setattr(app_module, "_run_version", lambda command: "codex 0.test")
     monkeypatch.setattr(app_module.shutil, "which", lambda command: f"/opt/test/{command}")
 
-    ops_index_root = demo_repo / ".ai-republic" / "reports" / "ops"
+    ops_index_root = demo_repo / ".ai-repoagents" / "reports" / "ops"
     old_output_dir = ops_index_root / "20260309T090000Z"
     old_output_dir.mkdir(parents=True, exist_ok=True)
     (old_output_dir / "bundle.json").write_text("{}\n", encoding="utf-8")
@@ -1546,7 +1546,7 @@ def test_cli_clean_sync_applied_dry_run_previews_manifest_aware_retention(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
-    sync_issue_root = demo_repo / ".ai-republic" / "sync-applied" / "local-markdown" / "issue-1"
+    sync_issue_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-markdown" / "issue-1"
     sync_issue_root.mkdir(parents=True, exist_ok=True)
     new_comment = sync_issue_root / "20260308T010101000001Z-comment.md"
     old_branch = sync_issue_root / "20260308T010001000001Z-branch.json"
@@ -1566,7 +1566,7 @@ def test_cli_clean_sync_applied_dry_run_previews_manifest_aware_retention(
                     applied_at="2026-03-08T01:00:01+00:00",
                     staged_at="20260308T010001000001Z",
                     archived_path=old_branch,
-                    group_key="issue:1|head:reporepublic/old-branch",
+                    group_key="issue:1|head:repoagents/old-branch",
                     artifact_role="branch-proposal",
                 ),
                 _manifest_entry(
@@ -1576,7 +1576,7 @@ def test_cli_clean_sync_applied_dry_run_previews_manifest_aware_retention(
                     applied_at="2026-03-08T01:00:02+00:00",
                     staged_at="20260308T010002000001Z",
                     archived_path=old_pr,
-                    group_key="issue:1|head:reporepublic/old-branch",
+                    group_key="issue:1|head:repoagents/old-branch",
                     artifact_role="pr-proposal",
                 ),
                 _manifest_entry(
@@ -1614,7 +1614,7 @@ def test_cli_clean_sync_applied_dry_run_writes_cleanup_report(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
-    sync_issue_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    sync_issue_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     sync_issue_root.mkdir(parents=True, exist_ok=True)
     stale_branch = sync_issue_root / "20260308T010001000001Z-branch.json"
     recent_comment = sync_issue_root / "20260308T010101000001Z-comment.md"
@@ -1630,7 +1630,7 @@ def test_cli_clean_sync_applied_dry_run_writes_cleanup_report(
                     applied_at="2026-03-08T01:00:01+00:00",
                     staged_at="20260308T010001000001Z",
                     archived_path=stale_branch,
-                    group_key="issue:1|head:reporepublic/old-branch",
+                    group_key="issue:1|head:repoagents/old-branch",
                     artifact_role="branch-proposal",
                 ),
                 _manifest_entry(
@@ -1655,8 +1655,8 @@ def test_cli_clean_sync_applied_dry_run_writes_cleanup_report(
         ["clean", "--sync-applied", "--dry-run", "--report", "--report-format", "all"],
         catch_exceptions=False,
     )
-    report_json = demo_repo / ".ai-republic" / "reports" / "cleanup-preview.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "cleanup-preview.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "cleanup-preview.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "cleanup-preview.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -1678,7 +1678,7 @@ def test_cli_clean_report_surfaces_sync_audit_policy_drift(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -1695,7 +1695,7 @@ def test_cli_clean_report_surfaces_sync_audit_policy_drift(
         + "\n",
         encoding="utf-8",
     )
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -1746,7 +1746,7 @@ def test_cli_clean_report_surfaces_sync_audit_policy_drift(
     ) in result.stdout
     assert (
         "  remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in result.stdout
 
@@ -1756,9 +1756,9 @@ def test_cli_clean_report_can_print_sync_audit_mismatch_details(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_repo)
-    sync_issue_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-7"
+    sync_issue_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-7"
     sync_issue_root.mkdir(parents=True, exist_ok=True)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -1814,7 +1814,7 @@ def test_cli_clean_sync_applied_prunes_old_groups_and_repairs_manifest(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
-    sync_issue_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    sync_issue_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     sync_issue_root.mkdir(parents=True, exist_ok=True)
     recent_comment = sync_issue_root / "20260308T010101000001Z-comment.md"
     stale_branch = sync_issue_root / "20260308T010001000001Z-branch.json"
@@ -1834,7 +1834,7 @@ def test_cli_clean_sync_applied_prunes_old_groups_and_repairs_manifest(
                     applied_at="2026-03-08T01:00:01+00:00",
                     staged_at="20260308T010001000001Z",
                     archived_path=stale_branch,
-                    group_key="issue:1|head:reporepublic/old-branch",
+                    group_key="issue:1|head:repoagents/old-branch",
                     artifact_role="branch-proposal",
                 ),
                 _manifest_entry(
@@ -1844,7 +1844,7 @@ def test_cli_clean_sync_applied_prunes_old_groups_and_repairs_manifest(
                     applied_at="2026-03-08T01:00:03+00:00",
                     staged_at="20260308T010003000001Z",
                     archived_path=dangling_pr_body,
-                    group_key="issue:1|head:reporepublic/old-branch",
+                    group_key="issue:1|head:repoagents/old-branch",
                     artifact_role="pr-body-proposal",
                 ),
                 _manifest_entry(
@@ -1892,7 +1892,7 @@ def test_cli_clean_sync_applied_writes_cleanup_result_report(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
-    sync_issue_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-2"
+    sync_issue_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-2"
     sync_issue_root.mkdir(parents=True, exist_ok=True)
     orphan = sync_issue_root / "20260308T005959000001Z-orphan.md"
     orphan.write_text("orphan\n", encoding="utf-8")
@@ -1904,7 +1904,7 @@ def test_cli_clean_sync_applied_writes_cleanup_result_report(
         ["clean", "--sync-applied", "--issue", "2", "--report"],
         catch_exceptions=False,
     )
-    report_json = demo_repo / ".ai-republic" / "reports" / "cleanup-result.json"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "cleanup-result.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -1922,11 +1922,11 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
     _configure_sync_retention(demo_repo, keep_groups=1)
     _write_dashboard_reports(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
-    artifact_dir = demo_repo / ".ai-republic" / "artifacts" / "issue-1" / "run-dashboard"
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
+    artifact_dir = demo_repo / ".ai-repoagents" / "artifacts" / "issue-1" / "run-dashboard"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_file = artifact_dir / "reviewer.md"
     artifact_file.write_text("# Reviewer\n", encoding="utf-8")
@@ -1942,7 +1942,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
             role_artifacts={"reviewer": str(artifact_file)},
         )
     )
-    sync_applied_dir = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    sync_applied_dir = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     sync_applied_dir.mkdir(parents=True, exist_ok=True)
     archived_comment = sync_applied_dir / "20260308T010105000001Z-comment.md"
     archived_branch = sync_applied_dir / "20260308T010001000001Z-branch.json"
@@ -1951,7 +1951,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-older",
+                "branch_name": "repoagents/issue-1-older",
                 "base_branch": "main",
                 "staged_at": "20260308T010001000001Z",
             },
@@ -1961,7 +1961,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
     archived_comment.write_text(
-        "---\nissue_id: 1\nstaged_at: 20260308T010105000001Z\n---\n\nRepoRepublic staged a maintainer note.\n",
+        "---\nissue_id: 1\nstaged_at: 20260308T010105000001Z\n---\n\nRepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
     (sync_applied_dir / "manifest.json").write_text(
@@ -1979,9 +1979,9 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
                     "normalized": {
                         "artifact_role": "branch-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-older",
+                        "bundle_key": "issue:1|head:repoagents/issue-1-older",
                         "refs": {
-                            "head": "reporepublic/issue-1-older",
+                            "head": "repoagents/issue-1-older",
                             "base": "main",
                         },
                         "links": {
@@ -1993,7 +1993,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
                     "archived_path": str(archived_branch),
                     "effect": "Archived branch handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-older",
+                        "group_key": "issue:1|head:repoagents/issue-1-older",
                         "group_size": 1,
                         "group_index": 0,
                         "group_actions": ["branch"],
@@ -2053,9 +2053,9 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-republic" / "dashboard" / "index.html"
-    dashboard_json = demo_repo / ".ai-republic" / "dashboard" / "index.json"
-    dashboard_markdown = demo_repo / ".ai-republic" / "dashboard" / "index.md"
+    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
+    dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
+    dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
     html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
@@ -2095,7 +2095,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
     assert "issues_with_findings" in html
     assert "duplicate_entry_key=1" in html
     assert "cleanup_report_mismatches:</strong> 1" in html
-    assert "duplicate_entry_key (1): run `republic sync repair --dry-run` to canonicalize duplicate manifest entries" in html
+    assert "duplicate_entry_key (1): run `repoagents sync repair --dry-run` to canonicalize duplicate manifest entries" in html
     assert "Cleanup preview: cleanup report issue_filter=3 does not match audit issue_filter=1" in html
     assert 'href="#report-cleanup-result"' in html
     assert 'href="#report-sync-audit"' in html
@@ -2189,8 +2189,8 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
     assert "  - mismatches:" in markdown
     assert "    - Cleanup preview: cleanup report issue_filter=3 does not match audit issue_filter=1" in markdown
     assert "cleanup_report_mismatches=1" in markdown
-    assert "action_hints=duplicate_entry_key (1): run `republic sync repair --dry-run` to canonicalize duplicate manifest entries" in markdown
-    assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in markdown
+    assert "action_hints=duplicate_entry_key (1): run `repoagents sync repair --dry-run` to canonicalize duplicate manifest entries" in markdown
+    assert "missing_manifest (1): run `repoagents sync repair --dry-run` to rebuild manifest state from archived files" in markdown
     assert "sample_issue_ids=4,9" in markdown
     assert "- related_cards: Cleanup result" in markdown
     assert "- referenced_by: Sync audit" in markdown
@@ -2198,7 +2198,7 @@ def test_cli_dashboard_writes_html_report(demo_repo: Path, monkeypatch) -> None:
 
 def test_cli_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "cleanup-preview.json").write_text(
         json.dumps(
@@ -2223,9 +2223,9 @@ def test_cli_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path
         ["dashboard", "--format", "all"],
         catch_exceptions=False,
     )
-    dashboard_path = demo_repo / ".ai-republic" / "dashboard" / "index.html"
-    dashboard_json = demo_repo / ".ai-republic" / "dashboard" / "index.json"
-    dashboard_markdown = demo_repo / ".ai-republic" / "dashboard" / "index.md"
+    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
+    dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
+    dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
     html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
@@ -2258,10 +2258,10 @@ def test_cli_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path
 def test_cli_dashboard_surfaces_embedded_policy_drift(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -2279,7 +2279,7 @@ def test_cli_dashboard_surfaces_embedded_policy_drift(demo_repo: Path, monkeypat
         encoding="utf-8",
     )
     _write_dashboard_reports(demo_repo)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -2298,23 +2298,23 @@ def test_cli_dashboard_surfaces_embedded_policy_drift(demo_repo: Path, monkeypat
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-republic" / "dashboard" / "index.html"
-    dashboard_json = demo_repo / ".ai-republic" / "dashboard" / "index.json"
-    dashboard_markdown = demo_repo / ".ai-republic" / "dashboard" / "index.md"
+    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
+    dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
+    dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
     html = dashboard_path.read_text(encoding="utf-8")
     snapshot = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
 
     assert result.exit_code == 0
     assert "Policy drift reports" in html
-    assert "re-run `republic sync audit --format all` and `republic clean --report --report-format all`" in html
+    assert "re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all`" in html
     assert "embedded policy drift" in html
     assert "embedded policy differs from current config" in html
     assert snapshot["counts"]["policy_drift_reports"] == 1
     assert snapshot["reports"]["policy_drift_total"] == 1
     assert (
         snapshot["reports"]["policy_drift_guidance"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["reports"]["entries"][0]["policy_alignment_status"] == "drift"
     assert (
@@ -2323,12 +2323,12 @@ def test_cli_dashboard_surfaces_embedded_policy_drift(demo_repo: Path, monkeypat
     )
     assert (
         snapshot["reports"]["entries"][0]["policy_alignment_remediation"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert "- policy_drift_reports: 1" in markdown
-    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
     assert "- policy_alignment: drift" in markdown
-    assert "- policy_alignment_remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_alignment_remediation: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
 
 
 def test_cli_dashboard_escalates_hero_when_only_policy_drift_exists(
@@ -2337,10 +2337,10 @@ def test_cli_dashboard_escalates_hero_when_only_policy_drift_exists(
 ) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -2376,9 +2376,9 @@ def test_cli_dashboard_escalates_hero_when_only_policy_drift_exists(
         catch_exceptions=False,
     )
 
-    dashboard_path = demo_repo / ".ai-republic" / "dashboard" / "index.html"
-    dashboard_json = demo_repo / ".ai-republic" / "dashboard" / "index.json"
-    dashboard_markdown = demo_repo / ".ai-republic" / "dashboard" / "index.md"
+    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
+    dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
+    dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
     html = dashboard_path.read_text(encoding="utf-8")
     snapshot = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
@@ -2407,10 +2407,10 @@ def test_cli_dashboard_escalates_hero_when_only_policy_drift_exists(
 def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -2428,7 +2428,7 @@ def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Pat
         encoding="utf-8",
     )
     _write_dashboard_reports(demo_repo)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     warning = "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
     alignment = {
         "status": "drift",
@@ -2506,9 +2506,9 @@ def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Pat
         ["dashboard", "--format", "all"],
         catch_exceptions=False,
     )
-    dashboard_path = demo_repo / ".ai-republic" / "dashboard" / "index.html"
-    dashboard_json = demo_repo / ".ai-republic" / "dashboard" / "index.json"
-    dashboard_markdown = demo_repo / ".ai-republic" / "dashboard" / "index.md"
+    dashboard_path = demo_repo / ".ai-repoagents" / "dashboard" / "index.html"
+    dashboard_json = demo_repo / ".ai-repoagents" / "dashboard" / "index.json"
+    dashboard_markdown = demo_repo / ".ai-repoagents" / "dashboard" / "index.md"
     html = dashboard_path.read_text(encoding="utf-8")
     payload = json.loads(dashboard_json.read_text(encoding="utf-8"))
     markdown = dashboard_markdown.read_text(encoding="utf-8")
@@ -2532,7 +2532,7 @@ def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Pat
         "policy drifts\n"
         f"- Sync audit: {warning}\n"
         "remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert "related_report_policy_drift_warnings=Sync audit: embedded policy differs from current config" in markdown
@@ -2541,21 +2541,21 @@ def test_cli_dashboard_surfaces_related_report_policy_drift_notes(demo_repo: Pat
     assert f"    - Sync audit: {warning}" in markdown
     assert (
         "  - remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in markdown
 
 
 def test_cli_sync_ls_lists_staged_artifacts(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010101000001Z-comment.md").write_text(
-        "---\nissue_id: 1\nstaged_at: 20260308T010101000001Z\n---\n\nRepoRepublic staged a maintainer note.\n",
+        "---\nissue_id: 1\nstaged_at: 20260308T010101000001Z\n---\n\nRepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
     (sync_dir / "20260308T010102000001Z-branch.json").write_text(
-        '{\n  "action": "branch",\n  "branch_name": "reporepublic/issue-1-fix",\n  "staged_at": "20260308T010102000001Z"\n}\n',
+        '{\n  "action": "branch",\n  "branch_name": "repoagents/issue-1-fix",\n  "staged_at": "20260308T010102000001Z"\n}\n',
         encoding="utf-8",
     )
 
@@ -2572,7 +2572,7 @@ def test_cli_sync_ls_lists_staged_artifacts(demo_repo: Path, monkeypatch) -> Non
 
 def test_cli_sync_show_renders_selected_artifact(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010101000001Z-comment.md"
     artifact_path.write_text(
@@ -2581,7 +2581,7 @@ def test_cli_sync_show_renders_selected_artifact(demo_repo: Path, monkeypatch) -
         "action: post_comment\n"
         "staged_at: 20260308T010101000001Z\n"
         "---\n\n"
-        "RepoRepublic staged a maintainer note.\n",
+        "RepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
 
@@ -2599,12 +2599,12 @@ def test_cli_sync_show_renders_selected_artifact(demo_repo: Path, monkeypatch) -
     assert "Normalized:" in result.stdout
     assert "artifact_role: comment-proposal" in result.stdout
     assert "Body:" in result.stdout
-    assert "RepoRepublic staged a maintainer note." in result.stdout
+    assert "RepoAgents staged a maintainer note." in result.stdout
 
 
 def test_cli_sync_check_reports_manifest_issues(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     orphan_path = applied_root / "20260308T010105000001Z-comment.md"
     orphan_path.write_text("---\nissue_id: 1\n---\n\nOrphan handoff.\n", encoding="utf-8")
@@ -2620,7 +2620,7 @@ def test_cli_sync_check_reports_manifest_issues(demo_repo: Path, monkeypatch) ->
 
 def test_cli_sync_repair_adopts_orphan_archives_and_clears_findings(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-markdown" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-markdown" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     branch_path = applied_root / "20260308T010201000001Z-branch.json"
     branch_path.write_text(
@@ -2628,7 +2628,7 @@ def test_cli_sync_repair_adopts_orphan_archives_and_clears_findings(demo_repo: P
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-fix-empty-input",
+                "branch_name": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "staged_at": "20260308T010201000001Z",
             },
@@ -2658,13 +2658,13 @@ def test_cli_sync_audit_writes_default_reports(demo_repo: Path, monkeypatch) -> 
     monkeypatch.chdir(demo_repo)
     _configure_sync_retention(demo_repo, keep_groups=1)
     _write_cleanup_reports_for_sync_audit(demo_repo)
-    pending_dir = demo_repo / ".ai-republic" / "sync" / "local-file" / "issue-1"
+    pending_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     pending_dir.mkdir(parents=True, exist_ok=True)
     (pending_dir / "20260308T020101000001Z-comment.md").write_text(
         "---\nissue_id: 1\nstaged_at: 20260308T020101000001Z\n---\n\nPending maintainer note.\n",
         encoding="utf-8",
     )
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     stale_branch = applied_root / "20260308T010001000001Z-branch.json"
     recent_comment = applied_root / "20260308T010101000001Z-comment.md"
@@ -2680,7 +2680,7 @@ def test_cli_sync_audit_writes_default_reports(demo_repo: Path, monkeypatch) -> 
                     applied_at="2026-03-08T01:00:01+00:00",
                     staged_at="20260308T010001000001Z",
                     archived_path=stale_branch,
-                    group_key="issue:1|head:reporepublic/issue-1-older",
+                    group_key="issue:1|head:repoagents/issue-1-older",
                     artifact_role="branch-proposal",
                 ),
                 _manifest_entry(
@@ -2701,8 +2701,8 @@ def test_cli_sync_audit_writes_default_reports(demo_repo: Path, monkeypatch) -> 
     )
 
     result = runner.invoke(app, ["sync", "audit"], catch_exceptions=False)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "sync-audit.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -2725,7 +2725,7 @@ def test_cli_sync_audit_writes_default_reports(demo_repo: Path, monkeypatch) -> 
 
 def test_cli_sync_audit_reports_cleanup_policy_drift(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -2743,7 +2743,7 @@ def test_cli_sync_audit_reports_cleanup_policy_drift(demo_repo: Path, monkeypatc
         encoding="utf-8",
     )
     _write_cleanup_reports_for_sync_audit(demo_repo)
-    preview_path = demo_repo / ".ai-republic" / "reports" / "cleanup-preview.json"
+    preview_path = demo_repo / ".ai-repoagents" / "reports" / "cleanup-preview.json"
     payload = json.loads(preview_path.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -2757,7 +2757,7 @@ def test_cli_sync_audit_reports_cleanup_policy_drift(demo_repo: Path, monkeypatc
     preview_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
     result = runner.invoke(app, ["sync", "audit", "--show-remediation"], catch_exceptions=False)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
     snapshot = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -2770,7 +2770,7 @@ def test_cli_sync_audit_reports_cleanup_policy_drift(demo_repo: Path, monkeypatc
     ) in result.stdout
     assert (
         "  remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in result.stdout
     assert snapshot["summary"]["related_cleanup_policy_drifts"] == 1
@@ -2779,7 +2779,7 @@ def test_cli_sync_audit_reports_cleanup_policy_drift(demo_repo: Path, monkeypatc
 
 def test_cli_sync_audit_exits_non_zero_on_integrity_issues(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-markdown" / "issue-7"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-markdown" / "issue-7"
     applied_root.mkdir(parents=True, exist_ok=True)
     (applied_root / "20260308T030101000001Z-comment.md").write_text(
         "---\nissue_id: 7\n---\n\nOrphan archive.\n",
@@ -2787,7 +2787,7 @@ def test_cli_sync_audit_exits_non_zero_on_integrity_issues(demo_repo: Path, monk
     )
 
     result = runner.invoke(app, ["sync", "audit", "--issue", "7", "--tracker", "local-markdown"], catch_exceptions=False)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 1
@@ -2806,8 +2806,8 @@ def test_cli_sync_audit_reports_cleanup_issue_filter_mismatch(demo_repo: Path, m
     )
 
     result = runner.invoke(app, ["sync", "audit", "--issue", "7"], catch_exceptions=False)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "sync-audit.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     markdown = report_markdown.read_text(encoding="utf-8")
 
@@ -2840,7 +2840,7 @@ def test_cli_sync_health_writes_default_reports_and_summarizes_pipeline(
         "---\nissue_id: 1\n---\n\nOrphan archive.\n",
         encoding="utf-8",
     )
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     workspace_path = loaded.workspace_root / "issue-1" / "run-stale" / "repo"
     workspace_path.mkdir(parents=True, exist_ok=True)
     artifact_dir = loaded.artifacts_dir / "issue-1" / "run-stale"
@@ -2858,8 +2858,8 @@ def test_cli_sync_health_writes_default_reports_and_summarizes_pipeline(
     )
 
     result = runner.invoke(app, ["sync", "health", "--issue", "1", "--format", "all"], catch_exceptions=False)
-    report_json = demo_repo / ".ai-republic" / "reports" / "sync-health.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "sync-health.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "sync-health.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "sync-health.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     markdown = report_markdown.read_text(encoding="utf-8")
 
@@ -2876,10 +2876,10 @@ def test_cli_sync_health_writes_default_reports_and_summarizes_pipeline(
     assert payload["repair_preview"]["summary"]["changed_reports"] == 1
     assert payload["cleanup_preview"]["summary"]["action_count"] == 2
     assert any(
-        "republic clean --sync-applied --dry-run --report" in item
+        "repoagents clean --sync-applied --dry-run --report" in item
         for item in payload["summary"]["next_actions"]
     )
-    assert "# RepoRepublic Sync Health" in markdown
+    assert "# RepoAgents Sync Health" in markdown
     assert "## Next actions" in markdown
     assert "## Sync repair preview" in markdown
 
@@ -2889,7 +2889,7 @@ def test_cli_sync_health_can_print_related_report_details(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -2906,7 +2906,7 @@ def test_cli_sync_health_can_print_related_report_details(
         + "\n",
         encoding="utf-8",
     )
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "cleanup-preview.json").write_text(
         json.dumps(
@@ -3051,7 +3051,7 @@ def test_cli_sync_audit_can_print_cleanup_mismatch_details(demo_repo: Path, monk
 
 def test_cli_sync_audit_groups_cleanup_mismatch_and_policy_drift_details(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -3073,7 +3073,7 @@ def test_cli_sync_audit_groups_cleanup_mismatch_and_policy_drift_details(demo_re
         preview_issue_filter=3,
         result_issue_filter=7,
     )
-    result_path = demo_repo / ".ai-republic" / "reports" / "cleanup-result.json"
+    result_path = demo_repo / ".ai-repoagents" / "reports" / "cleanup-result.json"
     payload = json.loads(result_path.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -3108,20 +3108,20 @@ def test_cli_sync_audit_groups_cleanup_mismatch_and_policy_drift_details(demo_re
     )
     assert (
         "  remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in result.stdout
 
 
 def test_cli_sync_ls_json_includes_normalized_metadata(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010101000001Z-branch.json").write_text(
         '{\n'
         '  "action": "branch",\n'
         '  "issue_id": 1,\n'
-        '  "branch_name": "reporepublic/issue-1-fix",\n'
+        '  "branch_name": "repoagents/issue-1-fix",\n'
         '  "base_branch": "main",\n'
         '  "staged_at": "20260308T010101000001Z"\n'
         '}\n',
@@ -3137,7 +3137,7 @@ def test_cli_sync_ls_json_includes_normalized_metadata(demo_repo: Path, monkeypa
     payload = json.loads(result.stdout)
     assert result.exit_code == 0
     assert payload[0]["normalized"]["artifact_role"] == "branch-proposal"
-    assert payload[0]["normalized"]["refs"]["head"] == "reporepublic/issue-1-fix"
+    assert payload[0]["normalized"]["refs"]["head"] == "repoagents/issue-1-fix"
     assert payload[0]["normalized"]["refs"]["base"] == "main"
 
 
@@ -3154,7 +3154,7 @@ def test_cli_sync_apply_uses_latest_filtered_artifact_and_lists_applied_scope(de
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_markdown")
@@ -3162,7 +3162,7 @@ def test_cli_sync_apply_uses_latest_filtered_artifact_and_lists_applied_scope(de
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010101000001Z-comment.md").write_text(
         "---\nissue_id: 1\nstaged_at: 20260308T010101000001Z\n---\n\nOlder note.\n",
@@ -3214,7 +3214,7 @@ def test_cli_sync_apply_updates_local_file_issue_comments(demo_repo: Path, monke
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_file")
@@ -3222,7 +3222,7 @@ def test_cli_sync_apply_updates_local_file_issue_comments(demo_repo: Path, monke
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-file" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010106000001Z-comment.md").write_text(
         "---\n"
@@ -3230,7 +3230,7 @@ def test_cli_sync_apply_updates_local_file_issue_comments(demo_repo: Path, monke
         "action: comment\n"
         "staged_at: 20260308T010106000001Z\n"
         "---\n\n"
-        "RepoRepublic staged a maintainer note.\n",
+        "RepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
 
@@ -3248,8 +3248,8 @@ def test_cli_sync_apply_updates_local_file_issue_comments(demo_repo: Path, monke
 
     assert apply_result.exit_code == 0
     assert "Applied sync artifact:" in apply_result.stdout
-    assert reloaded["issues"][0]["comments"][-1]["author"] == "reporepublic"
-    assert reloaded["issues"][0]["comments"][-1]["body"] == "RepoRepublic staged a maintainer note."
+    assert reloaded["issues"][0]["comments"][-1]["author"] == "repoagents"
+    assert reloaded["issues"][0]["comments"][-1]["body"] == "RepoAgents staged a maintainer note."
     assert list_result.exit_code == 0
     assert "state=applied" in list_result.stdout
     assert "local-file/issue-1/20260308T010106000001Z-comment.md" in list_result.stdout
@@ -3268,7 +3268,7 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_markdown")
@@ -3276,14 +3276,14 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     branch_path = sync_dir / "20260308T010201000001Z-branch.json"
     branch_path.write_text(
         '{\n'
         '  "action": "branch",\n'
         '  "issue_id": 1,\n'
-        '  "branch_name": "reporepublic/issue-1-fix",\n'
+        '  "branch_name": "repoagents/issue-1-fix",\n'
         '  "staged_at": "20260308T010201000001Z"\n'
         '}\n',
         encoding="utf-8",
@@ -3293,8 +3293,8 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
         '{\n'
         '  "action": "pr",\n'
         '  "issue_id": 1,\n'
-        '  "title": "RepoRepublic: Fix empty input crash (#1)",\n'
-        '  "head_branch": "reporepublic/issue-1-fix",\n'
+        '  "title": "RepoAgents: Fix empty input crash (#1)",\n'
+        '  "head_branch": "repoagents/issue-1-fix",\n'
         '  "base_branch": "main",\n'
         '  "draft": true,\n'
         '  "staged_at": "20260308T010202000001Z"\n'
@@ -3304,8 +3304,8 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
     (sync_dir / "20260308T010203000001Z-pr-body.md").write_text(
         "---\n"
         "issue_id: 1\n"
-        'title: "RepoRepublic: Fix empty input crash (#1)"\n'
-        "head_branch: reporepublic/issue-1-fix\n"
+        'title: "RepoAgents: Fix empty input crash (#1)"\n'
+        "head_branch: repoagents/issue-1-fix\n"
         "base_branch: main\n"
         f"metadata_path: {pr_path.resolve()}\n"
         "staged_at: 20260308T010203000001Z\n"
@@ -3350,7 +3350,7 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
 
 def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     future_retry = utc_now() + timedelta(days=365)
     store.upsert(
         RunRecord(
@@ -3366,7 +3366,7 @@ def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
 
     result = runner.invoke(app, ["retry", "1"], catch_exceptions=False)
 
-    reloaded = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    reloaded = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     record = reloaded.get(1)
     assert result.exit_code == 0
     assert "scheduled for immediate retry" in result.stdout
@@ -3379,15 +3379,15 @@ def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
 
 def test_cli_clean_removes_terminal_run_workspace_and_artifacts(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    workspace = demo_repo / ".ai-republic" / "workspaces" / "issue-1" / "run-4" / "repo"
+    workspace = demo_repo / ".ai-repoagents" / "workspaces" / "issue-1" / "run-4" / "repo"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "README.md").write_text("# stale workspace\n", encoding="utf-8")
-    artifact_dir = demo_repo / ".ai-republic" / "artifacts" / "issue-1" / "run-4"
+    artifact_dir = demo_repo / ".ai-repoagents" / "artifacts" / "issue-1" / "run-4"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_file = artifact_dir / "reviewer.md"
     artifact_file.write_text("stale artifact\n", encoding="utf-8")
 
-    store = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     store.upsert(
         RunRecord(
             run_id="run-4",
@@ -3403,7 +3403,7 @@ def test_cli_clean_removes_terminal_run_workspace_and_artifacts(demo_repo: Path,
 
     result = runner.invoke(app, ["clean"], catch_exceptions=False)
 
-    reloaded = RunStateStore(demo_repo / ".ai-republic" / "state" / "runs.json")
+    reloaded = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     record = reloaded.get(1)
     assert result.exit_code == 0
     assert "Cleaned 2 stale local paths." in result.stdout
@@ -3416,7 +3416,7 @@ def test_cli_clean_removes_terminal_run_workspace_and_artifacts(demo_repo: Path,
 
 def test_cli_clean_dry_run_lists_actions_without_deleting(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    orphan_workspace = demo_repo / ".ai-republic" / "workspaces" / "issue-9" / "run-old" / "repo"
+    orphan_workspace = demo_repo / ".ai-repoagents" / "workspaces" / "issue-9" / "run-old" / "repo"
     orphan_workspace.mkdir(parents=True, exist_ok=True)
     (orphan_workspace / "README.md").write_text("# orphan workspace\n", encoding="utf-8")
 
@@ -3430,7 +3430,7 @@ def test_cli_clean_dry_run_lists_actions_without_deleting(demo_repo: Path, monke
 
 def test_cli_run_writes_jsonl_file_logs_when_enabled(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("file_enabled: false", "file_enabled: true"),
         encoding="utf-8",
@@ -3438,7 +3438,7 @@ def test_cli_run_writes_jsonl_file_logs_when_enabled(demo_repo: Path, monkeypatc
 
     result = runner.invoke(app, ["run", "--once"], catch_exceptions=False)
 
-    log_path = demo_repo / ".ai-republic" / "logs" / "reporepublic.jsonl"
+    log_path = demo_repo / ".ai-repoagents" / "logs" / "repoagents.jsonl"
     lines = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert result.exit_code == 0
     assert log_path.exists()
@@ -3449,12 +3449,12 @@ def test_cli_run_writes_jsonl_file_logs_when_enabled(demo_repo: Path, monkeypatc
 
 def test_cli_doctor_reports_drift_and_hints(demo_git_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_git_repo)
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace("mode: fixture", "mode: rest"),
         encoding="utf-8",
     )
-    (demo_git_repo / ".ai-republic" / "roles" / "triage.md").write_text(
+    (demo_git_repo / ".ai-repoagents" / "roles" / "triage.md").write_text(
         "custom drift\n",
         encoding="utf-8",
     )
@@ -3530,7 +3530,7 @@ def test_cli_doctor_reports_drift_and_hints(demo_git_repo: Path, monkeypatch) ->
 
 def test_cli_doctor_warns_on_relaxed_report_freshness_policy(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -3574,7 +3574,7 @@ def test_cli_doctor_reports_github_publish_readiness_warning(
 ) -> None:
     monkeypatch.chdir(demo_git_repo)
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    config_path = demo_git_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_git_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("mode: fixture", "mode: rest")
@@ -3639,7 +3639,7 @@ def test_cli_doctor_reports_github_publish_readiness_warning(
 
 def test_cli_doctor_warns_on_report_policy_export_mismatch(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -3656,7 +3656,7 @@ def test_cli_doctor_warns_on_report_policy_export_mismatch(demo_repo: Path, monk
         + "\n",
         encoding="utf-8",
     )
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -3706,7 +3706,7 @@ def test_cli_doctor_warns_on_report_policy_export_mismatch(demo_repo: Path, monk
     ) in result.stdout
     assert (
         "    remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in result.stdout
 
@@ -3718,8 +3718,8 @@ def test_cli_doctor_exports_json_and_markdown(demo_repo: Path, monkeypatch) -> N
 
     result = runner.invoke(app, ["doctor", "--format", "all"], catch_exceptions=False)
 
-    report_json = demo_repo / ".ai-republic" / "reports" / "doctor.json"
-    report_markdown = demo_repo / ".ai-republic" / "reports" / "doctor.md"
+    report_json = demo_repo / ".ai-repoagents" / "reports" / "doctor.json"
+    report_markdown = demo_repo / ".ai-repoagents" / "reports" / "doctor.md"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 0
@@ -3740,7 +3740,7 @@ def test_cli_doctor_exports_snapshot_when_config_is_invalid(tmp_path: Path, monk
 
     result = runner.invoke(app, ["doctor", "--format", "json"], catch_exceptions=False)
 
-    report_json = tmp_path / ".ai-republic" / "reports" / "doctor.json"
+    report_json = tmp_path / ".ai-repoagents" / "reports" / "doctor.json"
     payload = json.loads(report_json.read_text(encoding="utf-8"))
 
     assert result.exit_code == 1
@@ -3752,7 +3752,7 @@ def test_cli_doctor_exports_snapshot_when_config_is_invalid(tmp_path: Path, monk
 
 def test_cli_doctor_reports_local_file_tracker_status(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_file")
@@ -3776,7 +3776,7 @@ def test_cli_doctor_reports_local_markdown_tracker_status(demo_repo: Path, monke
     issue_dir = demo_repo / "issues"
     issue_dir.mkdir()
     (issue_dir / "001-demo.md").write_text("# Demo issue\n\nTrack from markdown.\n", encoding="utf-8")
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_markdown")
@@ -3796,7 +3796,7 @@ def test_cli_doctor_reports_local_markdown_tracker_status(demo_repo: Path, monke
 
 
 def _configure_sync_retention(repo_root: Path, *, keep_groups: int) -> None:
-    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
     payload = load_config(repo_root).data.model_dump(mode="json")
     payload.setdefault("cleanup", {})["sync_applied_keep_groups_per_issue"] = keep_groups
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -3808,7 +3808,7 @@ def _configure_ops_snapshot_retention(
     keep_entries: int,
     prune_managed: bool,
 ) -> None:
-    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
     payload = load_config(repo_root).data.model_dump(mode="json")
     cleanup = payload.setdefault("cleanup", {})
     cleanup["ops_snapshot_keep_entries"] = keep_entries
@@ -3817,7 +3817,7 @@ def _configure_ops_snapshot_retention(
 
 
 def _write_ops_snapshot_index(repo_root: Path) -> None:
-    ops_root = repo_root / ".ai-republic" / "reports" / "ops"
+    ops_root = repo_root / ".ai-repoagents" / "reports" / "ops"
     ops_root.mkdir(parents=True, exist_ok=True)
     latest_bundle_dir = ops_root / "20260309T101500Z"
     previous_bundle_dir = ops_root / "20260309T100000Z"
@@ -4111,7 +4111,7 @@ def _manifest_entry(
 
 
 def _write_dashboard_reports(repo_root: Path) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -4192,7 +4192,7 @@ def _write_cleanup_reports_for_sync_audit(
     preview_issue_filter: int | None = None,
     result_issue_filter: int | None = None,
 ) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "cleanup-preview.json").write_text(
         json.dumps(
@@ -4245,19 +4245,19 @@ def _install_release_metadata(repo_root: Path) -> None:
         "\n".join(
             [
                 "[project]",
-                'name = "reporepublic"',
+                'name = "repoagents"',
                 'version = "0.1.0"',
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    package_init = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init = repo_root / "src" / "repoagents" / "__init__.py"
     package_init.parent.mkdir(parents=True, exist_ok=True)
     package_init.write_text(
         '\n'.join(
             [
-                '"""RepoRepublic package."""',
+                '"""RepoAgents package."""',
                 "",
                 '__all__ = ["__version__"]',
                 "",
@@ -4282,7 +4282,7 @@ def _install_release_metadata(repo_root: Path) -> None:
                 "",
                 "### Added",
                 "",
-                "- initial public-preview release of RepoRepublic",
+                "- initial public-preview release of RepoAgents",
             ]
         )
         + "\n",
@@ -4296,7 +4296,7 @@ def _install_release_governance_files(repo_root: Path) -> None:
         ("CONTRIBUTING.md", "# Contributing\n"),
         ("SECURITY.md", "# Security\n"),
         ("CODE_OF_CONDUCT.md", "# Code of Conduct\n"),
-        ("README.md", "# RepoRepublic\n"),
+        ("README.md", "# RepoAgents\n"),
         ("QUICKSTART.md", "# Quickstart\n"),
         ("docs/release.md", "# Release Checklist\n"),
         (".github/workflows/ci.yml", "name: ci\n"),
@@ -4311,7 +4311,7 @@ def _set_release_version(repo_root: Path, version: str) -> None:
     pyproject_body = pyproject_path.read_text(encoding="utf-8")
     pyproject_path.write_text(pyproject_body.replace('version = "0.1.0"', f'version = "{version}"'), encoding="utf-8")
 
-    package_init_path = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init_path = repo_root / "src" / "repoagents" / "__init__.py"
     package_body = package_init_path.read_text(encoding="utf-8")
     package_init_path.write_text(
         package_body.replace('__version__ = "0.1.0"', f'__version__ = "{version}"'),

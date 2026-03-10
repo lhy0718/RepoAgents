@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.models import PlanResult, QAResult, ReviewResult, TriageResult
-from reporepublic.prompts import PromptRenderer
-from reporepublic.utils import build_repo_context
+from repoagents.config import load_config
+from repoagents.models import PlanResult, QAResult, ReviewResult, TriageResult
+from repoagents.prompts import PromptRenderer
+from repoagents.utils import build_repo_context
 
 
 def test_prompt_rendering_includes_schema_and_policy(demo_repo: Path) -> None:
@@ -83,7 +83,7 @@ def test_reviewer_prompt_rendering_includes_review_signals(demo_repo: Path) -> N
     )
     assert "Planner result:" in prompt
     assert "Review signals:" in prompt
-    assert "RepoRepublic review criteria:" in prompt
+    assert "RepoAgents review criteria:" in prompt
     assert "Extra role results:" in prompt
     assert "must_fix" in prompt
     assert "code_changes_without_tests" in prompt
@@ -140,6 +140,6 @@ def test_qa_prompt_rendering_includes_engineering_and_diff_context(demo_repo: Pa
         },
     )
 
-    assert "You are RepoRepublic's `qa` role." in prompt
+    assert "You are RepoAgents's `qa` role." in prompt
     assert "Engineering result:" in prompt
     assert "Diff report:" in prompt

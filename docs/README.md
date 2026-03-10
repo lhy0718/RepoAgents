@@ -1,6 +1,6 @@
 # Documentation Index
 
-RepoRepublic keeps multilingual documents side-by-side with a simple naming rule:
+RepoAgents keeps multilingual documents side-by-side with a simple naming rule:
 
 - English source files use `name.md`
 - Korean translations use `name.ko.md`

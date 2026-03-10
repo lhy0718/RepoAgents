@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.release_announcement import (
+from repoagents.config import load_config
+from repoagents.release_announcement import (
     build_release_announcement_exports,
     build_release_announcement_snapshot,
 )
@@ -22,9 +22,9 @@ def test_build_release_announcement_snapshot_produces_copy_pack(
     assert snapshot["summary"]["status"] == "attention"
     assert snapshot["summary"]["snippet_count"] == 5
     assert snapshot["highlights"][0].startswith("publish-enabled sandbox rollout example")
-    assert "# RepoRepublic v0.1.1" in snapshot["copy_pack"]["announcement"]
-    assert "# RepoRepublic v0.1.1 public preview" in snapshot["copy_pack"]["discussion"]
-    assert "RepoRepublic v0.1.1 is out in public preview." in snapshot["copy_pack"]["social"]
+    assert "# RepoAgents v0.1.1" in snapshot["copy_pack"]["announcement"]
+    assert "# RepoAgents v0.1.1 public preview" in snapshot["copy_pack"]["discussion"]
+    assert "RepoAgents v0.1.1 is out in public preview." in snapshot["copy_pack"]["social"]
     assert "# Release cut checklist for v0.1.1" in snapshot["copy_pack"]["release_cut"]
 
 
@@ -37,7 +37,7 @@ def test_build_release_announcement_exports_write_snippet_files(
 
     result = build_release_announcement_exports(
         snapshot=snapshot,
-        output_path=demo_repo / ".ai-republic" / "reports" / "release-announce.json",
+        output_path=demo_repo / ".ai-repoagents" / "reports" / "release-announce.json",
         formats=("json", "markdown"),
     )
 
@@ -56,19 +56,19 @@ def _install_release_metadata(repo_root: Path) -> None:
         "\n".join(
             [
                 "[project]",
-                'name = "reporepublic"',
+                'name = "repoagents"',
                 'version = "0.1.0"',
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    package_init = repo_root / "src" / "reporepublic" / "__init__.py"
+    package_init = repo_root / "src" / "repoagents" / "__init__.py"
     package_init.parent.mkdir(parents=True, exist_ok=True)
     package_init.write_text(
         '\n'.join(
             [
-                '"""RepoRepublic package."""',
+                '"""RepoAgents package."""',
                 "",
                 '__all__ = ["__version__"]',
                 "",
@@ -94,7 +94,7 @@ def _install_release_metadata(repo_root: Path) -> None:
                 "",
                 "### Added",
                 "",
-                "- initial public-preview release of RepoRepublic",
+                "- initial public-preview release of RepoAgents",
             ]
         )
         + "\n",

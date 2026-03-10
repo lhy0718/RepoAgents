@@ -13,12 +13,12 @@ from urllib.parse import quote
 import httpx
 import pytest
 
-from reporepublic.config.models import TrackerMode
-from reporepublic.tracker import build_tracker
-from reporepublic.tracker.github import GitHubTracker, _redact_remote_url
-from reporepublic.tracker.local_file import LocalFileTracker
-from reporepublic.tracker.local_markdown import LocalMarkdownTracker
-from reporepublic.config import load_config
+from repoagents.config.models import TrackerMode
+from repoagents.tracker import build_tracker
+from repoagents.tracker.github import GitHubTracker, _redact_remote_url
+from repoagents.tracker.local_file import LocalFileTracker
+from repoagents.tracker.local_markdown import LocalMarkdownTracker
+from repoagents.config import load_config
 
 
 def test_github_tracker_create_branch_and_open_pr(tmp_path: Path) -> None:
@@ -118,13 +118,13 @@ def test_github_tracker_create_branch_and_open_pr(tmp_path: Path) -> None:
     async def run_flow():
         branch_result = await tracker.create_branch(
             issue_id=7,
-            name="RepoRepublic/Issue 7 Improve README!!!",
+            name="RepoAgents/Issue 7 Improve README!!!",
             workspace_path=workspace,
-            commit_message="republic: address issue #7",
+            commit_message="repoagents: address issue #7",
         )
         pr_result = await tracker.open_pr(
             issue_id=7,
-            title="RepoRepublic: Improve README (#7)",
+            title="RepoAgents: Improve README (#7)",
             body="Body",
             head_branch=branch_result.payload["branch_name"],
             base_branch=branch_result.payload["base_branch"],
@@ -135,7 +135,7 @@ def test_github_tracker_create_branch_and_open_pr(tmp_path: Path) -> None:
 
     branch_result, pr_result = asyncio.run(run_flow())
     assert branch_result.executed is True
-    assert branch_result.payload["branch_name"].startswith("reporepublic/")
+    assert branch_result.payload["branch_name"].startswith("repoagents/")
     assert branch_result.payload["base_branch"] == "main"
     assert pr_result.executed is True
     assert pr_result.payload["url"] == "https://github.example/demo/repo/pull/1"
@@ -170,7 +170,7 @@ def test_github_tracker_blocks_branch_creation_in_dry_run(tmp_path: Path) -> Non
     result = asyncio.run(
         tracker.create_branch(
             issue_id=1,
-            name="reporepublic/issue-1-test",
+            name="repoagents/issue-1-test",
             workspace_path=tmp_path,
             commit_message="test",
         )
@@ -360,7 +360,7 @@ def test_github_tracker_create_branch_prefers_repo_default_branch_over_local_hea
             issue_id=9,
             name="codex/default-branch-policy",
             workspace_path=workspace,
-            commit_message="republic: test default branch policy",
+            commit_message="repoagents: test default branch policy",
         )
         await tracker.aclose()
         return result
@@ -658,16 +658,16 @@ def test_local_file_tracker_reads_issue_file_and_stages_sync_actions(tmp_path: P
     async def run_flow():
         issues = await tracker.list_open_issues()
         issue = await tracker.get_issue(1)
-        comment = await tracker.post_comment(1, "RepoRepublic staged a maintainer note.")
+        comment = await tracker.post_comment(1, "RepoAgents staged a maintainer note.")
         branch = await tracker.create_branch(
             issue_id=1,
-            name="reporepublic/issue-1-fix-empty-input",
+            name="repoagents/issue-1-fix-empty-input",
             workspace_path=workspace,
-            commit_message="republic: address issue #1",
+            commit_message="repoagents: address issue #1",
         )
         pr = await tracker.open_pr(
             issue_id=1,
-            title="RepoRepublic: Fix empty input crash (#1)",
+            title="RepoAgents: Fix empty input crash (#1)",
             body="Draft PR proposal staged locally.",
             head_branch=branch.payload["branch_name"],
             base_branch=branch.payload["base_branch"],
@@ -685,7 +685,7 @@ def test_local_file_tracker_reads_issue_file_and_stages_sync_actions(tmp_path: P
     assert pr.executed is True
     assert labels.executed is True
 
-    sync_dir = tmp_path / ".ai-republic" / "sync" / "local-file" / "issue-1"
+    sync_dir = tmp_path / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     assert sync_dir.exists()
     assert Path(comment.payload["stage_path"]).exists()
     assert Path(branch.payload["stage_path"]).exists()
@@ -716,11 +716,11 @@ def test_local_file_tracker_dry_run_blocks_sync_staging(tmp_path: Path) -> None:
 
     assert result.executed is False
     assert "Dry-run" in result.reason
-    assert not (tmp_path / ".ai-republic" / "sync").exists()
+    assert not (tmp_path / ".ai-repoagents" / "sync").exists()
 
 
 def test_build_tracker_supports_local_file_kind(demo_repo: Path) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_file")
@@ -768,16 +768,16 @@ def test_local_markdown_tracker_reads_markdown_issue_directory_and_stages_sync_a
     async def run_flow():
         issues = await tracker.list_open_issues()
         issue = await tracker.get_issue(1)
-        comment = await tracker.post_comment(1, "RepoRepublic staged a maintainer note.")
+        comment = await tracker.post_comment(1, "RepoAgents staged a maintainer note.")
         branch = await tracker.create_branch(
             issue_id=1,
-            name="reporepublic/issue-1-fix-empty-input",
+            name="repoagents/issue-1-fix-empty-input",
             workspace_path=workspace,
-            commit_message="republic: address issue #1",
+            commit_message="repoagents: address issue #1",
         )
         pr = await tracker.open_pr(
             issue_id=1,
-            title="RepoRepublic: Fix empty input crash (#1)",
+            title="RepoAgents: Fix empty input crash (#1)",
             body="Draft PR proposal staged locally.",
             head_branch=branch.payload["branch_name"],
             base_branch=branch.payload["base_branch"],
@@ -795,7 +795,7 @@ def test_local_markdown_tracker_reads_markdown_issue_directory_and_stages_sync_a
     assert pr.executed is True
     assert labels.executed is True
 
-    sync_dir = tmp_path / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = tmp_path / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     assert sync_dir.exists()
 
     comment_path = Path(comment.payload["stage_path"])
@@ -805,7 +805,7 @@ def test_local_markdown_tracker_reads_markdown_issue_directory_and_stages_sync_a
     branch_path = Path(branch.payload["stage_path"])
     assert branch_path.exists()
     branch_payload = json.loads(branch_path.read_text(encoding="utf-8"))
-    assert branch_payload["branch_name"] == "reporepublic/issue-1-fix-empty-input"
+    assert branch_payload["branch_name"] == "repoagents/issue-1-fix-empty-input"
     assert branch_payload["action"] == "branch"
 
     pr_body_path = Path(pr.payload["stage_path"])
@@ -837,14 +837,14 @@ def test_local_markdown_tracker_dry_run_blocks_sync_staging(tmp_path: Path) -> N
 
     assert result.executed is False
     assert "Dry-run" in result.reason
-    assert not (tmp_path / ".ai-republic" / "sync").exists()
+    assert not (tmp_path / ".ai-repoagents" / "sync").exists()
 
 
 def test_build_tracker_supports_local_markdown_kind(demo_repo: Path) -> None:
     issue_dir = demo_repo / "issues"
     issue_dir.mkdir()
     (issue_dir / "001-demo.md").write_text("# Demo issue\n\nTrack from markdown.\n", encoding="utf-8")
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_markdown")
@@ -1012,7 +1012,7 @@ def test_github_tracker_live_comment_write() -> None:
         )
         comment_id: int | None = None
         try:
-            marker = f"RepoRepublic live comment E2E {int(time.time())}"
+            marker = f"RepoAgents live comment E2E {int(time.time())}"
             result = await tracker.post_comment(issue_id, marker)
             payload = result.payload if isinstance(result.payload, dict) else {}
             raw_comment_id = payload.get("comment_id")
@@ -1067,7 +1067,7 @@ def test_github_tracker_live_draft_pr_publish(tmp_path: Path) -> None:
         text=True,
     )
     shutil.copytree(source_repo, workspace, ignore=shutil.ignore_patterns(".git"))
-    marker = f"reporepublic-pr-e2e-{int(time.time())}"
+    marker = f"repoagents-pr-e2e-{int(time.time())}"
     target_file = workspace / "README.md"
     if target_file.exists():
         target_file.write_text(
@@ -1098,7 +1098,7 @@ def test_github_tracker_live_draft_pr_publish(tmp_path: Path) -> None:
                 issue_id=issue_id,
                 name=f"codex/live-pr-e2e-{issue_id}-{marker}",
                 workspace_path=workspace,
-                commit_message=f"republic: live pr e2e {marker}",
+                commit_message=f"repoagents: live pr e2e {marker}",
             )
             branch_payload = branch_result.payload if isinstance(branch_result.payload, dict) else {}
             branch_name = branch_payload.get("branch_name") if isinstance(branch_payload.get("branch_name"), str) else None
@@ -1106,8 +1106,8 @@ def test_github_tracker_live_draft_pr_publish(tmp_path: Path) -> None:
                 raise AssertionError(branch_result.reason)
             pr_result = await tracker.open_pr(
                 issue_id=issue_id,
-                title=f"RepoRepublic: live publish E2E ({marker})",
-                body=f"RepoRepublic live draft PR smoke for issue #{issue_id}.\n\nMarker: {marker}",
+                title=f"RepoAgents: live publish E2E ({marker})",
+                body=f"RepoAgents live draft PR smoke for issue #{issue_id}.\n\nMarker: {marker}",
                 head_branch=branch_name,
                 base_branch=str(repo_info.get("default_branch") or branch_payload.get("base_branch") or "main"),
                 draft=True,

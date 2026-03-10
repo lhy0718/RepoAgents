@@ -6,11 +6,11 @@ import json
 
 import yaml
 
-from reporepublic.config import load_config
-from reporepublic.dashboard import build_dashboard
-from reporepublic.models import ExternalActionResult, RunLifecycle, RunRecord
-from reporepublic.ops_status import build_ops_status_exports, build_ops_status_snapshot
-from reporepublic.orchestrator import RunStateStore
+from repoagents.config import load_config
+from repoagents.dashboard import build_dashboard
+from repoagents.models import ExternalActionResult, RunLifecycle, RunRecord
+from repoagents.ops_status import build_ops_status_exports, build_ops_status_snapshot
+from repoagents.orchestrator import RunStateStore
 
 
 def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
@@ -30,8 +30,8 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
             {
                 "action": "pr",
                 "issue_id": 1,
-                "title": "RepoRepublic: Fix empty input crash (#1)",
-                "head_branch": "reporepublic/issue-1-fix-empty-input",
+                "title": "RepoAgents: Fix empty input crash (#1)",
+                "head_branch": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "staged_at": "20260308T010202000001Z",
             },
@@ -44,7 +44,7 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
     archived_pr_body.write_text(
         "---\n"
         "issue_id: 1\n"
-        "head_branch: reporepublic/issue-1-fix-empty-input\n"
+        "head_branch: repoagents/issue-1-fix-empty-input\n"
         "base_branch: main\n"
         "staged_at: 20260308T010203000001Z\n"
         "---\n\n"
@@ -67,9 +67,9 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
                     "normalized": {
                         "artifact_role": "pr-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "bundle_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
                         "refs": {
-                            "head": "reporepublic/issue-1-fix-empty-input",
+                            "head": "repoagents/issue-1-fix-empty-input",
                             "base": "main",
                         },
                         "links": {
@@ -81,7 +81,7 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
                     "archived_path": str(archived_pr),
                     "effect": "Archived PR metadata handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "group_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
                         "group_size": 2,
                         "group_index": 0,
                         "group_actions": ["pr", "pr-body"],
@@ -107,9 +107,9 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
                     "normalized": {
                         "artifact_role": "pr-body-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "bundle_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
                         "refs": {
-                            "head": "reporepublic/issue-1-fix-empty-input",
+                            "head": "repoagents/issue-1-fix-empty-input",
                             "base": "main",
                         },
                         "links": {
@@ -122,7 +122,7 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
                     "archived_path": str(archived_pr_body),
                     "effect": "Archived PR body handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "group_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
                         "group_size": 2,
                         "group_index": 1,
                         "group_actions": ["pr", "pr-body"],
@@ -180,7 +180,7 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
     assert result.total_runs == 1
     assert result.visible_runs == 1
     assert set(result.exported_paths) == {"html", "json", "markdown"}
-    assert "RepoRepublic Operations Dashboard" in html
+    assert "RepoAgents Operations Dashboard" in html
     assert "Fix empty input crash" in html
     assert "Tests did not cover the empty-string branch." in html
     assert "reviewer" in html
@@ -202,11 +202,11 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
     assert payload["sync_handoffs"][0]["artifact_role"] == "pr-body-proposal"
     assert payload["sync_handoffs"][0]["normalized_links"][0]["label"] == "metadata_artifact"
     assert payload["sync_handoffs"][0]["manifest_path"] == str(manifest_path)
-    assert "# RepoRepublic Dashboard Snapshot" in dashboard_markdown
+    assert "# RepoAgents Dashboard Snapshot" in dashboard_markdown
     assert "### Issue #1: Fix empty input crash" in dashboard_markdown
     assert "- status: failed" in dashboard_markdown
     assert "## Sync handoffs" in dashboard_markdown
-    assert "- bundle_key: issue:1|head:reporepublic/issue-1-fix-empty-input" in dashboard_markdown
+    assert "- bundle_key: issue:1|head:repoagents/issue-1-fix-empty-input" in dashboard_markdown
 
 
 def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> None:
@@ -228,7 +228,7 @@ def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> No
             applied_at="2026-03-08T01:00:01+00:00",
             staged_at="20260308T010001000001Z",
             archived_path=stale_branch,
-            group_key="issue:1|head:reporepublic/old-branch",
+            group_key="issue:1|head:repoagents/old-branch",
             artifact_role="branch-proposal",
         ),
         _manifest_entry(
@@ -238,7 +238,7 @@ def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> No
             applied_at="2026-03-08T01:00:02+00:00",
             staged_at="20260308T010002000001Z",
             archived_path=stale_pr,
-            group_key="issue:1|head:reporepublic/old-branch",
+            group_key="issue:1|head:repoagents/old-branch",
             artifact_role="pr-proposal",
         ),
         _manifest_entry(
@@ -261,7 +261,7 @@ def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> No
         str(manifest_entries[1]["source_relative_path"]),
     ]
     manifest_entries[0]["handoff"] = {
-        "group_key": "issue:1|head:reporepublic/old-branch",
+        "group_key": "issue:1|head:repoagents/old-branch",
         "group_size": 2,
         "group_index": 0,
         "group_actions": ["branch", "pr"],
@@ -269,7 +269,7 @@ def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> No
         "related_source_paths": old_group_paths,
     }
     manifest_entries[1]["handoff"] = {
-        "group_key": "issue:1|head:reporepublic/old-branch",
+        "group_key": "issue:1|head:repoagents/old-branch",
         "group_size": 2,
         "group_index": 1,
         "group_actions": ["branch", "pr"],
@@ -310,7 +310,7 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     loaded = load_config(demo_repo)
     _write_dashboard_reports(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
 
@@ -348,7 +348,7 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert "action_count" in html
     assert "issues_with_findings" in html
     assert "missing_manifest=1" in html
-    assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in html
+    assert "missing_manifest (1): run `repoagents sync repair --dry-run` to rebuild manifest state from archived files" in html
     assert "cleanup_report_mismatches:</strong> 1" in html
     assert "Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in html
     assert 'href="#report-cleanup-preview"' in html
@@ -456,8 +456,8 @@ def test_build_dashboard_includes_report_exports(demo_repo: Path, monkeypatch) -
     assert "  - mismatches:" in markdown
     assert "    - Cleanup result: cleanup report issue_filter=9 does not match audit issue_filter=7" in markdown
     assert "cleanup_report_mismatches=1" in markdown
-    assert "missing_manifest (1): run `republic sync repair --dry-run` to rebuild manifest state from archived files" in markdown
-    assert "orphan_archive (2): review the affected manifest entries and rerun `republic sync check` after repair" in markdown
+    assert "missing_manifest (1): run `repoagents sync repair --dry-run` to rebuild manifest state from archived files" in markdown
+    assert "orphan_archive (2): review the affected manifest entries and rerun `repoagents sync check` after repair" in markdown
     assert "sample_issue_ids=7" in markdown
 
 
@@ -465,7 +465,7 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     loaded = load_config(demo_repo)
     _write_ops_snapshot_index(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -496,7 +496,7 @@ def test_build_dashboard_includes_ops_snapshot_index(demo_repo: Path, monkeypatc
     assert payload["ops_snapshots"]["latest"]["landing_html"].endswith("index.html")
     assert payload["ops_snapshots"]["latest"]["brief_headline"] == "Sync audit still needs follow-up."
     assert payload["ops_snapshots"]["entries"][0]["entry_id"] == "20260309T101500Z"
-    assert "# RepoRepublic Dashboard Snapshot" in markdown
+    assert "# RepoAgents Dashboard Snapshot" in markdown
     assert "## Ops snapshots" in markdown
     assert "- history_entry_count: 2" in markdown
     assert "- history_limit: 5" in markdown
@@ -514,7 +514,7 @@ def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
     _write_dashboard_reports(demo_repo)
     _write_ops_snapshot_index(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     build_ops_status_exports(
@@ -523,7 +523,7 @@ def test_build_dashboard_surfaces_ops_status_report_and_cross_links(
         formats=("json", "markdown"),
     )
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -560,7 +560,7 @@ def test_build_dashboard_surfaces_sync_health_report_and_relations(
     _write_dashboard_reports(demo_repo)
     _write_sync_health_report(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -601,7 +601,7 @@ def test_build_dashboard_surfaces_github_smoke_report(
     _write_dashboard_reports(demo_repo)
     _write_github_smoke_report(demo_repo)
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -630,7 +630,7 @@ def test_build_dashboard_surfaces_github_smoke_report(
 
 def test_build_dashboard_surfaces_unknown_report_freshness_warning(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "cleanup-preview.json").write_text(
         json.dumps(
@@ -687,7 +687,7 @@ def test_build_dashboard_applies_report_freshness_policy_thresholds(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -705,7 +705,7 @@ def test_build_dashboard_applies_report_freshness_policy_thresholds(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
     loaded = load_config(demo_repo)
@@ -748,7 +748,7 @@ def test_build_dashboard_detects_embedded_policy_drift(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -766,12 +766,12 @@ def test_build_dashboard_detects_embedded_policy_drift(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
     loaded = load_config(demo_repo)
     _write_dashboard_reports(demo_repo)
-    sync_audit_path = demo_repo / ".ai-republic" / "reports" / "sync-audit.json"
+    sync_audit_path = demo_repo / ".ai-repoagents" / "reports" / "sync-audit.json"
     payload = json.loads(sync_audit_path.read_text(encoding="utf-8"))
     payload["policy"] = {
         "summary": "unknown>=1 stale>=1 future>=1 aging>=1",
@@ -795,7 +795,7 @@ def test_build_dashboard_detects_embedded_policy_drift(
 
     assert "Policy drift reports" in html
     assert "refresh raw report exports to align embedded policy metadata" in html
-    assert "re-run `republic sync audit --format all` and `republic clean --report --report-format all`" in html
+    assert "re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all`" in html
     assert "embedded policy drift" in html
     assert "embedded policy differs from current config" in html
     assert snapshot["counts"]["policy_drift_reports"] == 1
@@ -806,7 +806,7 @@ def test_build_dashboard_detects_embedded_policy_drift(
     assert snapshot["reports"]["policy_missing_total"] == 1
     assert (
         snapshot["reports"]["policy_drift_guidance"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["reports"]["entries"][0]["policy_alignment_status"] == "drift"
     assert (
@@ -820,16 +820,16 @@ def test_build_dashboard_detects_embedded_policy_drift(
     )
     assert (
         snapshot["reports"]["entries"][0]["policy_alignment_remediation"]
-        == "refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
+        == "refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert snapshot["reports"]["entries"][1]["policy_alignment_status"] == "missing"
     assert "- policy_drift_reports: 1" in markdown
-    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_drift_guidance: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
     assert "- policy_embedded_reports: 1" in markdown
     assert "- reports_without_embedded_policy: 1" in markdown
     assert "- policy_alignment: drift" in markdown
     assert "- embedded_policy: unknown>=1 stale>=1 future>=1 aging>=1" in markdown
-    assert "- policy_alignment_remediation: refresh raw report exports to align embedded policy metadata; re-run `republic sync audit --format all` and `republic clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
+    assert "- policy_alignment_remediation: refresh raw report exports to align embedded policy metadata; re-run `repoagents sync audit --format all` and `repoagents clean --report --report-format all` after updating `dashboard.report_freshness_policy`" in markdown
 
 
 def test_build_dashboard_escalates_hero_when_only_policy_drift_exists(
@@ -837,11 +837,11 @@ def test_build_dashboard_escalates_hero_when_only_policy_drift_exists(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
     loaded = load_config(demo_repo)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -910,7 +910,7 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
     demo_repo: Path,
     monkeypatch,
 ) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         + "\n"
@@ -928,11 +928,11 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "reporepublic.dashboard.utc_now",
+        "repoagents.dashboard.utc_now",
         lambda: datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc),
     )
     _write_dashboard_reports(demo_repo)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     warning = "embedded policy differs from current config (unknown>=1 stale>=1 future>=1 aging>=1)"
     alignment = {
         "status": "drift",
@@ -1032,7 +1032,7 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
         "policy drifts\n"
         f"- Sync audit: {warning}\n"
         "remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     )
     assert "related_report_policy_drift_warnings=Sync audit: embedded policy differs from current config" in markdown
@@ -1041,13 +1041,13 @@ def test_build_dashboard_surfaces_related_report_policy_drift_notes(
     assert f"    - Sync audit: {warning}" in markdown
     assert (
         "  - remediation: refresh raw report exports to align embedded policy metadata; "
-        "re-run `republic sync audit --format all` and `republic clean --report "
+        "re-run `repoagents sync audit --format all` and `repoagents clean --report "
         "--report-format all` after updating `dashboard.report_freshness_policy`"
     ) in markdown
 
 
 def _configure_sync_retention(repo_root: Path, *, keep_groups: int) -> None:
-    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
     payload = load_config(repo_root).data.model_dump(mode="json")
     payload.setdefault("cleanup", {})["sync_applied_keep_groups_per_issue"] = keep_groups
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -1100,7 +1100,7 @@ def _manifest_entry(
 
 
 def _write_dashboard_reports(repo_root: Path) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-audit.json").write_text(
         json.dumps(
@@ -1175,7 +1175,7 @@ def _write_dashboard_reports(repo_root: Path) -> None:
 
 
 def _write_sync_health_report(repo_root: Path) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "sync-health.json").write_text(
         json.dumps(
@@ -1196,7 +1196,7 @@ def _write_sync_health_report(repo_root: Path) -> None:
                     "related_report_mismatches": 1,
                     "related_report_policy_drifts": 1,
                     "next_actions": [
-                        "Run republic sync repair --dry-run --issue 7",
+                        "Run repoagents sync repair --dry-run --issue 7",
                         "Review cleanup preview before pruning",
                     ],
                 },
@@ -1243,7 +1243,7 @@ def _write_sync_health_report(repo_root: Path) -> None:
 
 
 def _write_github_smoke_report(repo_root: Path) -> None:
-    reports_dir = repo_root / ".ai-republic" / "reports"
+    reports_dir = repo_root / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "github-smoke.json").write_text(
         json.dumps(
@@ -1295,7 +1295,7 @@ def _write_github_smoke_report(repo_root: Path) -> None:
 
 
 def _write_ops_snapshot_index(repo_root: Path) -> None:
-    ops_root = repo_root / ".ai-republic" / "reports" / "ops"
+    ops_root = repo_root / ".ai-repoagents" / "reports" / "ops"
     ops_root.mkdir(parents=True, exist_ok=True)
     latest_bundle_dir = ops_root / "20260309T101500Z"
     previous_bundle_dir = ops_root / "20260309T100000Z"

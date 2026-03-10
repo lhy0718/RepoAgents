@@ -11,7 +11,7 @@
     "id": 2,
     "number": 2,
     "title": "Improve README quickstart",
-    "body": "Document the local_file tracker path so offline users can run RepoRepublic without GitHub.",
+    "body": "Document the local_file tracker path so offline users can run RepoAgents without GitHub.",
     "labels": ["docs"],
     "comments": []
   }

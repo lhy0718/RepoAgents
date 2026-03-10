@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reporepublic.backend.base import BackendInvocation
-from reporepublic.backend.mock import MockBackend
-from reporepublic.models import EngineeringResult, PlanResult, QAResult, ReviewResult, TriageResult
+from repoagents.backend.base import BackendInvocation
+from repoagents.backend.mock import MockBackend
+from repoagents.models import EngineeringResult, PlanResult, QAResult, ReviewResult, TriageResult
 
 
 def test_mock_backend_triage_surfaces_duplicate_candidates() -> None:

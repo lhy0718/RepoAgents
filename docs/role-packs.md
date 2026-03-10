@@ -1,6 +1,6 @@
 # Role Pack Examples
 
-RepoRepublic keeps the core role pipeline small, but you can extend `roles.enabled` to activate optional built-in roles.
+RepoAgents keeps the core role pipeline small, but you can extend `roles.enabled` to activate optional built-in roles.
 
 ## Current built-in role packs
 
@@ -42,9 +42,9 @@ You do not need a new runtime role name to create a custom pack.
 A practical custom pack can:
 
 - keep the core role order unchanged
-- override `.ai-republic/roles/*.md`
-- override selected `.ai-republic/prompts/*.txt.j2`
-- override `.ai-republic/policies/*.md`
+- override `.ai-repoagents/roles/*.md`
+- override selected `.ai-repoagents/prompts/*.txt.j2`
+- override `.ai-repoagents/policies/*.md`
 - append repo-specific instructions to `AGENTS.md`
 
 ### Docs maintainer pack
@@ -53,7 +53,7 @@ Purpose:
 
 - specialize the default pipeline for documentation-first repositories
 - keep scope inside Markdown, quickstarts, and reference docs
-- show how a repo can bundle its own role/prompt/policy overrides after `republic init`
+- show how a repo can bundle its own role/prompt/policy overrides after `repoagents init`
 
 Runnable example:
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from reporepublic.models import DiffReport, EngineeringResult, PlanResult
-from reporepublic.roles.review_signals import build_review_signals
+from repoagents.models import DiffReport, EngineeringResult, PlanResult
+from repoagents.roles.review_signals import build_review_signals
 
 
 def test_review_signals_identify_missing_tests_and_scope_drift() -> None:

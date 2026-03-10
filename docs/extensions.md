@@ -1,16 +1,16 @@
 # Extensions
 
-RepoRepublic is intentionally modular. The MVP keeps the number of moving parts small, but the extension seams are already explicit.
+RepoAgents is intentionally modular. The MVP keeps the number of moving parts small, but the extension seams are already explicit.
 
 ## Add a backend
 
-Implement `BackendRunner` in `src/reporepublic/backend/base.py`:
+Implement `BackendRunner` in `src/repoagents/backend/base.py`:
 
 - accept a `BackendInvocation`
 - return a typed Pydantic model
 - raise `BackendExecutionError` on failures
 
-Then register it in `src/reporepublic/backend/factory.py`.
+Then register it in `src/repoagents/backend/factory.py`.
 
 Use cases:
 
@@ -20,7 +20,7 @@ Use cases:
 
 ## Add a tracker
 
-Implement `Tracker` in `src/reporepublic/tracker/base.py`:
+Implement `Tracker` in `src/repoagents/tracker/base.py`:
 
 - `list_open_issues`
 - `get_issue`
@@ -29,13 +29,13 @@ Implement `Tracker` in `src/reporepublic/tracker/base.py`:
 - `open_pr`
 - `set_issue_label`
 
-Then wire it into `src/reporepublic/tracker/factory.py`.
+Then wire it into `src/repoagents/tracker/factory.py`.
 
 The built-in adapters now are:
 
 - `github`: live REST mode plus fixture replay
-- `local_file`: JSON inbox for local and offline orchestration, with optional sidecar sync staging under `.ai-republic/sync/local-file/`
-- `local_markdown`: Markdown issue directory for local and offline orchestration, with optional sidecar sync staging under `.ai-republic/sync/local-markdown/`
+- `local_file`: JSON inbox for local and offline orchestration, with optional sidecar sync staging under `.ai-repoagents/sync/local-file/`
+- `local_markdown`: Markdown issue directory for local and offline orchestration, with optional sidecar sync staging under `.ai-repoagents/sync/local-markdown/`
 
 Runnable examples:
 
@@ -45,17 +45,17 @@ Runnable examples:
 - `examples/local-file-sync`: `local_file` tracker with staged local sync proposals and `sync apply`
 - `examples/local-markdown-inbox`: `local_markdown` tracker with a Markdown issue directory
 - `examples/local-markdown-sync`: `local_markdown` tracker with staged comment and draft-PR proposals written locally
-- `examples/webhook-receiver`: local HTTP receiver that forwards GitHub-style POSTs into `republic webhook`
+- `examples/webhook-receiver`: local HTTP receiver that forwards GitHub-style POSTs into `repoagents webhook`
 - `examples/webhook-signature-receiver`: local HTTP receiver with shared-secret signature verification before forwarding accepted payloads
 - `examples/live-github-ops`: production-oriented GitHub REST blueprint with `worktree`, file logging, and ops helper files
 
-For event-driven flows, GitHub webhook payload parsing lives in `src/reporepublic/orchestrator/webhooks.py`. Additional providers can follow the same pattern: normalize an incoming event into a single issue id, then call the orchestrator single-issue execution path instead of the polling loop.
+For event-driven flows, GitHub webhook payload parsing lives in `src/repoagents/orchestrator/webhooks.py`. Additional providers can follow the same pattern: normalize an incoming event into a single issue id, then call the orchestrator single-issue execution path instead of the polling loop.
 
 For the shared sync inventory contract and CLI, see [sync.md](./sync.md).
 
 ## Extend sync handlers
 
-Tracker-specific sync apply behavior is registered through `SyncActionRegistry` in [src/reporepublic/sync_artifacts.py](../src/reporepublic/sync_artifacts.py).
+Tracker-specific sync apply behavior is registered through `SyncActionRegistry` in [src/repoagents/sync_artifacts.py](../src/repoagents/sync_artifacts.py).
 
 That registry currently supports:
 
@@ -75,7 +75,7 @@ This is the seam to use when a new offline tracker needs custom `sync apply` beh
 
 ## Add workspace strategies
 
-Implement `WorkspaceManager` in `src/reporepublic/workspace/base.py`.
+Implement `WorkspaceManager` in `src/repoagents/workspace/base.py`.
 
 The built-in strategies are `copy` and `worktree`. Additional strategies can reuse the same orchestrator contract:
 
@@ -86,14 +86,14 @@ The built-in strategies are `copy` and `worktree`. Additional strategies can reu
 
 Each role uses:
 
-- a markdown charter in `.ai-republic/roles/`
-- a prompt template in `.ai-republic/prompts/`
-- a typed output model in `src/reporepublic/models/domain.py`
+- a markdown charter in `.ai-repoagents/roles/`
+- a prompt template in `.ai-repoagents/prompts/`
+- a typed output model in `src/repoagents/models/domain.py`
 
 To add or replace role behavior:
 
 1. create or edit the role template files
-2. update the role class under `src/reporepublic/roles/`
+2. update the role class under `src/repoagents/roles/`
 3. update the schema model if the output contract changes
 4. add tests for prompt rendering and backend parsing
 
@@ -111,7 +111,7 @@ For a runnable role-pack example, see [role-packs.md](./role-packs.md) and [exam
 
 ## Customize policies
 
-Policy checks live in `src/reporepublic/policies/guardrails.py`.
+Policy checks live in `src/repoagents/policies/guardrails.py`.
 
 This is the right place to add:
 
@@ -120,22 +120,22 @@ This is the right place to add:
 - repo-specific escalation rules
 - auto-merge candidate classification
 
-The human-facing policy documents under `.ai-republic/policies/` should stay in sync with these checks.
+The human-facing policy documents under `.ai-repoagents/policies/` should stay in sync with these checks.
 
 ## Generated templates
 
-`republic init` copies and renders templates from `src/reporepublic/templates/default/`.
+`repoagents init` copies and renders templates from `src/repoagents/templates/default/`.
 
 You can extend the scaffolding system by adding:
 
-- new presets in `src/reporepublic/templates/scaffold.py`
+- new presets in `src/repoagents/templates/scaffold.py`
 - new prompt templates
 - new policy documents
 - additional workflow files
 
 ## Extend the dashboard
 
-The static operations view lives in `src/reporepublic/dashboard.py`.
+The static operations view lives in `src/repoagents/dashboard.py`.
 
 This is the place to add:
 
@@ -145,7 +145,7 @@ This is the place to add:
 
 ## Testing strategy
 
-When extending RepoRepublic, keep three levels of tests:
+When extending RepoAgents, keep three levels of tests:
 
 1. config and CLI tests for setup and operator flows
 2. backend/role tests for structured output contracts

@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.ops_brief import build_ops_brief_exports, build_ops_brief_snapshot
+from repoagents.ops_brief import build_ops_brief_exports, build_ops_brief_snapshot
 
 
 def test_build_ops_brief_snapshot_summarizes_findings_and_actions(tmp_path: Path) -> None:
     snapshot = build_ops_brief_snapshot(
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=7,
         tracker_filter="local-file",
         doctor_snapshot={
@@ -43,7 +43,7 @@ def test_build_ops_brief_snapshot_summarizes_findings_and_actions(tmp_path: Path
                 "cleanup_action_count": 3,
                 "related_report_policy_drifts": 1,
                 "next_actions": [
-                    "Run `republic sync repair --dry-run --issue 7`.",
+                    "Run `repoagents sync repair --dry-run --issue 7`.",
                     "Review cleanup preview before pruning.",
                 ],
             }
@@ -59,13 +59,13 @@ def test_build_ops_brief_snapshot_summarizes_findings_and_actions(tmp_path: Path
     assert snapshot["related_reports"]["entries"][2]["key"] == "sync-health"
     assert snapshot["top_findings"][0] == "Report health: Report freshness needs follow-up."
     assert "Sync health found 2 pending staged artifact(s)." in snapshot["top_findings"]
-    assert "Run `republic sync repair --dry-run --issue 7`." in snapshot["next_actions"]
+    assert "Run `repoagents sync repair --dry-run --issue 7`." in snapshot["next_actions"]
 
 
 def test_build_ops_brief_exports_writes_json_and_markdown(tmp_path: Path) -> None:
     snapshot = build_ops_brief_snapshot(
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=None,
         tracker_filter=None,
         doctor_snapshot={"summary": {"overall_status": "clean", "diagnostic_count": 2, "exit_code": 0}},
@@ -109,7 +109,7 @@ def test_build_ops_brief_exports_writes_json_and_markdown(tmp_path: Path) -> Non
     assert payload["summary"]["severity"] == "clean"
     assert payload["summary"]["top_finding_count"] == 0
     assert payload["related_reports"]["entries"][0]["key"] == "ops-status"
-    assert "# RepoRepublic Ops Brief" in markdown
+    assert "# RepoAgents Ops Brief" in markdown
     assert "## Policy" in markdown
     assert "## Related reports" in markdown
     assert "- headline: Current ops snapshot is clean and ready to hand off." in markdown
@@ -118,7 +118,7 @@ def test_build_ops_brief_exports_writes_json_and_markdown(tmp_path: Path) -> Non
 def test_build_ops_brief_snapshot_includes_github_smoke_signal(tmp_path: Path) -> None:
     snapshot = build_ops_brief_snapshot(
         repo_root=tmp_path,
-        config_path=tmp_path / ".ai-republic" / "reporepublic.yaml",
+        config_path=tmp_path / ".ai-repoagents" / "repoagents.yaml",
         issue_filter=7,
         tracker_filter="github",
         doctor_snapshot={"summary": {"overall_status": "clean", "diagnostic_count": 2, "exit_code": 0}},
@@ -168,4 +168,4 @@ def test_build_ops_brief_snapshot_includes_github_smoke_signal(tmp_path: Path) -
     assert snapshot["summary"]["github_smoke_status"] == "attention"
     assert snapshot["related_reports"]["entries"][-1]["key"] == "github-smoke"
     assert "GitHub publish readiness: branch policy: default branch main is not protected." in snapshot["top_findings"]
-    assert any("republic github smoke --require-write-ready" in item for item in snapshot["next_actions"])
+    assert any("repoagents github smoke --require-write-ready" in item for item in snapshot["next_actions"])

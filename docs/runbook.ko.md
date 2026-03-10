@@ -1,6 +1,6 @@
 # 운영 Runbook
 
-이 문서는 RepoRepublic 유지보수자를 위한 day-2 운영 가이드입니다.
+이 문서는 RepoAgents 유지보수자를 위한 day-2 운영 가이드입니다.
 
 ## 범위
 
@@ -16,87 +16,87 @@
 
 일반적인 운영 흐름:
 
-1. `uv run republic doctor`로 환경 상태를 점검한다
-2. `uv run republic status`로 최신 상태를 확인한다
-3. `uv run republic dashboard`로 로컬 대시보드를 갱신한다
-4. `uv run republic run`으로 polling loop를 실행한다
-5. 표적 개입이 필요하면 `uv run republic trigger <issue-id>` 또는 `uv run republic webhook ...`를 사용한다
+1. `uv run repoagents doctor`로 환경 상태를 점검한다
+2. `uv run repoagents status`로 최신 상태를 확인한다
+3. `uv run repoagents dashboard`로 로컬 대시보드를 갱신한다
+4. `uv run repoagents run`으로 polling loop를 실행한다
+5. 표적 개입이 필요하면 `uv run repoagents trigger <issue-id>` 또는 `uv run repoagents webhook ...`를 사용한다
 
 ## 명령 참고
 
 ```bash
-uv run republic doctor
-uv run republic doctor --format all
-uv run republic run
-uv run republic run --once
-uv run republic run --dry-run
-uv run republic trigger 123
-uv run republic trigger 123 --dry-run
-uv run republic webhook --event issues --payload webhook.json --dry-run
-uv run republic status
-uv run republic status --issue 123
-uv run republic status --format all
-uv run republic ops snapshot --archive
-uv run republic ops status
-uv run republic ops status --format all
-uv run republic github smoke --require-write-ready
-uv run republic ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
-uv run republic ops snapshot --archive --history-limit 10 --prune-history
+uv run repoagents doctor
+uv run repoagents doctor --format all
+uv run repoagents run
+uv run repoagents run --once
+uv run repoagents run --dry-run
+uv run repoagents trigger 123
+uv run repoagents trigger 123 --dry-run
+uv run repoagents webhook --event issues --payload webhook.json --dry-run
+uv run repoagents status
+uv run repoagents status --issue 123
+uv run repoagents status --format all
+uv run repoagents ops snapshot --archive
+uv run repoagents ops status
+uv run repoagents ops status --format all
+uv run repoagents github smoke --require-write-ready
+uv run repoagents ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
+uv run repoagents ops snapshot --archive --history-limit 10 --prune-history
 
 명령은 아래 latest/history index도 함께 갱신합니다.
 
-- `.ai-republic/reports/ops/latest.json`
-- `.ai-republic/reports/ops/latest.md`
-- `.ai-republic/reports/ops/history.json`
-- `.ai-republic/reports/ops/history.md`
-- `.ai-republic/reports/ops-status.json`
-- `.ai-republic/reports/ops-status.md`
-- `.ai-republic/reports/ops-brief.json`
-- `.ai-republic/reports/ops-brief.md`
+- `.ai-repoagents/reports/ops/latest.json`
+- `.ai-repoagents/reports/ops/latest.md`
+- `.ai-repoagents/reports/ops/history.json`
+- `.ai-repoagents/reports/ops/history.md`
+- `.ai-repoagents/reports/ops-status.json`
+- `.ai-repoagents/reports/ops-status.md`
+- `.ai-repoagents/reports/ops-brief.json`
+- `.ai-repoagents/reports/ops-brief.md`
 
-`--prune-history`는 `.ai-republic/reports/ops/` 아래에서 RepoRepublic가 관리하는 bundle/archive만 정리합니다. 외부 custom output directory는 index에는 남지만 ops history prune 대상으로 삭제되지는 않습니다.
-uv run republic sync ls
-uv run republic sync show local-markdown/issue-1/<timestamp>-comment.md
-uv run republic sync health --issue 1 --format all
-uv run republic sync check --issue 1
-uv run republic sync repair --issue 1 --dry-run
-uv run republic sync audit --format all
-uv run republic sync apply --issue 1 --tracker local-file --action comment --latest
-uv run republic sync apply --issue 1 --tracker local-markdown --action comment --latest
-uv run republic clean --sync-applied --dry-run
-uv run republic clean --sync-applied --dry-run --report --report-format all
-uv run republic retry 123
-uv run republic clean --dry-run
-uv run republic clean
-uv run republic dashboard
-uv run republic dashboard --format all
+`--prune-history`는 `.ai-repoagents/reports/ops/` 아래에서 RepoAgents가 관리하는 bundle/archive만 정리합니다. 외부 custom output directory는 index에는 남지만 ops history prune 대상으로 삭제되지는 않습니다.
+uv run repoagents sync ls
+uv run repoagents sync show local-markdown/issue-1/<timestamp>-comment.md
+uv run repoagents sync health --issue 1 --format all
+uv run repoagents sync check --issue 1
+uv run repoagents sync repair --issue 1 --dry-run
+uv run repoagents sync audit --format all
+uv run repoagents sync apply --issue 1 --tracker local-file --action comment --latest
+uv run repoagents sync apply --issue 1 --tracker local-markdown --action comment --latest
+uv run repoagents clean --sync-applied --dry-run
+uv run repoagents clean --sync-applied --dry-run --report --report-format all
+uv run repoagents retry 123
+uv run repoagents clean --dry-run
+uv run repoagents clean
+uv run repoagents dashboard
+uv run repoagents dashboard --format all
 ```
 
 ## 런타임 경로
 
-- config: `.ai-republic/reporepublic.yaml`
-- state: `.ai-republic/state/runs.json`
-- artifacts: `.ai-republic/artifacts/issue-<id>/<run-id>/`
-- workspaces: `.ai-republic/workspaces/issue-<id>/<run-id>/repo/`
-- dashboard: `.ai-republic/dashboard/index.html`
-- dashboard JSON snapshot: `.ai-republic/dashboard/index.json`
-- doctor snapshots: `.ai-republic/reports/doctor.json`, `.ai-republic/reports/doctor.md`
-- status snapshots: `.ai-republic/reports/status.json`, `.ai-republic/reports/status.md`
-- ops status snapshots: `.ai-republic/reports/ops-status.json`, `.ai-republic/reports/ops-status.md`
-- dashboard Markdown snapshot: `.ai-republic/dashboard/index.md`
-- sync health reports: `.ai-republic/reports/sync-health.json`, `.ai-republic/reports/sync-health.md`
-- sync audit reports: `.ai-republic/reports/sync-audit.json`, `.ai-republic/reports/sync-audit.md`
-- cleanup reports: `.ai-republic/reports/cleanup-preview.json`, `.ai-republic/reports/cleanup-result.json`
-- 로그 활성화 시: `.ai-republic/logs/reporepublic.jsonl`
-- sync staging: `.ai-republic/sync/<tracker>/issue-<id>/`
-- sync applied archive: `.ai-republic/sync-applied/<tracker>/issue-<id>/`
+- config: `.ai-repoagents/repoagents.yaml`
+- state: `.ai-repoagents/state/runs.json`
+- artifacts: `.ai-repoagents/artifacts/issue-<id>/<run-id>/`
+- workspaces: `.ai-repoagents/workspaces/issue-<id>/<run-id>/repo/`
+- dashboard: `.ai-repoagents/dashboard/index.html`
+- dashboard JSON snapshot: `.ai-repoagents/dashboard/index.json`
+- doctor snapshots: `.ai-repoagents/reports/doctor.json`, `.ai-repoagents/reports/doctor.md`
+- status snapshots: `.ai-repoagents/reports/status.json`, `.ai-repoagents/reports/status.md`
+- ops status snapshots: `.ai-repoagents/reports/ops-status.json`, `.ai-repoagents/reports/ops-status.md`
+- dashboard Markdown snapshot: `.ai-repoagents/dashboard/index.md`
+- sync health reports: `.ai-repoagents/reports/sync-health.json`, `.ai-repoagents/reports/sync-health.md`
+- sync audit reports: `.ai-repoagents/reports/sync-audit.json`, `.ai-repoagents/reports/sync-audit.md`
+- cleanup reports: `.ai-repoagents/reports/cleanup-preview.json`, `.ai-repoagents/reports/cleanup-result.json`
+- 로그 활성화 시: `.ai-repoagents/logs/repoagents.jsonl`
+- sync staging: `.ai-repoagents/sync/<tracker>/issue-<id>/`
+- sync applied archive: `.ai-repoagents/sync-applied/<tracker>/issue-<id>/`
 
 ## Dashboard의 sync handoff와 retention
 
-이제 dashboard는 `.ai-republic/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-republic/reports/ops/latest.*`, `history.*`를 읽는 `Ops snapshots` 섹션과 `.ai-republic/reports/` 아래 sync audit, sync health, GitHub smoke, ops status, ops brief, cleanup export를 여는 `Reports` 링크도 제공합니다.
+이제 dashboard는 `.ai-repoagents/sync-applied/**/manifest.json`을 읽어 `Sync handoffs`와 `Sync retention`을 함께 보여주고, `.ai-repoagents/reports/ops/latest.*`, `history.*`를 읽는 `Ops snapshots` 섹션과 `.ai-repoagents/reports/` 아래 sync audit, sync health, GitHub smoke, ops status, ops brief, cleanup export를 여는 `Reports` 링크도 제공합니다.
 
-최신 bundle manifest component summary, 현재 handoff brief headline/severity, landing path, recent history preview까지 포함한 ops index posture를 CLI/export 한 화면에서 보고 싶을 때는 `republic ops status`를 사용하면 됩니다.
-`ops-status.json`이나 `ops-brief.json`이 있으면 dashboard `Reports` 섹션에도 같은 카드가 생기고, 최신 bundle이 참조한 관련 report export와 교차 링크가 같이 표시됩니다. 이제 `republic ops snapshot`은 `ops-status.json|md`, `ops-brief.json|md`, live GitHub REST tracker일 때는 `github-smoke.json|md`, bundle landing 파일 `index.html`, `README.md`를 handoff bundle 내부에도 쓰고, repo root의 `ops-status.json|md`, `ops-brief.json|md`, `sync-health.json|md`, live `github-smoke.json|md`도 함께 갱신해서 incident review와 dashboard/report surface가 같은 최신 sync posture, landing summary, GitHub publish readiness를 따라가게 합니다.
+최신 bundle manifest component summary, 현재 handoff brief headline/severity, landing path, recent history preview까지 포함한 ops index posture를 CLI/export 한 화면에서 보고 싶을 때는 `repoagents ops status`를 사용하면 됩니다.
+`ops-status.json`이나 `ops-brief.json`이 있으면 dashboard `Reports` 섹션에도 같은 카드가 생기고, 최신 bundle이 참조한 관련 report export와 교차 링크가 같이 표시됩니다. 이제 `repoagents ops snapshot`은 `ops-status.json|md`, `ops-brief.json|md`, live GitHub REST tracker일 때는 `github-smoke.json|md`, bundle landing 파일 `index.html`, `README.md`를 handoff bundle 내부에도 쓰고, repo root의 `ops-status.json|md`, `ops-brief.json|md`, `sync-health.json|md`, live `github-smoke.json|md`도 함께 갱신해서 incident review와 dashboard/report surface가 같은 최신 sync posture, landing summary, GitHub publish readiness를 따라가게 합니다.
 
 다음 상황에서 이 섹션을 사용합니다.
 
@@ -109,7 +109,7 @@ uv run republic dashboard --format all
 모든 export를 다시 만들려면:
 
 ```bash
-uv run republic dashboard --format all
+uv run repoagents dashboard --format all
 ```
 
 ## 정상 점검 항목
@@ -118,8 +118,8 @@ live run 전에 확인할 것:
 
 - `codex --version`과 `codex login`
 - tracker가 live GitHub REST mode면 `GITHUB_TOKEN`
-- `uv run republic doctor`
-- unattended live write를 켜기 전 `uv run republic github smoke --require-write-ready`
+- `uv run repoagents doctor`
+- unattended live write를 켜기 전 `uv run repoagents github smoke --require-write-ready`
 - 이 smoke gate는 draft PR publish를 위해 default branch protection, PR review requirement, required status check, readable GitHub repo permission까지 함께 기대함
 - `REPOREPUBLIC_GITHUB_WRITE_E2E=1`, `REPOREPUBLIC_GITHUB_PR_E2E=1` 테스트는 반드시 전용 sandbox repo/issue에서 실행하고, comment test는 comment 삭제, draft PR test는 PR close와 branch delete까지 cleanup 단계에서 수행
 - `workspace.strategy: worktree`를 쓴다면 대상 저장소가 유효한 Git work tree인지
@@ -129,11 +129,11 @@ live run 전에 확인할 것:
 
 ### run이 `retry_pending` 상태다
 
-1. `uv run republic status --issue <id>`로 최신 run을 본다
+1. `uv run repoagents status --issue <id>`로 최신 run을 본다
 2. 실패 run의 role artifact를 연다
 3. 필요하면 근본 원인을 먼저 해결한다
-4. `uv run republic retry <id>`로 즉시 재시도 창을 연다
-5. `uv run republic dashboard`로 대시보드를 다시 생성한다
+4. `uv run repoagents retry <id>`로 즉시 재시도 창을 연다
+5. `uv run repoagents dashboard`로 대시보드를 다시 생성한다
 
 ### run이 `failed` 상태다
 
@@ -146,17 +146,17 @@ live run 전에 확인할 것:
 
 그 다음 선택지는 두 가지입니다.
 
-- `uv run republic trigger <id>`로 특정 issue를 직접 다시 실행
-- 또는 `uv run republic retry <id>`로 retry 큐에 다시 넣기
+- `uv run repoagents trigger <id>`로 특정 issue를 직접 다시 실행
+- 또는 `uv run repoagents retry <id>`로 retry 큐에 다시 넣기
 
 ### polling loop가 멈춘 것처럼 보인다
 
 다음 명령으로 먼저 확인합니다.
 
 ```bash
-uv run republic status
-uv run republic run --once
-uv run republic dashboard
+uv run repoagents status
+uv run repoagents run --once
+uv run repoagents dashboard
 ```
 
 `run --once`가 아무 것도 잡지 못하면:
@@ -172,7 +172,7 @@ uv run republic dashboard
 2. 아래 명령으로 dry-run 검증한다
 
 ```bash
-uv run republic webhook --event issues --payload webhook.json --dry-run
+uv run repoagents webhook --event issues --payload webhook.json --dry-run
 ```
 
 3. payload가 열려 있는 issue 번호로 매핑되는지 확인한다
@@ -195,20 +195,20 @@ CLI 정리 경로로 복구되지 않는 경우가 아니면 state/workspace 파
 
 tracker가 publish proposal을 바로 적용하지 않고 로컬에 stage하는 경우:
 
-1. `uv run republic sync ls`로 inventory를 확인한다
-2. `uv run republic sync show ...`로 artifact 하나를 연다
-3. 지원되는 tracker helper가 있으면 `uv run republic sync apply ...`로 먼저 반영한다. 예: `local-file`, `local-markdown`의 comment/label proposal
+1. `uv run repoagents sync ls`로 inventory를 확인한다
+2. `uv run repoagents sync show ...`로 artifact 하나를 연다
+3. 지원되는 tracker helper가 있으면 `uv run repoagents sync apply ...`로 먼저 반영한다. 예: `local-file`, `local-markdown`의 comment/label proposal
 4. 남은 handoff proposal만 사람이 수동으로 반영한다
-5. `.ai-republic/sync-applied/` 아래 archive와 dashboard의 `Sync handoffs` / `Sync retention` 섹션을 함께 확인한다
-6. 오래된 applied handoff group을 정리하기 전에는 `uv run republic clean --sync-applied --dry-run`으로 먼저 확인한다
+5. `.ai-repoagents/sync-applied/` 아래 archive와 dashboard의 `Sync handoffs` / `Sync retention` 섹션을 함께 확인한다
+6. 오래된 applied handoff group을 정리하기 전에는 `uv run repoagents clean --sync-applied --dry-run`으로 먼저 확인한다
    review가 필요하면 `--report --report-format all`로 machine-readable cleanup preview도 남긴다.
-7. repair, audit, cleanup 중 무엇을 할지 고르기 전에 `uv run republic sync health --issue <id> --format all`로 한 번에 묶인 snapshot을 본다
-8. manifest drift가 의심되면 `sync repair` 전에 `uv run republic sync check --issue <id>`를 먼저 실행한다
-9. 더 좁은 machine-readable audit snapshot이 필요하면 `uv run republic sync audit --issue <id> --format all`을 export한다
+7. repair, audit, cleanup 중 무엇을 할지 고르기 전에 `uv run repoagents sync health --issue <id> --format all`로 한 번에 묶인 snapshot을 본다
+8. manifest drift가 의심되면 `sync repair` 전에 `uv run repoagents sync check --issue <id>`를 먼저 실행한다
+9. 더 좁은 machine-readable audit snapshot이 필요하면 `uv run repoagents sync audit --issue <id> --format all`을 export한다
 
 ## 사람 승인 경계
 
-RepoRepublic의 기본값은 계속 보수적입니다.
+RepoAgents의 기본값은 계속 보수적입니다.
 
 - reviewer approve가 나와도 merge는 자동으로 수행하지 않음
 - 위험한 diff는 여전히 사람 판단이 필요함
@@ -232,7 +232,7 @@ incident마다:
 매주:
 
 - `clean --dry-run` 후 `clean`으로 stale local data 정리
-- `republic init --upgrade`로 template drift 점검
+- `repoagents init --upgrade`로 template drift 점검
 
 ## 관련 예제
 

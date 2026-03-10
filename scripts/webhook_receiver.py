@@ -17,7 +17,7 @@ from typing import Any
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 
 
-class RepoRepublicWebhookServer(ThreadingHTTPServer):
+class RepoAgentsWebhookServer(ThreadingHTTPServer):
     def __init__(
         self,
         server_address: tuple[str, int],
@@ -39,7 +39,7 @@ class RepoRepublicWebhookServer(ThreadingHTTPServer):
 
 
 class WebhookHandler(BaseHTTPRequestHandler):
-    server: RepoRepublicWebhookServer
+    server: RepoAgentsWebhookServer
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path.rstrip("/") != "/github":
@@ -91,14 +91,14 @@ class WebhookHandler(BaseHTTPRequestHandler):
         webhook_result = _run_cli(
             project_root=self.server.project_root,
             repo_root=self.server.repo_root,
-            args=["republic", "webhook", "--event", event, "--payload", str(payload_path)],
+            args=["repoagents", "webhook", "--event", event, "--payload", str(payload_path)],
         )
         dashboard_result = None
         if self.server.render_dashboard and webhook_result.returncode == 0:
             dashboard_result = _run_cli(
                 project_root=self.server.project_root,
                 repo_root=self.server.repo_root,
-                args=["republic", "dashboard"],
+                args=["repoagents", "dashboard"],
             )
 
         self.server.handled_requests += 1
@@ -136,7 +136,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
 
 def _store_payload(repo_root: Path, event: str, payload: dict[str, Any]) -> Path:
-    inbox_dir = repo_root / ".ai-republic" / "inbox" / "webhooks"
+    inbox_dir = repo_root / ".ai-repoagents" / "inbox" / "webhooks"
     inbox_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     payload_path = inbox_dir / f"{timestamp}-{event}.json"
@@ -179,21 +179,21 @@ def resolve_webhook_secret(secret: str | None, secret_env: str | None) -> str | 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Example webhook receiver for RepoRepublic with optional signature verification."
+        description="Example webhook receiver for RepoAgents with optional signature verification."
     )
     parser.add_argument("--repo-root", type=Path, required=True, help="Target repository root.")
     parser.add_argument(
         "--project-root",
         type=Path,
         required=True,
-        help="RepoRepublic project root used for `uv run --project`.",
+        help="RepoAgents project root used for `uv run --project`.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind host.")
     parser.add_argument("--port", type=int, default=8787, help="Bind port.")
     parser.add_argument(
         "--render-dashboard",
         action="store_true",
-        help="Run `republic dashboard` after each successful webhook execution.",
+        help="Run `repoagents dashboard` after each successful webhook execution.",
     )
     parser.add_argument(
         "--secret",
@@ -217,7 +217,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     webhook_secret = resolve_webhook_secret(args.secret, args.secret_env)
-    server = RepoRepublicWebhookServer(
+    server = RepoAgentsWebhookServer(
         (args.host, args.port),
         WebhookHandler,
         repo_root=args.repo_root.resolve(),
@@ -227,7 +227,7 @@ def main() -> None:
         max_requests=args.max_requests,
     )
     print(
-        f"RepoRepublic webhook receiver listening on http://{args.host}:{args.port}/github "
+        f"RepoAgents webhook receiver listening on http://{args.host}:{args.port}/github "
         f"(repo_root={server.repo_root}, signature={'on' if webhook_secret else 'off'})",
         flush=True,
     )

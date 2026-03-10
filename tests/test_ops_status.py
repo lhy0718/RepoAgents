@@ -4,8 +4,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.ops_status import (
+from repoagents.config import load_config
+from repoagents.ops_status import (
     build_ops_status_snapshot,
     render_ops_status_markdown,
 )
@@ -16,7 +16,7 @@ def test_build_ops_status_snapshot_reads_latest_history_and_bundle_manifest(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     _write_ops_snapshot_index(demo_repo)
@@ -54,7 +54,7 @@ def test_render_ops_status_markdown_includes_latest_bundle_and_history(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     _write_ops_snapshot_index(demo_repo)
@@ -93,13 +93,13 @@ def test_build_ops_status_snapshot_surfaces_github_smoke_related_report(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "reporepublic.ops_status.utc_now",
+        "repoagents.ops_status.utc_now",
         lambda: datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc),
     )
     _write_ops_snapshot_index(demo_repo)
     latest_bundle_manifest = (
         demo_repo
-        / ".ai-republic"
+        / ".ai-repoagents"
         / "reports"
         / "ops"
         / "20260309T101500Z"
@@ -132,7 +132,7 @@ def test_build_ops_status_snapshot_surfaces_github_smoke_related_report(
 
 
 def _write_ops_snapshot_index(repo_root: Path) -> None:
-    ops_root = repo_root / ".ai-republic" / "reports" / "ops"
+    ops_root = repo_root / ".ai-repoagents" / "reports" / "ops"
     ops_root.mkdir(parents=True, exist_ok=True)
     latest_bundle_dir = ops_root / "20260309T101500Z"
     previous_bundle_dir = ops_root / "20260309T100000Z"

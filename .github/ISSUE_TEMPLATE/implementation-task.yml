@@ -1,5 +1,5 @@
 name: Implementation Task
-description: Track a concrete RepoRepublic engineering task from backlog to merged change.
+description: Track a concrete RepoAgents engineering task from backlog to merged change.
 title: "[Task] "
 labels:
   - enhancement
@@ -20,7 +20,7 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which part of RepoRepublic does this task primarily affect?
+      description: Which part of RepoAgents does this task primarily affect?
       options:
         - CLI
         - Config
@@ -83,4 +83,4 @@ body:
     attributes:
       label: Related docs or files
       description: Optional references to code, docs, or prior issues.
-      placeholder: TODO.md, docs/architecture.md, src/reporepublic/orchestrator/engine.py
+      placeholder: TODO.md, docs/architecture.md, src/repoagents/orchestrator/engine.py

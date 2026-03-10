@@ -1,6 +1,6 @@
 # Role Pack 예제
 
-RepoRepublic는 core role pipeline을 작게 유지하지만, `roles.enabled`를 확장해서 optional built-in role을 활성화할 수 있습니다.
+RepoAgents는 core role pipeline을 작게 유지하지만, `roles.enabled`를 확장해서 optional built-in role을 활성화할 수 있습니다.
 
 ## 현재 built-in role pack
 
@@ -42,9 +42,9 @@ roles:
 실용적인 custom pack은 다음처럼 구성할 수 있습니다.
 
 - core role 순서는 유지
-- `.ai-republic/roles/*.md` override
-- 필요한 `.ai-republic/prompts/*.txt.j2` override
-- `.ai-republic/policies/*.md` override
+- `.ai-repoagents/roles/*.md` override
+- 필요한 `.ai-repoagents/prompts/*.txt.j2` override
+- `.ai-repoagents/policies/*.md` override
 - `AGENTS.md`에 repo-specific instruction 추가
 
 ### Docs maintainer pack
@@ -53,7 +53,7 @@ roles:
 
 - documentation-first 저장소에 맞게 기본 pipeline을 더 날카롭게 조정
 - 범위를 Markdown, quickstart, reference docs 안에 유지
-- `republic init` 이후 repo가 자체 role/prompt/policy override 번들을 얹는 방식을 예시화
+- `repoagents init` 이후 repo가 자체 role/prompt/policy override 번들을 얹는 방식을 예시화
 
 바로 실행 가능한 예제:
 

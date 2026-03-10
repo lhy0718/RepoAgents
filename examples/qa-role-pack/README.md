@@ -1,6 +1,6 @@
 # Example QA Role Pack
 
-This sample repository demonstrates the optional `qa` role in the RepoRepublic pipeline.
+This sample repository demonstrates the optional `qa` role in the RepoAgents pipeline.
 
 ## What it shows
 
@@ -23,12 +23,12 @@ bash scripts/demo_qa_role_pack.sh
 Equivalent manual flow:
 
 ```bash
-uv run republic init --preset python-library --fixture-issues issues.json --tracker-repo demo/qa-role-pack --backend mock
-uv run republic trigger 1
-uv run republic dashboard
+uv run repoagents init --preset python-library --fixture-issues issues.json --tracker-repo demo/qa-role-pack --backend mock
+uv run repoagents trigger 1
+uv run repoagents dashboard
 ```
 
 After the run, inspect:
 
-- `.ai-republic/artifacts/issue-1/<run-id>/qa.json`
-- `.ai-republic/artifacts/issue-1/<run-id>/qa.md`
+- `.ai-repoagents/artifacts/issue-1/<run-id>/qa.json`
+- `.ai-repoagents/artifacts/issue-1/<run-id>/qa.md`

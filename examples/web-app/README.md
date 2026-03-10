@@ -1,6 +1,6 @@
 # Example Web App
 
-This sample repository is meant for RepoRepublic demos targeting a lightweight web app.
+This sample repository is meant for RepoAgents demos targeting a lightweight web app.
 
 ## Files
 
@@ -10,8 +10,8 @@ This sample repository is meant for RepoRepublic demos targeting a lightweight w
 ## Demo
 
 ```bash
-uv run republic init --preset web-app --fixture-issues issues.json --tracker-repo demo/web-app
-uv run republic run --dry-run
+uv run repoagents init --preset web-app --fixture-issues issues.json --tracker-repo demo/web-app
+uv run repoagents run --dry-run
 ```
 
 Repo-level demo script:

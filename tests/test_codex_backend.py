@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import reporepublic.backend.codex as codex_module
-from reporepublic.backend import BackendExecutionError, BackendInvocation, CodexBackend
-from reporepublic.models import TriageResult
+import repoagents.backend.codex as codex_module
+from repoagents.backend import BackendExecutionError, BackendInvocation, CodexBackend
+from repoagents.models import TriageResult
 
 
 def test_codex_backend_command_builder() -> None:
@@ -148,7 +148,7 @@ def test_codex_backend_live_smoke(tmp_path: Path) -> None:
     (workspace / "README.md").write_text("# Codex Smoke Test\n", encoding="utf-8")
 
     prompt = """
-Classify this synthetic issue for RepoRepublic.
+Classify this synthetic issue for RepoAgents.
 
 Issue title: Improve README quickstart
 Issue body: Add install and test commands for first-time contributors.

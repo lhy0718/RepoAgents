@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.sync_manifest_reports import (
+from repoagents.config import load_config
+from repoagents.sync_manifest_reports import (
     build_sync_check_report,
     build_sync_repair_report,
 )
@@ -15,7 +15,7 @@ def test_build_sync_check_report_writes_outputs_and_finding_summary(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_repo)
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-file" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-file" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     (applied_root / "20260308T010105000001Z-comment.md").write_text(
         "---\nissue_id: 1\n---\n\nOrphan handoff.\n",
@@ -49,7 +49,7 @@ def test_build_sync_repair_report_preview_writes_outputs_and_adoption_counts(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(demo_repo)
-    applied_root = demo_repo / ".ai-republic" / "sync-applied" / "local-markdown" / "issue-1"
+    applied_root = demo_repo / ".ai-repoagents" / "sync-applied" / "local-markdown" / "issue-1"
     applied_root.mkdir(parents=True, exist_ok=True)
     branch_path = applied_root / "20260308T010201000001Z-branch.json"
     branch_path.write_text(
@@ -57,7 +57,7 @@ def test_build_sync_repair_report_preview_writes_outputs_and_adoption_counts(
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-fix-empty-input",
+                "branch_name": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "staged_at": "20260308T010201000001Z",
             },

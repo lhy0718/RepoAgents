@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.config import load_config
-from reporepublic.sync_artifacts import (
+from repoagents.config import load_config
+from repoagents.sync_artifacts import (
     inspect_applied_sync_manifests,
     SyncActionRegistry,
     apply_sync_artifact,
@@ -18,7 +18,7 @@ from reporepublic.sync_artifacts import (
 
 
 def test_sync_artifact_inventory_parses_markdown_and_json(demo_repo: Path) -> None:
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     (sync_dir / "20260308T010101000001Z-comment.md").write_text(
         "---\n"
@@ -26,11 +26,11 @@ def test_sync_artifact_inventory_parses_markdown_and_json(demo_repo: Path) -> No
         "action: post_comment\n"
         "staged_at: 20260308T010101000001Z\n"
         "---\n\n"
-        "RepoRepublic staged a maintainer note.\n",
+        "RepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
     (sync_dir / "20260308T010102000001Z-branch.json").write_text(
-        '{\n  "action": "branch",\n  "branch_name": "reporepublic/issue-1-fix",\n  "staged_at": "20260308T010102000001Z"\n}\n',
+        '{\n  "action": "branch",\n  "branch_name": "repoagents/issue-1-fix",\n  "staged_at": "20260308T010102000001Z"\n}\n',
         encoding="utf-8",
     )
 
@@ -39,20 +39,20 @@ def test_sync_artifact_inventory_parses_markdown_and_json(demo_repo: Path) -> No
 
     assert len(artifacts) == 2
     assert artifacts[0].action == "branch"
-    assert artifacts[0].summary == "branch=reporepublic/issue-1-fix"
+    assert artifacts[0].summary == "branch=repoagents/issue-1-fix"
     assert artifacts[1].action == "comment"
     assert artifacts[1].format == "markdown"
-    assert artifacts[1].summary == "RepoRepublic staged a maintainer note."
+    assert artifacts[1].summary == "RepoAgents staged a maintainer note."
 
 
 def test_sync_artifact_inventory_filters_and_resolves_by_relative_path(demo_repo: Path) -> None:
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-2"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-2"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010103000001Z-pr-body.md"
     artifact_path.write_text(
         "---\n"
         "issue_id: 2\n"
-        'title: "RepoRepublic: Improve README quickstart (#2)"\n'
+        'title: "RepoAgents: Improve README quickstart (#2)"\n'
         "staged_at: 20260308T010103000001Z\n"
         "---\n\n"
         "Draft PR proposal staged locally.\n",
@@ -85,7 +85,7 @@ def test_sync_apply_moves_comment_to_applied_archive_and_updates_issue_file(demo
         "Return an empty list.\n",
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_markdown")
@@ -93,7 +93,7 @@ def test_sync_apply_moves_comment_to_applied_archive_and_updates_issue_file(demo
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-markdown" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-markdown" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010104000001Z-comment.md"
     artifact_path.write_text(
@@ -102,7 +102,7 @@ def test_sync_apply_moves_comment_to_applied_archive_and_updates_issue_file(demo
         "action: post_comment\n"
         "staged_at: 20260308T010104000001Z\n"
         "---\n\n"
-        "RepoRepublic staged a maintainer note.\n",
+        "RepoAgents staged a maintainer note.\n",
         encoding="utf-8",
     )
 
@@ -114,8 +114,8 @@ def test_sync_apply_moves_comment_to_applied_archive_and_updates_issue_file(demo
     issue_body = issue_path.read_text(encoding="utf-8")
     assert not artifact_path.exists()
     assert result.archived_path.exists()
-    assert "RepoRepublic staged a maintainer note." in issue_body
-    assert "reporepublic" in issue_body
+    assert "RepoAgents staged a maintainer note." in issue_body
+    assert "repoagents" in issue_body
     assert manifest_payload[-1]["action"] == "comment"
     assert manifest_payload[-1]["entry_key"] == "local-markdown:local-markdown/issue-1/20260308T010104000001Z-comment.md"
     assert manifest_payload[-1]["archived_relative_path"] == "local-markdown/issue-1/20260308T010104000001Z-comment.md"
@@ -148,7 +148,7 @@ def test_sync_apply_updates_local_file_issue_json_and_archives_artifact(demo_rep
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_file")
@@ -156,7 +156,7 @@ def test_sync_apply_updates_local_file_issue_json_and_archives_artifact(demo_rep
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-file" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010105000001Z-labels.json"
     artifact_path.write_text(
@@ -204,7 +204,7 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
         ),
         encoding="utf-8",
     )
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
         .replace("kind: github", "kind: local_file")
@@ -212,7 +212,7 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
         .replace("mode: fixture\n", ""),
         encoding="utf-8",
     )
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "local-file" / "issue-1"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "local-file" / "issue-1"
     sync_dir.mkdir(parents=True, exist_ok=True)
     branch_path = sync_dir / "20260308T010201000001Z-branch.json"
     branch_path.write_text(
@@ -220,7 +220,7 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-fix-empty-input",
+                "branch_name": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "staged_at": "20260308T010201000001Z",
             },
@@ -235,8 +235,8 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
             {
                 "action": "pr",
                 "issue_id": 1,
-                "title": "RepoRepublic: Fix empty input crash (#1)",
-                "head_branch": "reporepublic/issue-1-fix-empty-input",
+                "title": "RepoAgents: Fix empty input crash (#1)",
+                "head_branch": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "draft": True,
                 "staged_at": "20260308T010202000001Z",
@@ -250,8 +250,8 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
     pr_body_path.write_text(
         "---\n"
         "issue_id: 1\n"
-        'title: "RepoRepublic: Fix empty input crash (#1)"\n'
-        "head_branch: reporepublic/issue-1-fix-empty-input\n"
+        'title: "RepoAgents: Fix empty input crash (#1)"\n'
+        "head_branch: repoagents/issue-1-fix-empty-input\n"
         "base_branch: main\n"
         f"metadata_path: {pr_path.resolve()}\n"
         "staged_at: 20260308T010203000001Z\n"
@@ -267,8 +267,8 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
     manifest_payload = json.loads(results[-1].manifest_path.read_text(encoding="utf-8"))
 
     assert [artifact.action for artifact in bundle] == ["branch", "pr", "pr-body"]
-    assert bundle[0].normalized["bundle_key"] == "issue:1|head:reporepublic/issue-1-fix-empty-input"
-    assert bundle[1].normalized["refs"]["head"] == "reporepublic/issue-1-fix-empty-input"
+    assert bundle[0].normalized["bundle_key"] == "issue:1|head:repoagents/issue-1-fix-empty-input"
+    assert bundle[1].normalized["refs"]["head"] == "repoagents/issue-1-fix-empty-input"
     assert bundle[2].normalized["links"]["metadata_artifact"] == "local-file/issue-1/20260308T010202000001Z-pr.json"
     assert [result.action for result in results] == ["branch", "pr", "pr-body"]
     assert not branch_path.exists()
@@ -290,7 +290,7 @@ def test_sync_bundle_resolves_and_archives_related_local_file_pr_handoff(demo_re
 
 
 def test_sync_registry_supports_custom_apply_handler(demo_repo: Path) -> None:
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "custom-tracker" / "issue-7"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "custom-tracker" / "issue-7"
     sync_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = sync_dir / "20260308T010301000001Z-export.json"
     artifact_path.write_text(
@@ -321,7 +321,7 @@ def test_sync_registry_supports_custom_apply_handler(demo_repo: Path) -> None:
 
 
 def test_sync_registry_supports_custom_bundle_resolver(demo_repo: Path) -> None:
-    sync_dir = demo_repo / ".ai-republic" / "sync" / "custom-tracker" / "issue-9"
+    sync_dir = demo_repo / ".ai-repoagents" / "sync" / "custom-tracker" / "issue-9"
     sync_dir.mkdir(parents=True, exist_ok=True)
     branch_path = sync_dir / "20260308T010401000001Z-branch.json"
     branch_path.write_text(
@@ -420,8 +420,8 @@ def test_inspect_applied_sync_manifest_detects_integrity_issues(demo_repo: Path)
                     "normalized": {
                         "artifact_role": "branch-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix",
-                        "refs": {"head": "reporepublic/issue-1-fix"},
+                        "bundle_key": "issue:1|head:repoagents/issue-1-fix",
+                        "refs": {"head": "repoagents/issue-1-fix"},
                         "links": {"self": "local-file/issue-1/20260308T010102000001Z-branch.json"},
                     },
                     "source_relative_path": "local-file/issue-1/20260308T010102000001Z-branch.json",
@@ -429,7 +429,7 @@ def test_inspect_applied_sync_manifest_detects_integrity_issues(demo_repo: Path)
                     "archived_path": str(branch_path),
                     "effect": "Archived branch handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "group_key": "issue:1|head:repoagents/issue-1-fix",
                         "group_size": 1,
                         "group_index": 0,
                         "group_actions": ["branch"],
@@ -449,8 +449,8 @@ def test_inspect_applied_sync_manifest_detects_integrity_issues(demo_repo: Path)
                     "normalized": {
                         "artifact_role": "pr-body-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix",
-                        "refs": {"head": "reporepublic/issue-1-fix"},
+                        "bundle_key": "issue:1|head:repoagents/issue-1-fix",
+                        "refs": {"head": "repoagents/issue-1-fix"},
                         "links": {"self": "local-file/issue-1/20260308T010104000001Z-missing.md"},
                     },
                     "source_relative_path": "local-file/issue-1/20260308T010104000001Z-missing.md",
@@ -458,7 +458,7 @@ def test_inspect_applied_sync_manifest_detects_integrity_issues(demo_repo: Path)
                     "archived_path": str(issue_root / "20260308T010104000001Z-missing.md"),
                     "effect": "Archived missing handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-fix",
+                        "group_key": "issue:1|head:repoagents/issue-1-fix",
                         "group_size": 2,
                         "group_index": 1,
                         "group_actions": ["branch", "pr-body"],
@@ -499,7 +499,7 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-fix-empty-input",
+                "branch_name": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "staged_at": "20260308T010201000001Z",
             },
@@ -513,8 +513,8 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
             {
                 "action": "pr",
                 "issue_id": 1,
-                "title": "RepoRepublic: Fix empty input crash (#1)",
-                "head_branch": "reporepublic/issue-1-fix-empty-input",
+                "title": "RepoAgents: Fix empty input crash (#1)",
+                "head_branch": "repoagents/issue-1-fix-empty-input",
                 "base_branch": "main",
                 "draft": True,
                 "staged_at": "20260308T010202000001Z",
@@ -527,8 +527,8 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
     pr_body_path.write_text(
         "---\n"
         "issue_id: 1\n"
-        'title: "RepoRepublic: Fix empty input crash (#1)"\n'
-        "head_branch: reporepublic/issue-1-fix-empty-input\n"
+        'title: "RepoAgents: Fix empty input crash (#1)"\n'
+        "head_branch: repoagents/issue-1-fix-empty-input\n"
         "base_branch: main\n"
         "staged_at: 20260308T010203000001Z\n"
         "---\n\n"
@@ -550,8 +550,8 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
                     "normalized": {
                         "artifact_role": "branch-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
-                        "refs": {"head": "reporepublic/issue-1-fix-empty-input"},
+                        "bundle_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
+                        "refs": {"head": "repoagents/issue-1-fix-empty-input"},
                         "links": {"self": "local-markdown/issue-1/20260308T010201000001Z-branch.json"},
                     },
                     "source_relative_path": "local-markdown/issue-1/20260308T010201000001Z-branch.json",
@@ -559,7 +559,7 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
                     "archived_path": "/tmp/broken-branch.json",
                     "effect": "Archived branch handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-fix-empty-input",
+                        "group_key": "issue:1|head:repoagents/issue-1-fix-empty-input",
                         "group_size": 1,
                         "group_index": 0,
                         "group_actions": ["branch"],
@@ -596,7 +596,7 @@ def test_repair_applied_sync_manifest_recovers_orphans_and_rebuilds_group_linkag
 
 
 def test_summarize_sync_applied_retention_reports_prunable_groups(demo_repo: Path) -> None:
-    config_path = demo_repo / ".ai-republic" / "reporepublic.yaml"
+    config_path = demo_repo / ".ai-repoagents" / "repoagents.yaml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
             "sync_applied_keep_groups_per_issue: 20",
@@ -614,7 +614,7 @@ def test_summarize_sync_applied_retention_reports_prunable_groups(demo_repo: Pat
             {
                 "action": "branch",
                 "issue_id": 1,
-                "branch_name": "reporepublic/issue-1-older",
+                "branch_name": "repoagents/issue-1-older",
                 "staged_at": "20260308T010001000001Z",
             },
             indent=2,
@@ -638,8 +638,8 @@ def test_summarize_sync_applied_retention_reports_prunable_groups(demo_repo: Pat
                     "normalized": {
                         "artifact_role": "branch-proposal",
                         "issue_key": "issue:1",
-                        "bundle_key": "issue:1|head:reporepublic/issue-1-older",
-                        "refs": {"head": "reporepublic/issue-1-older"},
+                        "bundle_key": "issue:1|head:repoagents/issue-1-older",
+                        "refs": {"head": "repoagents/issue-1-older"},
                         "links": {"self": "local-markdown/issue-1/20260308T010001000001Z-branch.json"},
                     },
                     "source_relative_path": "local-markdown/issue-1/20260308T010001000001Z-branch.json",
@@ -647,7 +647,7 @@ def test_summarize_sync_applied_retention_reports_prunable_groups(demo_repo: Pat
                     "archived_path": str(older_branch),
                     "effect": "Archived branch handoff.",
                     "handoff": {
-                        "group_key": "issue:1|head:reporepublic/issue-1-older",
+                        "group_key": "issue:1|head:repoagents/issue-1-older",
                         "group_size": 1,
                         "group_index": 0,
                         "group_actions": ["branch"],

@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from reporepublic.templates import scaffold_repository
+from repoagents.templates import scaffold_repository
 
 
 def create_demo_repo(root: Path, issues_body: str | None = None) -> Path:
@@ -45,7 +45,7 @@ def create_demo_repo(root: Path, issues_body: str | None = None) -> Path:
         fixture_issues="issues.json",
         force=True,
     )
-    config_path = root / ".ai-republic" / "reporepublic.yaml"
+    config_path = root / ".ai-repoagents" / "repoagents.yaml"
     config = config_path.read_text(encoding="utf-8")
     config = config.replace("mode: codex", "mode: mock")
     config = config.replace("json: true", "json: false")
@@ -55,9 +55,9 @@ def create_demo_repo(root: Path, issues_body: str | None = None) -> Path:
 
 def initialize_git_repo(root: Path) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
-    subprocess.run(["git", "config", "user.name", "RepoRepublic Tests"], cwd=str(root), check=True)
+    subprocess.run(["git", "config", "user.name", "RepoAgents Tests"], cwd=str(root), check=True)
     subprocess.run(
-        ["git", "config", "user.email", "tests@reporepublic.local"],
+        ["git", "config", "user.email", "tests@repoagents.local"],
         cwd=str(root),
         check=True,
     )

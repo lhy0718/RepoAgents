@@ -9,11 +9,11 @@ Read the staged rollout artifacts in this order:
 5. `pr-gated/require-write-ready.exit-code`
 6. `pr-ready/github-smoke.md`
 7. `pr-ready/require-write-ready.exit-code`
-8. `.ai-republic/reports/ops/sandbox-pr-ready/index.html`
-9. `.ai-republic/reports/ops/sandbox-pr-ready/ops-brief.md`
-10. `.ai-republic/reports/ops/sandbox-pr-ready/github-smoke.md`
-11. `.ai-republic/reports/ops/sandbox-pr-ready/ops-status.md`
-12. `.ai-republic/dashboard/index.html`
+8. `.ai-repoagents/reports/ops/sandbox-pr-ready/index.html`
+9. `.ai-repoagents/reports/ops/sandbox-pr-ready/ops-brief.md`
+10. `.ai-repoagents/reports/ops/sandbox-pr-ready/github-smoke.md`
+11. `.ai-repoagents/reports/ops/sandbox-pr-ready/ops-status.md`
+12. `.ai-repoagents/dashboard/index.html`
 13. `ops/execution-order.md`
 
 The important gate is step 5 versus step 7:

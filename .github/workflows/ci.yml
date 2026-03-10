@@ -32,6 +32,6 @@ jobs:
 
       - name: Smoke install built wheel
         run: |
-          python -m venv /tmp/reporepublic-smoke
-          /tmp/reporepublic-smoke/bin/pip install dist/*.whl
-          /tmp/reporepublic-smoke/bin/republic --help > /dev/null
+          python -m venv /tmp/repoagents-smoke
+          /tmp/repoagents-smoke/bin/pip install dist/*.whl
+          /tmp/repoagents-smoke/bin/repoagents --help > /dev/null

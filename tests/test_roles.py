@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reporepublic.backend.mock import MockBackend
-from reporepublic.config import load_config
-from reporepublic.models import IssueRef, QAResult, RoleName, TriageResult
-from reporepublic.prompts import PromptRenderer
-from reporepublic.roles import PipelineContext, TriageRole, build_role_sequence
-from reporepublic.utils import ArtifactStore, build_repo_context
+from repoagents.backend.mock import MockBackend
+from repoagents.config import load_config
+from repoagents.models import IssueRef, QAResult, RoleName, TriageResult
+from repoagents.prompts import PromptRenderer
+from repoagents.roles import PipelineContext, TriageRole, build_role_sequence
+from repoagents.utils import ArtifactStore, build_repo_context
 
 
 def test_role_result_schema_and_artifacts(demo_repo: Path) -> None:
@@ -55,7 +55,7 @@ def test_role_debug_artifacts_include_prompt_and_raw_output(demo_repo: Path) -> 
 
     assert Path(paths["prompt"]).exists()
     assert Path(paths["raw_output"]).exists()
-    assert "RepoRepublic's `triage` role" in Path(paths["prompt"]).read_text(encoding="utf-8")
+    assert "RepoAgents's `triage` role" in Path(paths["prompt"]).read_text(encoding="utf-8")
     assert '"issue_type"' in Path(paths["raw_output"]).read_text(encoding="utf-8")
 
 

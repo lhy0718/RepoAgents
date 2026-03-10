@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporepublic.models import CURRENT_RUN_STATE_VERSION, RunLifecycle, RunRecord
-from reporepublic.orchestrator import RunStateStore
+from repoagents.models import CURRENT_RUN_STATE_VERSION, RunLifecycle, RunRecord
+from repoagents.orchestrator import RunStateStore
 
 
 def test_run_state_recovery_marks_in_progress_as_retry_pending(tmp_path: Path) -> None:

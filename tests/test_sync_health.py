@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from reporepublic.cli.app import CleanAction
-from reporepublic.config import load_config
-from reporepublic.sync_health import build_sync_health_report, build_sync_health_snapshot
+from repoagents.cli.app import CleanAction
+from repoagents.config import load_config
+from repoagents.sync_health import build_sync_health_report, build_sync_health_snapshot
 
 
 def test_build_sync_health_report_writes_combined_exports(
@@ -34,7 +34,7 @@ def test_build_sync_health_report_writes_combined_exports(
         cleanup_actions=[
             CleanAction(
                 kind="artifacts",
-                path=demo_repo / ".ai-republic" / "artifacts" / "issue-1" / "run-old",
+                path=demo_repo / ".ai-repoagents" / "artifacts" / "issue-1" / "run-old",
                 issue_id=1,
                 run_id="run-old",
                 state_updated=True,
@@ -52,7 +52,7 @@ def test_build_sync_health_report_writes_combined_exports(
     assert result.pending_artifacts == 1
     assert result.integrity_issue_count == 1
     assert result.cleanup_action_count == 1
-    assert any("republic sync repair --dry-run" in item for item in result.next_actions)
+    assert any("repoagents sync repair --dry-run" in item for item in result.next_actions)
     assert payload["summary"]["overall_status"] == "issues"
     assert payload["summary"]["pending_artifacts"] == 1
     assert payload["summary"]["cleanup_action_count"] == 1
@@ -62,7 +62,7 @@ def test_build_sync_health_report_writes_combined_exports(
     assert payload["cleanup_preview"]["summary"]["action_count"] == 1
     assert payload["related_reports"]["cleanup_reports"]["total_reports"] == 0
     assert payload["related_reports"]["sync_audit_reports"]["total_reports"] == 0
-    assert "# RepoRepublic Sync Health" in markdown
+    assert "# RepoAgents Sync Health" in markdown
     assert "## Sync audit" in markdown
     assert "## Sync repair preview" in markdown
     assert "## Cleanup preview" in markdown
@@ -72,7 +72,7 @@ def test_build_sync_health_snapshot_surfaces_related_report_details(
     demo_repo: Path,
 ) -> None:
     _configure_policy_thresholds(demo_repo, threshold=2)
-    reports_dir = demo_repo / ".ai-republic" / "reports"
+    reports_dir = demo_repo / ".ai-repoagents" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     _write_cleanup_preview_report(reports_dir, issue_filter=None)
     _write_cleanup_result_report(reports_dir, issue_filter=3)
@@ -89,7 +89,7 @@ def test_build_sync_health_snapshot_surfaces_related_report_details(
     assert snapshot["summary"]["related_report_mismatches"] == 1
     assert snapshot["summary"]["related_report_policy_drifts"] == 2
     assert any(
-        "republic sync audit --format all" in item for item in snapshot["summary"]["next_actions"]
+        "repoagents sync audit --format all" in item for item in snapshot["summary"]["next_actions"]
     )
     assert snapshot["related_reports"]["cleanup_reports"]["mismatch_reports"] == 1
     assert snapshot["related_reports"]["cleanup_reports"]["policy_drift_reports"] == 1
@@ -100,7 +100,7 @@ def test_build_sync_health_snapshot_surfaces_related_report_details(
 
 
 def _configure_policy_thresholds(repo_root: Path, *, threshold: int) -> None:
-    config_path = repo_root / ".ai-republic" / "reporepublic.yaml"
+    config_path = repo_root / ".ai-repoagents" / "repoagents.yaml"
     payload = load_config(repo_root).data.model_dump(mode="json")
     payload.setdefault("dashboard", {})["report_freshness_policy"] = {
         "unknown_issues_threshold": threshold,

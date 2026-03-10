@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporepublic.utils import build_repo_context
+from repoagents.utils import build_repo_context
 
 
 def test_build_repo_context_summarizes_directories_and_tests(demo_repo: Path) -> None:
