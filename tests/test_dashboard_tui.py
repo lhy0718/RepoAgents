@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from repoagents.dashboard_tui import build_dashboard_tui_model
+from repoagents.config import load_config
+from repoagents.dashboard_tui import (
+    DashboardTuiAction,
+    DashboardTuiEntry,
+    build_dashboard_tui_model,
+    execute_dashboard_tui_action,
+)
+from repoagents.models import RunLifecycle, RunRecord
+from repoagents.orchestrator import RunStateStore
 
 
 def test_build_dashboard_tui_model_groups_snapshot_into_sections() -> None:
@@ -41,6 +49,7 @@ def test_build_dashboard_tui_model_groups_snapshot_into_sections() -> None:
             "total": 2,
             "entries": [
                 {
+                    "key": "github-smoke",
                     "label": "GitHub smoke",
                     "status": "attention",
                     "freshness_status": "stale",
@@ -120,12 +129,82 @@ def test_build_dashboard_tui_model_groups_snapshot_into_sections() -> None:
         "Retention",
     ]
     assert model.sections[0].entries[0].title == "#7 Fix parser edge case"
+    assert model.sections[0].entries[0].actions[0].key == "retry_issue"
     assert any(
         "Missing regression coverage." in detail
         for detail in model.sections[0].entries[0].details
     )
     assert model.sections[1].entries[0].title == "GitHub smoke"
+    assert model.sections[1].entries[0].actions[0].key == "refresh_report"
     assert "policy:" in model.sections[1].entries[0].details[3]
     assert model.sections[2].entries[0].title == "Latest 20260310T115700Z"
     assert model.sections[3].entries[0].title == "#7 pr-body"
     assert model.sections[4].entries[0].title == "local-markdown / issue-7"
+
+
+def test_execute_dashboard_tui_action_retries_issue(demo_repo) -> None:
+    loaded = load_config(demo_repo)
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-7",
+            issue_id=7,
+            issue_title="Fix parser edge case",
+            fingerprint="fp-7",
+            status=RunLifecycle.FAILED,
+            backend_mode="codex",
+        )
+    )
+
+    message = execute_dashboard_tui_action(
+        loaded,
+        section_key="runs",
+        entry=DashboardTuiEntry(
+            title="#7 Fix parser edge case",
+            subtitle="failed | attempts=1",
+            status="failed",
+            details=(),
+            actions=(
+                DashboardTuiAction(
+                    key="retry_issue",
+                    label="Retry issue #7",
+                    confirmation_prompt="Schedule issue #7 for immediate retry? [y/N]",
+                ),
+            ),
+            context={"issue_id": 7},
+        ),
+        action=DashboardTuiAction(
+            key="retry_issue",
+            label="Retry issue #7",
+            confirmation_prompt="Schedule issue #7 for immediate retry? [y/N]",
+        ),
+        limit=25,
+    )
+
+    updated = RunStateStore(loaded.state_dir / "runs.json").get(7)
+    assert message == "Issue #7 scheduled for immediate retry."
+    assert updated is not None
+    assert updated.status == RunLifecycle.RETRY_PENDING
+
+
+def test_execute_dashboard_tui_action_refreshes_sync_audit_report(demo_repo) -> None:
+    loaded = load_config(demo_repo)
+
+    message = execute_dashboard_tui_action(
+        loaded,
+        section_key="reports",
+        entry=DashboardTuiEntry(
+            title="Sync audit",
+            subtitle="attention | stale | age=n/a",
+            status="attention",
+            details=(),
+            actions=(DashboardTuiAction(key="refresh_report", label="Refresh Sync audit"),),
+            context={"report_key": "sync-audit", "label": "Sync audit"},
+        ),
+        action=DashboardTuiAction(key="refresh_report", label="Refresh Sync audit"),
+        limit=25,
+    )
+
+    assert message == "Refreshed Sync audit report."
+    assert (loaded.reports_dir / "sync-audit.json").exists()
+    assert (loaded.reports_dir / "sync-audit.md").exists()

@@ -178,7 +178,7 @@ The equivalent JSON-inbox flow is `uv run repoagents sync apply --issue 1 --trac
 Use `uv run repoagents sync check --issue 1` to inspect applied manifest integrity, and `uv run repoagents sync repair --issue 1 --dry-run` to preview canonicalization and orphan adoption.
 Use `uv run repoagents sync health --issue 1 --format all` when you want one combined sync-ops snapshot before drilling into `sync check`, `sync repair`, or `clean`.
 Use `uv run repoagents clean --sync-applied --dry-run` to preview manifest-aware retention before pruning old applied handoff groups.
-Use `uv run repoagents dashboard --tui` to review both `Sync handoffs` and `Sync retention` in the terminal, including prunable groups, prunable bytes, and oldest prunable age. Add `--refresh-seconds 30` if you want the TUI to auto-reload.
+Use `uv run repoagents dashboard --tui` to review both `Sync handoffs` and `Sync retention` in the terminal, including prunable groups, prunable bytes, and oldest prunable age. Add `--refresh-seconds 30` if you want the TUI to auto-reload. Inside the TUI, press `a` on `Runs` or `Reports` entries to open the available actions for that row.
 Use `uv run repoagents dashboard --tui` when you want that same posture directly in the terminal with keyboard navigation.
 
 If you want to see an optional role pack in action, use:

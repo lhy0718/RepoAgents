@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 import subprocess
 import tarfile
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,11 @@ from repoagents.sync_audit import SyncAuditBuildResult
 
 runner = CliRunner()
 app_module = importlib.import_module("repoagents.cli.app")
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _normalized_cli_output(result) -> str:
+    return ANSI_ESCAPE_RE.sub("", (result.stdout or "") + (result.stderr or ""))
 
 
 def _rewrite_tracker_config(repo_root: Path, *, kind: str, path: str) -> None:
@@ -689,7 +695,7 @@ def test_cli_run_warns_on_dirty_working_tree(demo_git_repo: Path, monkeypatch) -
         encoding="utf-8",
     )
     result = runner.invoke(app, ["run", "--dry-run"], catch_exceptions=False)
-    combined = result.stdout + result.stderr
+    combined = _normalized_cli_output(result)
 
     assert result.exit_code == 0
     assert "Workspace policy warning: dirty working tree detected" in combined
@@ -711,7 +717,7 @@ def test_cli_run_blocks_on_dirty_working_tree_when_configured(
         encoding="utf-8",
     )
     result = runner.invoke(app, ["run", "--dry-run"], catch_exceptions=False)
-    combined = result.stdout + result.stderr
+    combined = _normalized_cli_output(result)
 
     assert result.exit_code == 1
     assert "Workspace policy blocked run: dirty working tree detected" in combined
@@ -1619,7 +1625,7 @@ def test_cli_dashboard_tui_rejects_export_flags(
     )
 
     assert result.exit_code == 2
-    assert "`--format` cannot be combined with `--tui`." in result.stderr
+    assert "`--format` cannot be combined with `--tui`." in _normalized_cli_output(result)
 
 
 def test_cli_github_smoke_requires_write_ready_when_requested(

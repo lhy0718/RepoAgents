@@ -208,7 +208,7 @@ bash ../../scripts/demo_local_markdown_sync.sh
 `uv run repoagents sync check --issue 1`로 applied manifest 무결성을 확인하고, `uv run repoagents sync repair --issue 1 --dry-run`으로 canonicalize/adopt 결과를 미리 볼 수 있습니다.
 `uv run repoagents sync health --issue 1 --format all`은 `sync check`, `sync repair`, `clean`로 들어가기 전에 sync 운영 상태를 한 번에 묶어서 보여줍니다.
 오래된 applied handoff group을 지우기 전에는 `uv run repoagents clean --sync-applied --dry-run`으로 manifest-aware retention 결과를 먼저 확인합니다.
-`uv run repoagents dashboard --tui`를 실행하면 터미널 안에서 `Sync handoffs`, `Sync retention`, prunable group 수, prunable bytes, oldest prunable age를 함께 볼 수 있습니다. 자동 새로고침이 필요하면 `--refresh-seconds 30`을 붙이면 됩니다.
+`uv run repoagents dashboard --tui`를 실행하면 터미널 안에서 `Sync handoffs`, `Sync retention`, prunable group 수, prunable bytes, oldest prunable age를 함께 볼 수 있습니다. 자동 새로고침이 필요하면 `--refresh-seconds 30`을 붙이면 됩니다. TUI 안에서는 `Runs`나 `Reports` 항목을 선택한 뒤 `a`를 눌러 그 행에서 가능한 작업 메뉴를 열 수 있습니다.
 같은 상위 상태를 터미널 안에서 바로 보고 싶다면 `uv run repoagents dashboard --tui`를 사용하면 됩니다.
 
 ## 4. 운영 모드로 전환

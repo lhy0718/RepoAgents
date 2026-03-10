@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import textwrap
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import importlib
 from typing import Any
 
+from repoagents.cleanup_report import build_cleanup_report
 from repoagents.config import LoadedConfig
 from repoagents.dashboard import build_dashboard_snapshot
+from repoagents.github_health import build_github_smoke_exports, build_github_smoke_snapshot
+from repoagents.models import RunLifecycle
+from repoagents.ops_status import build_ops_status_exports, build_ops_status_snapshot
 from repoagents.orchestrator import RunStateStore
+from repoagents.sync_audit import build_sync_audit_report
+from repoagents.sync_health import build_sync_health_report
+from repoagents.tracker import build_tracker
 
 try:
     import curses
@@ -27,11 +36,20 @@ KEY_SHIFT_TAB = 353
 
 
 @dataclass(frozen=True, slots=True)
+class DashboardTuiAction:
+    key: str
+    label: str
+    confirmation_prompt: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardTuiEntry:
     title: str
     subtitle: str
     status: str
     details: tuple[str, ...]
+    actions: tuple[DashboardTuiAction, ...] = ()
+    context: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,12 +181,27 @@ def _build_runs_section(snapshot: dict[str, object]) -> DashboardTuiSection:
         if external_actions:
             labels = ", ".join(str(item.get("action", "action")) for item in external_actions[:6])
             details.append(f"external_actions: {labels}")
+        actions: tuple[DashboardTuiAction, ...] = ()
+        if isinstance(issue_id, int) and str(run.get("status", "unknown")) != RunLifecycle.IN_PROGRESS.value:
+            actions = (
+                DashboardTuiAction(
+                    key="retry_issue",
+                    label=f"Retry issue #{issue_id}",
+                    confirmation_prompt=f"Schedule issue #{issue_id} for immediate retry? [y/N]",
+                ),
+            )
         entries.append(
             DashboardTuiEntry(
                 title=f"#{issue_id} {issue_title}",
                 subtitle=f"{run.get('status', 'unknown')} | attempts={run.get('attempts', 0)}",
                 status=str(run.get("status", "unknown")),
                 details=tuple(details),
+                actions=actions,
+                context={
+                    "issue_id": issue_id,
+                    "run_id": run.get("run_id"),
+                    "run_status": run.get("status"),
+                },
             )
         )
     return DashboardTuiSection(key="runs", label="Runs", entries=tuple(entries))
@@ -178,6 +211,8 @@ def _build_reports_section(snapshot: dict[str, object]) -> DashboardTuiSection:
     reports = _mapping(snapshot.get("reports"))
     entries = []
     for report in _list_of_dicts(reports.get("entries")):
+        report_key = _string(report.get("key"))
+        label = str(report.get("label", "Report"))
         details = [
             f"summary: {report.get('summary', 'n/a')}",
             f"freshness: {report.get('freshness_status', 'unknown')}",
@@ -202,18 +237,36 @@ def _build_reports_section(snapshot: dict[str, object]) -> DashboardTuiSection:
         markdown_path = _string(report.get("markdown_path"))
         if markdown_path:
             details.append(f"markdown: {markdown_path}")
+        actions = _build_report_actions(report_key=report_key, label=label)
         entries.append(
             DashboardTuiEntry(
-                title=str(report.get("label", "Report")),
+                title=label,
                 subtitle=(
                     f"{report.get('status', 'available')} | "
                     f"{report.get('freshness_status', 'unknown')} | age={report.get('age_human', 'n/a')}"
                 ),
                 status=str(report.get("status", "available")),
                 details=tuple(details),
+                actions=actions,
+                context={"report_key": report_key, "label": label},
             )
         )
     return DashboardTuiSection(key="reports", label="Reports", entries=tuple(entries))
+
+
+def _build_report_actions(
+    *,
+    report_key: str | None,
+    label: str,
+) -> tuple[DashboardTuiAction, ...]:
+    if report_key in {"sync-audit", "sync-health", "github-smoke", "cleanup-preview", "ops-status"}:
+        return (
+            DashboardTuiAction(
+                key="refresh_report",
+                label=f"Refresh {label}",
+            ),
+        )
+    return ()
 
 
 def _build_ops_section(snapshot: dict[str, object]) -> DashboardTuiSection:
@@ -337,6 +390,8 @@ def _dashboard_tui_main(
     selections = [0 for _ in model.sections]
     message = "Press q to quit, r to refresh."
     last_refresh = time.monotonic()
+    action_menu: tuple[DashboardTuiAction, ...] | None = None
+    pending_confirmation: tuple[DashboardTuiEntry, DashboardTuiAction] | None = None
 
     while True:
         _draw_dashboard_tui(
@@ -346,8 +401,67 @@ def _dashboard_tui_main(
             selections=selections,
             message=message,
             refresh_seconds=refresh_seconds,
+            action_menu=action_menu,
+            pending_confirmation=pending_confirmation,
         )
         key = stdscr.getch()
+        selected_entry = _selected_entry(model.sections[section_index], selections[section_index])
+        if pending_confirmation is not None:
+            entry, action = pending_confirmation
+            if key in (ord("y"), ord("Y")):
+                model, selections, message = _execute_dashboard_tui_action_and_reload(
+                    loaded=loaded,
+                    model=model,
+                    selections=selections,
+                    section_key=model.sections[section_index].key,
+                    entry=entry,
+                    action=action,
+                    limit=limit,
+                    refresh_seconds=refresh_seconds,
+                )
+                pending_confirmation = None
+                action_menu = None
+                last_refresh = time.monotonic()
+                continue
+            if key in (27, ord("n"), ord("N"), ord("c"), ord("C")):
+                pending_confirmation = None
+                action_menu = None
+                message = "Action cancelled."
+                continue
+            if key in (ord("q"), ord("Q")):
+                return
+            continue
+        if action_menu is not None:
+            if key in (27, ord("c"), ord("C")):
+                action_menu = None
+                message = "Action menu closed."
+                continue
+            if key in (ord("q"), ord("Q")):
+                return
+            if ord("1") <= key <= ord(str(min(len(action_menu), 9))):
+                action = action_menu[key - ord("1")]
+                if selected_entry is None:
+                    action_menu = None
+                    message = "No entry selected."
+                    continue
+                if action.confirmation_prompt:
+                    pending_confirmation = (selected_entry, action)
+                    message = action.confirmation_prompt
+                else:
+                    model, selections, message = _execute_dashboard_tui_action_and_reload(
+                        loaded=loaded,
+                        model=model,
+                        selections=selections,
+                        section_key=model.sections[section_index].key,
+                        entry=selected_entry,
+                        action=action,
+                        limit=limit,
+                        refresh_seconds=refresh_seconds,
+                    )
+                    action_menu = None
+                    last_refresh = time.monotonic()
+                continue
+            continue
         if key == -1:
             if refresh_seconds > 0 and time.monotonic() - last_refresh >= refresh_seconds:
                 model = load_dashboard_tui_model(loaded, limit=limit, refresh_seconds=refresh_seconds)
@@ -362,6 +476,15 @@ def _dashboard_tui_main(
             selections = _normalize_selections(model, selections)
             message = f"Refreshed at {time.strftime('%H:%M:%S')}."
             last_refresh = time.monotonic()
+            continue
+        if key in (ord("a"), ord("A")):
+            if selected_entry is None:
+                message = "No entry selected."
+            elif not selected_entry.actions:
+                message = "No actions available for the selected entry."
+            else:
+                action_menu = selected_entry.actions
+                message = f"Actions for {selected_entry.title}."
             continue
         if key in (curses.KEY_RIGHT, ord("\t")):
             section_index = (section_index + 1) % len(model.sections)
@@ -407,6 +530,8 @@ def _draw_dashboard_tui(
     selections: list[int],
     message: str,
     refresh_seconds: int,
+    action_menu: tuple[DashboardTuiAction, ...] | None,
+    pending_confirmation: tuple[DashboardTuiEntry, DashboardTuiAction] | None,
 ) -> None:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -485,12 +610,23 @@ def _draw_dashboard_tui(
         if refresh_seconds > 0
         else "manual refresh"
     )
-    footer = (
-        "Keys: 1-5 switch | Tab/Left/Right change section | Up/Down move | "
-        f"r refresh | q quit | {refresh_note}"
-    )
+    if pending_confirmation is not None:
+        footer = f"Confirm: y execute | n cancel | q quit | {refresh_note}"
+        message_line = pending_confirmation[1].confirmation_prompt or message
+    elif action_menu is not None:
+        action_bits = " | ".join(
+            f"[{index + 1}] {action.label}" for index, action in enumerate(action_menu[:9])
+        )
+        footer = f"Actions: {action_bits} | Esc cancel | q quit"
+        message_line = message
+    else:
+        footer = (
+            "Keys: 1-5 switch | Tab/Left/Right change section | Up/Down move | "
+            f"a actions | r refresh | q quit | {refresh_note}"
+        )
+        message_line = message
     _safe_addstr(stdscr, footer_y, 0, footer, _color_attr("muted"))
-    _safe_addstr(stdscr, footer_y + 1, 0, message, _color_attr("muted"))
+    _safe_addstr(stdscr, footer_y + 1, 0, message_line, _color_attr("muted"))
     stdscr.refresh()
 
 
@@ -577,6 +713,189 @@ def _draw_entry_details(
                 return
             _safe_addstr(stdscr, current_y, x, wrapped, 0)
             current_y += 1
+    if entry.actions and current_y < y + height:
+        current_y += 1
+        if current_y < y + height:
+            labels = ", ".join(action.label for action in entry.actions)
+            _safe_addstr(stdscr, current_y, x, f"Actions: {labels}", curses.A_BOLD | _color_attr("accent"))
+
+
+def execute_dashboard_tui_action(
+    loaded: LoadedConfig,
+    *,
+    section_key: str,
+    entry: DashboardTuiEntry,
+    action: DashboardTuiAction,
+    limit: int,
+) -> str:
+    if section_key == "runs" and action.key == "retry_issue":
+        issue_id = entry.context.get("issue_id")
+        if not isinstance(issue_id, int):
+            raise RuntimeError("Selected run does not expose a valid issue id.")
+        store = RunStateStore(loaded.state_dir / "runs.json")
+        record = store.get(issue_id)
+        if record is None:
+            raise RuntimeError(f"Issue #{issue_id} no longer has a stored run record.")
+        if record.status == RunLifecycle.IN_PROGRESS:
+            raise RuntimeError(f"Issue #{issue_id} is still in progress and cannot be retried yet.")
+        updated = store.force_retry(issue_id, "Manual retry requested from dashboard TUI.")
+        if updated is None:
+            raise RuntimeError(f"Unable to schedule retry for issue #{issue_id}.")
+        return f"Issue #{issue_id} scheduled for immediate retry."
+
+    if section_key == "reports" and action.key == "refresh_report":
+        report_key = entry.context.get("report_key")
+        if not isinstance(report_key, str) or not report_key:
+            raise RuntimeError("Selected report is missing its report key.")
+        return _refresh_dashboard_report(loaded=loaded, report_key=report_key, limit=limit)
+
+    raise RuntimeError(f"Unsupported dashboard action '{action.key}' for section '{section_key}'.")
+
+
+def _execute_dashboard_tui_action_and_reload(
+    *,
+    loaded: LoadedConfig,
+    model: DashboardTuiModel,
+    selections: list[int],
+    section_key: str,
+    entry: DashboardTuiEntry,
+    action: DashboardTuiAction,
+    limit: int,
+    refresh_seconds: int,
+) -> tuple[DashboardTuiModel, list[int], str]:
+    try:
+        message = execute_dashboard_tui_action(
+            loaded,
+            section_key=section_key,
+            entry=entry,
+            action=action,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return model, selections, f"Action failed: {exc}"
+
+    refreshed_model = load_dashboard_tui_model(
+        loaded,
+        limit=limit,
+        refresh_seconds=refresh_seconds,
+    )
+    return refreshed_model, _normalize_selections(refreshed_model, selections), message
+
+
+def _refresh_dashboard_report(
+    *,
+    loaded: LoadedConfig,
+    report_key: str,
+    limit: int,
+) -> str:
+    if report_key == "sync-audit":
+        build_sync_audit_report(
+            loaded,
+            output_path=loaded.reports_dir / "sync-audit.json",
+            formats=("json", "markdown"),
+            limit=limit,
+        )
+        return "Refreshed Sync audit report."
+
+    if report_key == "sync-health":
+        records = RunStateStore(loaded.state_dir / "runs.json").all()
+        cleanup_keep_groups = loaded.data.cleanup.sync_applied_keep_groups_per_issue
+        cleanup_actions = _collect_dashboard_clean_actions(
+            loaded=loaded,
+            records=records,
+            sync_keep_groups_per_issue=cleanup_keep_groups,
+        )
+        build_sync_health_report(
+            loaded,
+            cleanup_actions=cleanup_actions,
+            limit=limit,
+            cleanup_include_sync_applied=True,
+            cleanup_keep_groups_per_issue=cleanup_keep_groups,
+            output_path=loaded.reports_dir / "sync-health.json",
+            formats=("json", "markdown"),
+        )
+        return "Refreshed Sync health report."
+
+    if report_key == "cleanup-preview":
+        records = RunStateStore(loaded.state_dir / "runs.json").all()
+        cleanup_keep_groups = loaded.data.cleanup.sync_applied_keep_groups_per_issue
+        cleanup_actions = _collect_dashboard_clean_actions(
+            loaded=loaded,
+            records=records,
+            sync_keep_groups_per_issue=cleanup_keep_groups,
+        )
+        build_cleanup_report(
+            loaded,
+            actions=cleanup_actions,
+            dry_run=True,
+            include_sync_applied=True,
+            issue_id=None,
+            sync_keep_groups_per_issue=cleanup_keep_groups,
+            output_path=loaded.reports_dir / "cleanup-preview.json",
+            formats=("json", "markdown"),
+        )
+        return "Refreshed Cleanup preview report."
+
+    if report_key == "ops-status":
+        snapshot = build_ops_status_snapshot(loaded=loaded)
+        build_ops_status_exports(
+            snapshot=snapshot,
+            output_path=loaded.reports_dir / "ops-status.json",
+            formats=("json", "markdown"),
+        )
+        return "Refreshed Ops status report."
+
+    if report_key == "github-smoke":
+        if loaded.data.tracker.kind.value != "github" or loaded.data.tracker.mode.value != "rest":
+            raise RuntimeError("GitHub smoke refresh requires tracker.kind=github and tracker.mode=rest.")
+        tracker = build_tracker(loaded, dry_run=False)
+        snapshot = asyncio.run(
+            _collect_dashboard_github_smoke_snapshot(
+                loaded=loaded,
+                tracker=tracker,
+                issue_limit=min(max(limit, 1), 50),
+            )
+        )
+        build_github_smoke_exports(
+            snapshot=snapshot,
+            output_path=loaded.reports_dir / "github-smoke.json",
+            formats=("json", "markdown"),
+        )
+        return "Refreshed GitHub smoke report."
+
+    raise RuntimeError(f"Direct refresh is not available for report '{report_key}' yet.")
+
+
+def _collect_dashboard_clean_actions(
+    *,
+    loaded: LoadedConfig,
+    records: list[object],
+    sync_keep_groups_per_issue: int,
+) -> list[object]:
+    app_module = importlib.import_module("repoagents.cli.app")
+    return app_module._collect_clean_actions(
+        loaded,
+        records,
+        include_sync_applied=True,
+        sync_keep_groups_per_issue=sync_keep_groups_per_issue,
+    )
+
+
+async def _collect_dashboard_github_smoke_snapshot(
+    *,
+    loaded: LoadedConfig,
+    tracker: Any,
+    issue_limit: int,
+) -> dict[str, object]:
+    try:
+        return await build_github_smoke_snapshot(
+            loaded=loaded,
+            tracker=tracker,
+            issue_id=None,
+            issue_limit=issue_limit,
+        )
+    finally:
+        await tracker.aclose()
 
 
 def _selected_entry(section: DashboardTuiSection, selected_index: int) -> DashboardTuiEntry | None:
