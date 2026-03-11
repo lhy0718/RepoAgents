@@ -168,7 +168,11 @@ def test_execute_dashboard_tui_action_retries_issue(demo_repo) -> None:
                 DashboardTuiAction(
                     key="retry_issue",
                     label="Retry issue #7",
-                    confirmation_prompt="Schedule issue #7 for immediate retry? [y/N]",
+                    confirmation_prompt=(
+                        "Queue issue #7 for retry? "
+                        "A running `repoagents run` loop must pick it up, "
+                        "or use `repoagents trigger 7` to run it now. [y/N]"
+                    ),
                 ),
             ),
             context={"issue_id": 7},
@@ -176,15 +180,120 @@ def test_execute_dashboard_tui_action_retries_issue(demo_repo) -> None:
         action=DashboardTuiAction(
             key="retry_issue",
             label="Retry issue #7",
-            confirmation_prompt="Schedule issue #7 for immediate retry? [y/N]",
+            confirmation_prompt=(
+                "Queue issue #7 for retry? "
+                "A running `repoagents run` loop must pick it up, "
+                "or use `repoagents trigger 7` to run it now. [y/N]"
+            ),
         ),
         limit=25,
     )
 
     updated = RunStateStore(loaded.state_dir / "runs.json").get(7)
-    assert message == "Issue #7 scheduled for immediate retry."
+    assert message == (
+        "Issue #7 queued for retry. "
+        "A running `repoagents run` loop will pick it up; "
+        "use `repoagents trigger 7` to run it now."
+    )
     assert updated is not None
     assert updated.status == RunLifecycle.RETRY_PENDING
+
+
+def test_build_dashboard_tui_model_surfaces_retry_queue_guidance() -> None:
+    snapshot = {
+        "meta": {
+            "repo_name": "demo-repo",
+            "rendered_at": "2026-03-10T12:00:00+00:00",
+            "last_updated": "2026-03-10T11:58:00+00:00",
+        },
+        "hero": {
+            "title": "Retry queued",
+            "severity": "attention",
+            "summary": "One issue is queued for retry.",
+        },
+        "counts": {
+            "visible_runs": 1,
+            "total_runs": 1,
+            "visible_sync_handoffs": 0,
+            "policy_drift_reports": 0,
+        },
+        "runs": [
+            {
+                "issue_id": 7,
+                "issue_title": "Fix parser edge case",
+                "run_id": "run-7",
+                "status": "retry_pending",
+                "attempts": 2,
+                "backend_mode": "codex",
+                "summary": "Waiting for a rerun.",
+                "last_error": "Manual retry requested from dashboard TUI.",
+                "updated_at": "2026-03-10T11:57:00+00:00",
+                "next_retry_at": "2026-03-10T11:57:05+00:00",
+            }
+        ],
+        "reports": {"total": 0, "entries": []},
+        "ops_snapshots": {"history_entry_count": 0, "archive_entry_count": 0, "entries": []},
+        "sync_handoffs": [],
+        "sync_retention": {"total_issues": 0, "entries": []},
+    }
+
+    model = build_dashboard_tui_model(snapshot)
+
+    entry = model.sections[0].entries[0]
+    assert entry.subtitle == "queued retry | attempts=2"
+    assert "next_retry_at: 2026-03-10T11:57:05+00:00" in entry.details
+    assert any("repoagents run" in detail for detail in entry.details)
+    assert any("repoagents trigger 7" in detail for detail in entry.details)
+
+
+def test_build_dashboard_tui_model_surfaces_pending_approval_details() -> None:
+    snapshot = {
+        "meta": {
+            "repo_name": "demo-repo",
+            "rendered_at": "2026-03-10T12:00:00+00:00",
+            "last_updated": "2026-03-10T11:58:00+00:00",
+        },
+        "hero": {
+            "title": "Approval pending",
+            "severity": "attention",
+            "summary": "One run is waiting on maintainer approval.",
+        },
+        "counts": {
+            "visible_runs": 1,
+            "total_runs": 1,
+            "visible_sync_handoffs": 0,
+            "policy_drift_reports": 0,
+            "pending_approvals": 1,
+        },
+        "runs": [
+            {
+                "issue_id": 8,
+                "issue_title": "Publish docs update",
+                "run_id": "run-8",
+                "status": "completed",
+                "attempts": 1,
+                "backend_mode": "codex",
+                "summary": "Patch ready for maintainer review.",
+                "updated_at": "2026-03-10T11:57:00+00:00",
+                "approval": {
+                    "status": "pending",
+                    "summary": "Maintainer approval required before publish.",
+                    "actions": [{"action": "post_comment"}, {"action": "open_pr"}],
+                },
+            }
+        ],
+        "reports": {"total": 0, "entries": []},
+        "ops_snapshots": {"history_entry_count": 0, "archive_entry_count": 0, "entries": []},
+        "sync_handoffs": [],
+        "sync_retention": {"total_issues": 0, "entries": []},
+    }
+
+    model = build_dashboard_tui_model(snapshot)
+
+    entry = model.sections[0].entries[0]
+    assert "Approvals 1" in model.summary_lines[1]
+    assert "approval_status: pending" in entry.details
+    assert "approval_actions: post_comment, open_pr" in entry.details
 
 
 def test_execute_dashboard_tui_action_refreshes_sync_audit_report(demo_repo) -> None:

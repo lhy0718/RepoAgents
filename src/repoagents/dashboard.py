@@ -12,7 +12,7 @@ from urllib.parse import quote
 from repoagents.config import LoadedConfig
 from repoagents.models import RunRecord
 from repoagents.models.domain import utc_now
-from repoagents.orchestrator import RunStateStore
+from repoagents.orchestrator import RunStateStore, load_worker_runtime_snapshot
 from repoagents._related_report_details.rendering import (
     build_related_report_detail_block,
     build_related_report_detail_html_layout,
@@ -153,9 +153,18 @@ def build_dashboard_snapshot(
     sync_limit: int = 50,
 ) -> dict[str, object]:
     counts = Counter(record.status.value for record in all_records)
+    approval_counts = Counter(
+        record.approval_request.status.value
+        for record in all_records
+        if record.approval_request is not None
+    )
     rendered_at = utc_now().isoformat()
     last_updated = all_records[0].updated_at.isoformat() if all_records else "n/a"
     log_file = loaded.logs_dir / "repoagents.jsonl"
+    worker = load_worker_runtime_snapshot(
+        loaded.state_dir / "worker.json",
+        expected_poll_interval_seconds=loaded.data.tracker.poll_interval_seconds,
+    )
     snapshot_runs = [
         _serialize_run_record(loaded, record, output_path) for record in visible_records
     ]
@@ -193,6 +202,7 @@ def build_dashboard_snapshot(
         "runtime": {
             "config_path": str(loaded.config_path),
             "state_path": str(loaded.state_dir / "runs.json"),
+            "worker_state_path": str(loaded.state_dir / "worker.json"),
             "artifacts_dir": str(loaded.artifacts_dir),
             "workspace_root": str(loaded.workspace_root),
             "reports_dir": str(loaded.reports_dir),
@@ -212,6 +222,9 @@ def build_dashboard_snapshot(
             "ops_snapshot_archives": ops_snapshots["archive_entry_count"],
             "ops_snapshot_dropped_entries": ops_snapshots["dropped_entry_count"],
             "available_reports": reports["total"],
+            "pending_approvals": approval_counts.get("pending", 0),
+            "approved_approvals": approval_counts.get("approved", 0),
+            "rejected_approvals": approval_counts.get("rejected", 0),
             "aging_reports": reports["aging_total"],
             "future_reports": reports["future_total"],
             "unknown_reports": reports["unknown_total"],
@@ -228,6 +241,7 @@ def build_dashboard_snapshot(
         },
         "hero": hero,
         "policy": policy,
+        "worker": worker,
         "runs": snapshot_runs,
         "sync_handoffs": sync_handoffs["entries"],
         "sync_retention": sync_retention,
@@ -263,6 +277,7 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     meta = _snapshot_section(snapshot, "meta")
     runtime = _snapshot_section(snapshot, "runtime")
     counts = _snapshot_section(snapshot, "counts")
+    worker = _snapshot_section(snapshot, "worker")
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
     sync_retention = _snapshot_sync_retention(snapshot)
@@ -281,6 +296,7 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
     runtime_links = [
         _render_link_chip("config", _relative_href(output_path, Path(str(runtime["config_path"])))),
         _render_link_chip("runs.json", _relative_href(output_path, Path(str(runtime["state_path"])))),
+        _render_link_chip("worker.json", _relative_href(output_path, Path(str(runtime["worker_state_path"])))),
         _render_link_chip("artifacts", _relative_href(output_path, Path(str(runtime["artifacts_dir"])))),
         _render_link_chip("workspaces", _relative_href(output_path, Path(str(runtime["workspace_root"])))),
         _render_link_chip("reports", _relative_href(output_path, Path(str(runtime["reports_dir"])))),
@@ -304,6 +320,8 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
         _render_metric_card("Visible runs", str(visible_runs)),
         _render_metric_card("Total runs", str(total_runs)),
         _render_metric_card("Sync handoffs", str(counts["visible_sync_handoffs"])),
+        _render_metric_card("Worker", str(worker.get("status", "not_running"))),
+        _render_metric_card("Approvals", str(counts.get("pending_approvals", 0))),
         _render_metric_card("Completed", str(status_counts.get("completed", 0))),
         _render_metric_card("Failed", str(status_counts.get("failed", 0))),
         _render_metric_card("Retry pending", str(status_counts.get("retry_pending", 0))),
@@ -816,6 +834,8 @@ def render_dashboard_html(*, snapshot: dict[str, object]) -> str:
           <span class="meta-chip">rendered_at {escape(rendered_at)}</span>
           <span class="meta-chip">repo {escape(repo_name)}</span>
           <span class="meta-chip">last_updated {escape(last_updated)}</span>
+          <span class="meta-chip">worker {escape(str(worker.get("status", "not_running")))}</span>
+          <span class="meta-chip">last_poll {escape(str(worker.get("last_poll_age_human", "n/a")))}</span>
           <span class="meta-chip">freshness_policy {escape(str(policy['summary']))}</span>
         </div>
         <div class="link-row">
@@ -999,6 +1019,7 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
     counts = _snapshot_section(snapshot, "counts")
     hero = _snapshot_section(snapshot, "hero")
     policy = _snapshot_section(snapshot, "policy")
+    worker = _snapshot_section(snapshot, "worker")
     runs = _snapshot_runs(snapshot)
     sync_handoffs = _snapshot_sync_handoffs(snapshot)
     sync_retention = _snapshot_sync_retention(snapshot)
@@ -1030,8 +1051,19 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
         f"- title: {hero['title']}",
         f"- summary: {hero['summary']}",
         "",
-        "## Status counts",
+        "## Worker",
+        f"- status: {worker.get('status', 'not_running')}",
+        f"- mode: {worker.get('mode', '-')}",
+        f"- pid: {worker.get('pid', '-')}",
+        f"- heartbeat_age: {worker.get('heartbeat_age_human', 'n/a')}",
+        f"- last_poll_age: {worker.get('last_poll_age_human', 'n/a')}",
+        f"- stop_requested: {worker.get('stop_requested', False)}",
     ]
+    if worker.get("last_poll_completed_at"):
+        lines.append(f"- last_poll_completed_at: {worker['last_poll_completed_at']}")
+    if worker.get("last_error"):
+        lines.append(f"- last_error: {worker['last_error']}")
+    lines.extend(["", "## Status counts"])
     hero_chips = _list_of_dicts(hero["reporting_chips"])
     if hero_chips:
         lines.append("- reporting_chips:")
@@ -1079,6 +1111,18 @@ def render_dashboard_markdown(snapshot: dict[str, object]) -> str:
                     lines.append(
                         f"  - {action['action']} executed={action['executed']} reason={action['reason']}"
                     )
+            approval = run.get("approval") if isinstance(run.get("approval"), dict) else {}
+            if approval:
+                lines.append(f"- approval_status: {approval.get('status', '-')}")
+                lines.append(f"- approval_requested_at: {approval.get('requested_at', '-')}")
+                lines.append(f"- approval_summary: {approval.get('summary', '-')}")
+                if approval.get("decision_reason"):
+                    lines.append(f"- approval_reason: {approval['decision_reason']}")
+                approval_actions = ", ".join(
+                    str(item.get("action", "action"))
+                    for item in _list_of_dicts(approval.get("actions"))
+                )
+                lines.append(f"- approval_actions: {approval_actions or 'none'}")
     lines.extend(["", "## Sync handoffs"])
     if not sync_handoffs:
         lines.append("- No sync handoffs archived yet.")
@@ -1307,11 +1351,28 @@ def _render_run_card(run: dict[str, object]) -> str:
     ]
     workspace_href = _string_or_none(run["workspace_href"])
     external_actions = _render_external_actions(_list_of_dicts(run["external_actions"]))
+    approval = run.get("approval") if isinstance(run.get("approval"), dict) else {}
     status_value = str(run["status"])
     status_class = status_value.replace("_", "-")
     next_retry = ""
     if run["next_retry_at"]:
         next_retry = f"<li><strong>next retry:</strong> {escape(str(run['next_retry_at']))}</li>"
+    approval_markup = ""
+    if approval:
+        approval_actions = ", ".join(
+            str(item.get("action", "action")) for item in _list_of_dicts(approval.get("actions"))
+        )
+        approval_markup = f"""
+        <section class="panel" style="margin-top: 1rem;">
+          <h3>Approval</h3>
+          <ul class="list">
+            <li><strong>status:</strong> {escape(str(approval.get('status', '-')))}</li>
+            <li><strong>requested:</strong> {escape(str(approval.get('requested_at', '-')))}</li>
+            <li><strong>summary:</strong> {escape(str(approval.get('summary', '-')))}</li>
+            <li><strong>actions:</strong> {escape(approval_actions or 'none')}</li>
+          </ul>
+        </section>
+        """
 
     return f"""
     <article class="run-card" data-status="{escape(status_value)}" data-search="{escape(str(run['search_index']))}">
@@ -1357,6 +1418,7 @@ def _render_run_card(run: dict[str, object]) -> str:
         <h3>External actions</h3>
         {external_actions}
       </section>
+      {approval_markup}
     </article>
     """
 
@@ -1774,6 +1836,7 @@ def _serialize_run_record(
             record.run_id,
             record.summary or "",
             record.last_error or "",
+            record.approval_request.summary if record.approval_request else "",
             record.current_role or "",
             record.backend_mode,
             str(record.issue_id),
@@ -1781,6 +1844,35 @@ def _serialize_run_record(
         )
         if value
     )
+    approval = None
+    if record.approval_request is not None:
+        approval = {
+            "status": record.approval_request.status.value,
+            "requested_at": record.approval_request.requested_at.isoformat(),
+            "decided_at": (
+                record.approval_request.decided_at.isoformat()
+                if record.approval_request.decided_at
+                else None
+            ),
+            "decided_by": record.approval_request.decided_by,
+            "decision_reason": record.approval_request.decision_reason,
+            "summary": record.approval_request.summary,
+            "policy_summary": record.approval_request.policy_summary,
+            "review_summary": record.approval_request.review_summary,
+            "request_artifact_path": record.approval_request.request_artifact_path,
+            "request_artifact_href": (
+                _payload_href(output_path, record.approval_request.request_artifact_path)
+                if record.approval_request.request_artifact_path
+                else None
+            ),
+            "decision_artifact_path": record.approval_request.decision_artifact_path,
+            "decision_artifact_href": (
+                _payload_href(output_path, record.approval_request.decision_artifact_path)
+                if record.approval_request.decision_artifact_path
+                else None
+            ),
+            "actions": [action.model_dump(mode="json") for action in record.approval_request.actions],
+        }
     return {
         "issue_id": record.issue_id,
         "issue_title": record.issue_title,
@@ -1799,6 +1891,7 @@ def _serialize_run_record(
         ),
         "artifacts": artifacts,
         "external_actions": external_actions,
+        "approval": approval,
         "search_index": search_index,
     }
 

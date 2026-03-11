@@ -277,8 +277,15 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - 전체 release preflight gate 실행: `uv run repoagents release check --format all`
 - local release asset 검증: `uv run repoagents release assets --build --smoke-install --format all`
 - 특정 이슈 즉시 실행: `uv run repoagents trigger 123`
+- repo-local background worker 시작: `uv run repoagents service start`
+- background worker 상태 확인: `uv run repoagents service status`
+- 설정 변경이나 lease takeover 이후 background worker 재시작: `uv run repoagents service restart`
+- background worker 종료 요청: `uv run repoagents service stop`
+- approval inbox 확인: `uv run repoagents approval ls`
+- 특정 approval request 확인: `uv run repoagents approval show 123`
+- maintainer 승인 결정 기록: `uv run repoagents approval approve 123 --reason "ready for manual publish"`
 - GitHub webhook payload 검증: `uv run repoagents webhook --event issues --payload webhook.json --dry-run`
-- 즉시 재시도 예약: `uv run repoagents retry 123`
+- 다음 poll cycle용 재시도 큐에 넣기: `uv run repoagents retry 123`
 - 오래된 local 정리 미리보기: `uv run repoagents clean --dry-run`
 - applied sync archive 정리 미리보기: `uv run repoagents clean --sync-applied --dry-run`
 - cleanup preview/report export: `uv run repoagents clean --sync-applied --dry-run --report --report-format all`

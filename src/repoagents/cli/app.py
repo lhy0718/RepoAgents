@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,7 @@ from repoagents.github_health import (
     render_github_smoke_text,
 )
 from repoagents.logging import configure_logging
-from repoagents.models import RunLifecycle, RunRecord
+from repoagents.models import ApprovalRequest, ApprovalStatus, RunLifecycle, RunRecord, WorkerMode
 from repoagents.models.domain import utc_now
 from repoagents.operator_reports import (
     build_operator_report_exports,
@@ -68,7 +69,14 @@ from repoagents.ops_status import (
     normalize_ops_status_formats,
     render_ops_status_text,
 )
-from repoagents.orchestrator import DryRunPreview, Orchestrator, RunStateStore, load_webhook_payload
+from repoagents.orchestrator import (
+    DryRunPreview,
+    Orchestrator,
+    RunStateStore,
+    WorkerStateStore,
+    load_webhook_payload,
+    load_worker_runtime_snapshot,
+)
 from repoagents._related_report_details.rendering import (
     build_related_report_detail_block,
     build_related_report_detail_line_layout,
@@ -159,6 +167,8 @@ sync_app = typer.Typer(help="Inspect staged tracker sync artifacts.")
 ops_app = typer.Typer(help="Export operator snapshot bundles.")
 github_app = typer.Typer(help="Inspect live GitHub tracker readiness.")
 release_app = typer.Typer(help="Prepare public release preview artifacts.")
+service_app = typer.Typer(help="Manage the repo-local RepoAgents worker.")
+approval_app = typer.Typer(help="Review pending human approval requests.")
 RAW_POLICY_REPORT_EXPORTS = (
     "sync-audit.json",
     "cleanup-preview.json",
@@ -248,6 +258,8 @@ app.add_typer(sync_app, name="sync")
 app.add_typer(ops_app, name="ops")
 app.add_typer(github_app, name="github")
 app.add_typer(release_app, name="release")
+app.add_typer(service_app, name="service")
+app.add_typer(approval_app, name="approval")
 
 
 @app.command("init")
@@ -516,7 +528,8 @@ def run_command(
         file_enabled=loaded.data.logging.file_enabled,
         log_dir=loaded.logs_dir,
     )
-    orchestrator = Orchestrator(loaded, dry_run=dry_run)
+    worker_mode = WorkerMode.FOREGROUND if not dry_run and not once else None
+    orchestrator = Orchestrator(loaded, dry_run=dry_run, worker_mode=worker_mode)
     if dry_run:
         previews = asyncio.run(orchestrator.run_once())
         if not previews:
@@ -542,6 +555,96 @@ def run_command(
         asyncio.run(orchestrator.run_forever())
     except KeyboardInterrupt:
         typer.echo("RepoAgents orchestrator stopped.")
+
+
+@service_app.command("start")
+def service_start_command() -> None:
+    loaded = _load_or_exit()
+    _enforce_workspace_run_policy(loaded)
+    snapshot = _collect_worker_snapshot(loaded)
+    if snapshot["status"] not in {"not_running", "stopped", "stale"}:
+        typer.echo(
+            "RepoAgents worker is already running: "
+            f"status={snapshot['status']} mode={snapshot['mode'] or '-'} pid={snapshot['pid'] or '-'}"
+        )
+        return
+
+    if snapshot["status"] == "stale":
+        _mark_stale_worker_stopped(
+            loaded,
+            snapshot,
+            reason="Cleared stale worker record before service start.",
+        )
+    launch_snapshot = _start_worker_service(loaded)
+    if launch_snapshot is not None:
+        _print_worker_runtime_snapshot(launch_snapshot, label="Worker")
+
+
+@service_app.command("status")
+def service_status_command() -> None:
+    loaded = _load_or_exit()
+    snapshot = _collect_worker_snapshot(loaded)
+    _print_worker_runtime_snapshot(snapshot, label="Worker")
+
+
+@service_app.command("stop")
+def service_stop_command(
+    wait_seconds: int = typer.Option(
+        5,
+        "--wait-seconds",
+        min=0,
+        max=120,
+        help="How long to wait for the worker to acknowledge the stop request.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    _stop_worker_service(loaded, wait_seconds=wait_seconds, reason="Stop requested from CLI.")
+
+
+@service_app.command("restart")
+def service_restart_command(
+    wait_seconds: int = typer.Option(
+        10,
+        "--wait-seconds",
+        min=0,
+        max=120,
+        help="How long to wait for the worker to stop before starting a replacement.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    _enforce_workspace_run_policy(loaded)
+    final_snapshot = _stop_worker_service(
+        loaded,
+        wait_seconds=wait_seconds,
+        reason="Restart requested from CLI.",
+        quiet_if_not_running=True,
+    )
+    if final_snapshot["status"] not in {"not_running", "stopped"}:
+        typer.echo(
+            "RepoAgents worker did not stop in time; restart aborted to avoid two active workers.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    launch_snapshot = _start_worker_service(loaded)
+    if launch_snapshot is not None:
+        _print_worker_runtime_snapshot(launch_snapshot, label="Worker")
+
+
+@service_app.command("run-loop", hidden=True)
+def service_run_loop_command() -> None:
+    loaded = _load_or_exit()
+    _enforce_workspace_run_policy(loaded)
+    configure_logging(
+        level=loaded.data.logging.level,
+        json_logs=loaded.data.logging.json_logs,
+        file_enabled=loaded.data.logging.file_enabled,
+        log_dir=loaded.logs_dir,
+    )
+    orchestrator = Orchestrator(loaded, dry_run=False, worker_mode=WorkerMode.SERVICE)
+    try:
+        asyncio.run(orchestrator.run_forever())
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command("trigger")
@@ -651,6 +754,7 @@ def status_command(
         raise typer.Exit(code=1)
 
     store = RunStateStore(loaded.state_dir / "runs.json")
+    worker_snapshot = _collect_worker_snapshot(loaded)
     all_records = store.all()
     if issue is not None:
         record = store.get(issue)
@@ -671,6 +775,7 @@ def status_command(
 
     if not records and export_formats is None:
         typer.echo("No runs recorded yet.")
+        _print_worker_runtime_snapshot(worker_snapshot, label="Worker")
         return
     policy_alignment = _collect_report_policy_export_alignment(loaded)
     report_health_snapshot = build_report_health_snapshot(loaded=loaded)
@@ -681,10 +786,23 @@ def status_command(
     )
     if export_formats is None:
         typer.echo(f"Run state: {loaded.state_dir / 'runs.json'}")
+        _print_worker_runtime_snapshot(worker_snapshot, label="Worker")
         if issue is None:
             counts = Counter(record.status.value for record in records)
             summary = ", ".join(f"{status}={count}" for status, count in sorted(counts.items()))
             typer.echo(f"Run summary: {summary}")
+            approval_counts = Counter(
+                record.approval_request.status.value
+                for record in all_records
+                if record.approval_request is not None
+            )
+            if approval_counts:
+                typer.echo(
+                    "Approval inbox: "
+                    f"pending={approval_counts.get('pending', 0)} "
+                    f"approved={approval_counts.get('approved', 0)} "
+                    f"rejected={approval_counts.get('rejected', 0)}"
+                )
         _print_status_report_health(
             report_health_snapshot,
             policy_alignment=policy_alignment,
@@ -700,6 +818,7 @@ def status_command(
         all_records=all_records,
         selected_records=records,
         issue_filter=issue,
+        worker_snapshot=worker_snapshot,
         report_health_snapshot=report_health_snapshot,
         ops_snapshot=ops_snapshot,
         policy_alignment=policy_alignment,
@@ -744,9 +863,86 @@ def retry_command(issue_id: int) -> None:
     previous_status = record.status.value
     updated = store.force_retry(issue_id, "Manual retry requested from CLI.")
     typer.echo(
-        f"Issue #{issue_id} scheduled for immediate retry at {updated.next_retry_at.isoformat()} "
-        f"(previous_status={previous_status})."
+        f"Issue #{issue_id} queued for retry at {updated.next_retry_at.isoformat()} "
+        f"(previous_status={previous_status}). "
+        f"A running `repoagents run` loop will pick it up; "
+        f"use `repoagents trigger {issue_id}` to run it now."
     )
+
+
+@approval_app.command("ls")
+def approval_list_command(
+    all: bool = typer.Option(
+        False,
+        "--all",
+        help="Include approved and rejected requests in addition to pending ones.",
+    ),
+) -> None:
+    loaded = _load_or_exit()
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    records = _approval_records(store.all(), include_decided=all)
+    if not records:
+        typer.echo("No approval requests recorded.")
+        return
+    counts = Counter(
+        record.approval_request.status.value
+        for record in store.all()
+        if record.approval_request is not None
+    )
+    typer.echo(
+        "Approval inbox: "
+        f"pending={counts.get('pending', 0)} "
+        f"approved={counts.get('approved', 0)} "
+        f"rejected={counts.get('rejected', 0)}"
+    )
+    for record in records:
+        _print_approval_summary(record)
+
+
+@approval_app.command("show")
+def approval_show_command(issue_id: int) -> None:
+    loaded = _load_or_exit()
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    record = _get_run_with_approval_or_exit(store, issue_id)
+    _print_approval_request(record, detail=True)
+
+
+@approval_app.command("approve")
+def approval_approve_command(
+    issue_id: int,
+    reason: str | None = typer.Option(None, "--reason", help="Optional approval note to record."),
+) -> None:
+    loaded = _load_or_exit()
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    record = _get_run_with_pending_approval_or_exit(store, issue_id)
+    _apply_approval_decision(
+        loaded=loaded,
+        store=store,
+        record=record,
+        status=ApprovalStatus.APPROVED,
+        reason=reason or "Approved from CLI.",
+    )
+    typer.echo(f"Approved pending actions for issue #{issue_id}.")
+    _print_approval_request(record, detail=False)
+
+
+@approval_app.command("reject")
+def approval_reject_command(
+    issue_id: int,
+    reason: str = typer.Option(..., "--reason", help="Why the pending publish actions were rejected."),
+) -> None:
+    loaded = _load_or_exit()
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    record = _get_run_with_pending_approval_or_exit(store, issue_id)
+    _apply_approval_decision(
+        loaded=loaded,
+        store=store,
+        record=record,
+        status=ApprovalStatus.REJECTED,
+        reason=reason,
+    )
+    typer.echo(f"Rejected pending actions for issue #{issue_id}.")
+    _print_approval_request(record, detail=False)
 
 
 @app.command("clean")
@@ -1056,6 +1252,7 @@ def ops_snapshot_command(
     )
     report_health_snapshot = build_report_health_snapshot(loaded=loaded)
     ops_snapshot = build_ops_snapshot_status_snapshot(loaded=loaded)
+    worker_snapshot = _collect_worker_snapshot(loaded)
     working_tree = _get_working_tree_status(loaded)
     diagnostic_checks = _collect_doctor_checks(loaded)
     codex_command = loaded.data.codex.command
@@ -1095,6 +1292,7 @@ def ops_snapshot_command(
         all_records=all_records,
         selected_records=selected_records,
         issue_filter=issue,
+        worker_snapshot=worker_snapshot,
         report_health_snapshot=report_health_snapshot,
         ops_snapshot=ops_snapshot,
         policy_alignment=policy_alignment,
@@ -3317,6 +3515,7 @@ def _build_status_snapshot(
     all_records: list[RunRecord],
     selected_records: list[RunRecord],
     issue_filter: int | None,
+    worker_snapshot: dict[str, object],
     report_health_snapshot: dict[str, object],
     ops_snapshot: dict[str, object],
     policy_alignment: ReportPolicyExportAlignment,
@@ -3324,6 +3523,12 @@ def _build_status_snapshot(
 ) -> dict[str, object]:
     selected_counts = Counter(record.status.value for record in selected_records)
     all_counts = Counter(record.status.value for record in all_records)
+    approval_records = [record for record in all_records if record.approval_request is not None]
+    approval_counts = Counter(
+        record.approval_request.status.value
+        for record in approval_records
+        if record.approval_request is not None
+    )
     detail_lines = _build_related_report_details_lines(
         title="related report details:",
         mismatch_warnings=(),
@@ -3350,6 +3555,14 @@ def _build_status_snapshot(
             "all_by_status": dict(sorted(all_counts.items())),
             "selected_by_status": dict(sorted(selected_counts.items())),
         },
+        "approval_inbox": {
+            "total": len(approval_records),
+            "pending": approval_counts.get("pending", 0),
+            "approved": approval_counts.get("approved", 0),
+            "rejected": approval_counts.get("rejected", 0),
+            "entries": [_serialize_approval_snapshot(record) for record in approval_records],
+        },
+        "worker": worker_snapshot,
         "report_health": {
             **report_health_snapshot,
             "policy_alignment": {
@@ -4324,12 +4537,344 @@ def _print_run_record(record: RunRecord) -> None:
         typer.echo(f"  summary: {record.summary}")
     if record.last_error:
         typer.echo(f"  last_error: {record.last_error}")
+    if record.approval_request is not None:
+        typer.echo(
+            "  approval: "
+            f"status={record.approval_request.status.value} "
+            f"requested_at={record.approval_request.requested_at.isoformat()}"
+        )
+        action_labels = ", ".join(action.action for action in record.approval_request.actions)
+        typer.echo(f"  approval_actions: {action_labels or 'none'}")
+        if record.approval_request.decision_reason:
+            typer.echo(f"  approval_reason: {record.approval_request.decision_reason}")
     if record.external_actions:
         typer.echo("  external_actions:")
         for action in record.external_actions:
             typer.echo(
                 f"    - {action.action}: executed={action.executed} reason={action.reason}"
             )
+
+
+def _serialize_approval_snapshot(record: RunRecord) -> dict[str, object]:
+    approval = record.approval_request
+    if approval is None:
+        return {}
+    return {
+        "issue_id": record.issue_id,
+        "issue_title": record.issue_title,
+        "run_id": record.run_id,
+        "status": approval.status.value,
+        "requested_at": approval.requested_at.isoformat(),
+        "decided_at": approval.decided_at.isoformat() if approval.decided_at else None,
+        "decided_by": approval.decided_by,
+        "decision_reason": approval.decision_reason,
+        "summary": approval.summary,
+        "policy_summary": approval.policy_summary,
+        "review_summary": approval.review_summary,
+        "request_artifact_path": approval.request_artifact_path,
+        "decision_artifact_path": approval.decision_artifact_path,
+        "actions": [action.model_dump(mode="json") for action in approval.actions],
+    }
+
+
+def _approval_records(records: list[RunRecord], *, include_decided: bool) -> list[RunRecord]:
+    filtered = [record for record in records if record.approval_request is not None]
+    if include_decided:
+        return filtered
+    return [
+        record
+        for record in filtered
+        if record.approval_request is not None and record.approval_request.status == ApprovalStatus.PENDING
+    ]
+
+
+def _get_run_with_approval_or_exit(store: RunStateStore, issue_id: int) -> RunRecord:
+    record = store.get(issue_id)
+    if record is None or record.approval_request is None:
+        typer.echo(f"No approval request recorded for issue #{issue_id}.", err=True)
+        raise typer.Exit(code=1)
+    return record
+
+
+def _get_run_with_pending_approval_or_exit(store: RunStateStore, issue_id: int) -> RunRecord:
+    record = _get_run_with_approval_or_exit(store, issue_id)
+    assert record.approval_request is not None
+    if record.approval_request.status != ApprovalStatus.PENDING:
+        typer.echo(
+            f"Issue #{issue_id} approval is already {record.approval_request.status.value}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return record
+
+
+def _apply_approval_decision(
+    *,
+    loaded: LoadedConfig,
+    store: RunStateStore,
+    record: RunRecord,
+    status: ApprovalStatus,
+    reason: str,
+) -> None:
+    approval = record.approval_request
+    if approval is None:
+        raise RuntimeError("Approval request is required before recording a decision.")
+    decided_at = utc_now()
+    approval.status = status
+    approval.decided_at = decided_at
+    approval.decided_by = _approval_actor()
+    approval.decision_reason = reason
+    artifact_dir = ensure_dir(loaded.artifacts_dir / f"issue-{record.issue_id}" / record.run_id)
+    decision_path = artifact_dir / "approval-decision.md"
+    approval.decision_artifact_path = str(decision_path)
+    write_text_file(
+        decision_path,
+        _render_approval_decision_markdown(record=record, approval=approval),
+    )
+    write_json_file(artifact_dir / "approval-decision.json", approval.model_dump(mode="json"))
+    record.role_artifacts["approval-decision"] = str(decision_path)
+    store.upsert(record)
+
+
+def _approval_actor() -> str:
+    return (
+        os.environ.get("REPOAGENTS_APPROVER")
+        or os.environ.get("USER")
+        or os.environ.get("USERNAME")
+        or "unknown"
+    )
+
+
+def _render_approval_decision_markdown(
+    *,
+    record: RunRecord,
+    approval: ApprovalRequest,
+) -> str:
+    lines = [
+        "# Approval Decision",
+        "",
+        f"- issue: #{record.issue_id} {record.issue_title}",
+        f"- run_id: {record.run_id}",
+        f"- status: {approval.status.value}",
+        f"- decided_at: {approval.decided_at.isoformat() if approval.decided_at else '-'}",
+        f"- decided_by: {approval.decided_by or '-'}",
+        f"- reason: {approval.decision_reason or '-'}",
+        "",
+        "## Proposed actions",
+    ]
+    for action in approval.actions:
+        lines.append(f"- {action.action}: {action.summary}")
+    return "\n".join(lines) + "\n"
+
+
+def _print_approval_summary(record: RunRecord) -> None:
+    approval = record.approval_request
+    if approval is None:
+        return
+    typer.echo(
+        f"- issue={record.issue_id} run_id={record.run_id} approval={approval.status.value} "
+        f"requested_at={approval.requested_at.isoformat()} actions={','.join(action.action for action in approval.actions)}"
+    )
+    typer.echo(f"  summary: {approval.summary}")
+
+
+def _print_approval_request(record: RunRecord, *, detail: bool) -> None:
+    approval = record.approval_request
+    if approval is None:
+        return
+    typer.echo(
+        f"Approval request for issue #{record.issue_id} "
+        f"(run_id={record.run_id}, status={approval.status.value})"
+    )
+    typer.echo(f"  requested_at: {approval.requested_at.isoformat()}")
+    typer.echo(f"  policy: {approval.policy_summary}")
+    typer.echo(f"  review: {approval.review_summary}")
+    if approval.decided_at:
+        typer.echo(f"  decided_at: {approval.decided_at.isoformat()}")
+    if approval.decided_by:
+        typer.echo(f"  decided_by: {approval.decided_by}")
+    if approval.decision_reason:
+        typer.echo(f"  decision_reason: {approval.decision_reason}")
+    if approval.request_artifact_path:
+        typer.echo(f"  request_artifact: {approval.request_artifact_path}")
+    if approval.decision_artifact_path:
+        typer.echo(f"  decision_artifact: {approval.decision_artifact_path}")
+    typer.echo("  proposed_actions:")
+    for action in approval.actions:
+        typer.echo(f"    - {action.action}: {action.summary}")
+        if detail:
+            for key, value in sorted(action.payload.items()):
+                typer.echo(f"      {key}: {value}")
+
+
+def _build_service_start_command() -> list[str]:
+    return [sys.executable, "-m", "repoagents", "service", "run-loop"]
+
+
+def _start_worker_service(loaded: LoadedConfig) -> dict[str, object] | None:
+    ensure_dir(loaded.logs_dir)
+    log_path = loaded.logs_dir / "service.log"
+    command = _build_service_start_command()
+    with log_path.open("ab") as handle:
+        process = subprocess.Popen(
+            command,
+            cwd=str(loaded.repo_root),
+            stdin=subprocess.DEVNULL,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    launch_snapshot = _wait_for_worker_snapshot(
+        loaded,
+        expected_pid=process.pid,
+        timeout_seconds=3.0,
+    )
+    if process.poll() is not None and launch_snapshot is None:
+        typer.echo(
+            f"RepoAgents service exited before reporting ready state. Check {log_path}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"RepoAgents service started with pid={process.pid}. "
+        f"Logs: {log_path}"
+    )
+    return launch_snapshot
+
+
+def _stop_worker_service(
+    loaded: LoadedConfig,
+    *,
+    wait_seconds: int,
+    reason: str,
+    quiet_if_not_running: bool = False,
+) -> dict[str, object]:
+    snapshot = _collect_worker_snapshot(loaded)
+    if snapshot["status"] in {"not_running", "stopped"}:
+        if not quiet_if_not_running:
+            typer.echo("RepoAgents worker is not running.")
+        return snapshot
+    if snapshot["status"] == "stale":
+        _mark_stale_worker_stopped(
+            loaded,
+            snapshot,
+            reason="Cleared stale worker record from service stop.",
+        )
+        return _collect_worker_snapshot(loaded)
+
+    store = WorkerStateStore(loaded.state_dir / "worker.json")
+    updated = store.request_stop(reason=reason)
+    if updated is None:
+        if not quiet_if_not_running:
+            typer.echo("RepoAgents worker is not running.")
+        return _collect_worker_snapshot(loaded)
+
+    typer.echo(
+        f"Stop requested for worker {updated.worker_id} "
+        f"(mode={updated.mode.value} pid={updated.pid})."
+    )
+    if wait_seconds <= 0:
+        return _collect_worker_snapshot(loaded)
+
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        current = _collect_worker_snapshot(loaded)
+        if current["status"] in {"stopped", "not_running"}:
+            typer.echo("RepoAgents worker stopped.")
+            return current
+        if current["status"] == "stale":
+            _mark_stale_worker_stopped(
+                loaded,
+                current,
+                reason="Cleared stale worker record after stop request.",
+            )
+            typer.echo("RepoAgents worker became stale and was marked stopped.")
+            return _collect_worker_snapshot(loaded)
+        time.sleep(0.2)
+    typer.echo("RepoAgents worker has not stopped yet; the request remains queued.")
+    return _collect_worker_snapshot(loaded)
+
+
+def _wait_for_worker_snapshot(
+    loaded: LoadedConfig,
+    *,
+    expected_pid: int,
+    timeout_seconds: float,
+) -> dict[str, object] | None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        snapshot = _collect_worker_snapshot(loaded)
+        if snapshot.get("pid") == expected_pid and snapshot.get("status") not in {"not_running", "stopped"}:
+            return snapshot
+        time.sleep(0.1)
+    return None
+
+
+def _mark_stale_worker_stopped(
+    loaded: LoadedConfig,
+    snapshot: dict[str, object],
+    *,
+    reason: str,
+) -> None:
+    worker_id = snapshot.get("worker_id")
+    if not isinstance(worker_id, str) or not worker_id:
+        return
+    store = WorkerStateStore(loaded.state_dir / "worker.json")
+    updated = store.mark_stopped(worker_id, reason=reason)
+    if updated is None:
+        return
+    typer.echo(
+        f"Cleared stale worker record for {updated.worker_id} "
+        f"(mode={updated.mode.value} pid={updated.pid})."
+    )
+
+
+def _collect_worker_snapshot(loaded: LoadedConfig) -> dict[str, object]:
+    snapshot = load_worker_runtime_snapshot(
+        loaded.state_dir / "worker.json",
+        expected_poll_interval_seconds=loaded.data.tracker.poll_interval_seconds,
+    )
+    pid = snapshot.get("pid")
+    process_alive = _pid_exists(pid if isinstance(pid, int) else None)
+    snapshot["process_alive"] = process_alive
+    if snapshot["status"] not in {"not_running", "stopped"} and not process_alive:
+        snapshot["status"] = "stale"
+        snapshot["stale"] = True
+        snapshot["healthy"] = False
+    return snapshot
+
+
+def _pid_exists(pid: int | None) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _print_worker_runtime_snapshot(snapshot: dict[str, object], *, label: str) -> None:
+    typer.echo(
+        f"{label}: status={snapshot.get('status', 'not_running')} "
+        f"mode={snapshot.get('mode', '-') or '-'} "
+        f"pid={snapshot.get('pid', '-') or '-'} "
+        f"heartbeat={snapshot.get('heartbeat_age_human', 'n/a')} "
+        f"last_poll={snapshot.get('last_poll_age_human', 'n/a')}"
+    )
+    if snapshot.get("worker_id"):
+        typer.echo(f"  worker_id: {snapshot['worker_id']}")
+    if snapshot.get("last_poll_completed_at"):
+        typer.echo(f"  last_poll_completed_at: {snapshot['last_poll_completed_at']}")
+    if snapshot.get("stop_requested"):
+        typer.echo(
+            f"  stop_requested_at: {snapshot.get('stop_requested_at', '-')} "
+            f"reason={snapshot.get('stop_reason', '-')}"
+        )
+    if snapshot.get("last_error"):
+        typer.echo(f"  last_error: {snapshot['last_error']}")
 
 
 def _print_status_report_health(

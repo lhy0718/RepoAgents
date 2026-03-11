@@ -196,6 +196,8 @@ def render_doctor_report_markdown(snapshot: dict[str, Any]) -> str:
 def render_status_report_markdown(snapshot: dict[str, Any]) -> str:
     meta = _mapping(snapshot, "meta")
     summary = _mapping(snapshot, "summary")
+    approval_inbox = _mapping(snapshot, "approval_inbox")
+    worker = _mapping(snapshot, "worker")
     report_health = _mapping(snapshot, "report_health")
     hero = _mapping(report_health, "hero")
     policy = _mapping(report_health, "policy")
@@ -218,10 +220,35 @@ def render_status_report_markdown(snapshot: dict[str, Any]) -> str:
         f"- total_runs: {summary.get('total_runs', 0)}",
         f"- selected_runs: {summary.get('selected_runs', 0)}",
     ]
+    if approval_inbox:
+        lines.extend(
+            [
+                f"- pending_approvals: {approval_inbox.get('pending', 0)}",
+                f"- approved_approvals: {approval_inbox.get('approved', 0)}",
+                f"- rejected_approvals: {approval_inbox.get('rejected', 0)}",
+            ]
+        )
     selected_by_status = _mapping(summary, "selected_by_status")
     if selected_by_status:
         lines.append("- selected_by_status:")
         lines.extend(f"  - {key}: {value}" for key, value in selected_by_status.items())
+
+    lines.extend(
+        [
+            "",
+            "## Worker",
+            f"- status: {worker.get('status', 'not_running')}",
+            f"- mode: {worker.get('mode', '-')}",
+            f"- pid: {worker.get('pid', '-')}",
+            f"- heartbeat_age: {worker.get('heartbeat_age_human', 'n/a')}",
+            f"- last_poll_age: {worker.get('last_poll_age_human', 'n/a')}",
+            f"- stop_requested: {worker.get('stop_requested', False)}",
+        ]
+    )
+    if worker.get("last_poll_completed_at"):
+        lines.append(f"- last_poll_completed_at: {worker['last_poll_completed_at']}")
+    if worker.get("last_error"):
+        lines.append(f"- last_error: {worker['last_error']}")
 
     lines.extend(
         [
@@ -291,6 +318,18 @@ def render_status_report_markdown(snapshot: dict[str, Any]) -> str:
             lines.append(f"- summary: {item['summary']}")
         if item.get("last_error"):
             lines.append(f"- last_error: {item['last_error']}")
+        approval = _mapping(item, "approval")
+        if approval:
+            lines.append(f"- approval_status: {approval.get('status', '-')}")
+            lines.append(f"- approval_requested_at: {approval.get('requested_at', '-')}")
+            if approval.get("decision_reason"):
+                lines.append(f"- approval_reason: {approval['decision_reason']}")
+            actions = ", ".join(
+                str(action.get("action", "action"))
+                for action in _list(approval.get("actions"))
+                if isinstance(action, dict)
+            )
+            lines.append(f"- approval_actions: {actions or 'none'}")
     return "\n".join(lines) + "\n"
 
 

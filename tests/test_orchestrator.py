@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from repoagents.config import load_config
-from repoagents.models import ExternalActionResult, IssueRef, PublicationMode, ReviewDecision, ReviewResult, ReviewSignals, RiskLevel, RoleName, RunLifecycle
-from repoagents.orchestrator import Orchestrator
+from repoagents.models import (
+    ApprovalStatus,
+    ExternalActionResult,
+    IssueRef,
+    PublicationMode,
+    ReviewDecision,
+    ReviewResult,
+    ReviewSignals,
+    RiskLevel,
+    RoleName,
+    RunLifecycle,
+    WorkerLifecycle,
+    WorkerMode,
+)
+from repoagents.orchestrator import Orchestrator, WorkerStateStore, load_worker_runtime_snapshot
 from repoagents.tracker.base import Tracker
 
 
@@ -89,6 +103,7 @@ def test_orchestrator_opens_pr_when_allowed(demo_repo: Path) -> None:
     loaded = load_config(demo_repo)
     loaded.data.safety.allow_open_pr = True
     loaded.data.safety.allow_write_comments = False
+    loaded.data.merge_policy.mode = PublicationMode.DRAFT_PR
 
     orchestrator = Orchestrator(loaded, dry_run=False)
     fake_tracker = RecordingTracker(
@@ -242,3 +257,118 @@ def test_orchestrator_handles_github_webhook_payload(demo_repo: Path) -> None:
     assert record is not None
     assert record.issue_id == 1
     assert record.status == RunLifecycle.COMPLETED
+
+
+def test_orchestrator_run_forever_tracks_worker_state(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    loaded.data.tracker.poll_interval_seconds = 5
+    orchestrator = Orchestrator(loaded, dry_run=False, worker_mode=WorkerMode.FOREGROUND)
+
+    async def fake_run_once():
+        worker = WorkerStateStore(loaded.state_dir / "worker.json").get()
+        assert worker is not None
+        assert worker.pid == os.getpid()
+        assert worker.status == WorkerLifecycle.POLLING
+        WorkerStateStore(loaded.state_dir / "worker.json").request_stop(reason="Stop requested from test.")
+        return []
+
+    orchestrator.run_once = fake_run_once  # type: ignore[method-assign]
+
+    asyncio.run(orchestrator.run_forever())
+
+    snapshot = load_worker_runtime_snapshot(
+        loaded.state_dir / "worker.json",
+        expected_poll_interval_seconds=loaded.data.tracker.poll_interval_seconds,
+    )
+    assert snapshot["status"] == "stopped"
+    assert snapshot["mode"] == "foreground"
+    assert snapshot["pid"] == os.getpid()
+    assert snapshot["last_poll_completed_at"] is not None
+
+
+def test_orchestrator_requeues_issue_when_worker_lease_is_replaced_before_publish(
+    demo_repo: Path,
+) -> None:
+    loaded = load_config(demo_repo)
+    loaded.data.safety.allow_open_pr = True
+    loaded.data.safety.allow_write_comments = True
+
+    issue = IssueRef(
+        id=1,
+        number=1,
+        title="Fix empty input crash",
+        body="Calling parse_items on an empty string should return an empty list.",
+        labels=["bug"],
+        comments=[],
+    )
+    orchestrator = Orchestrator(loaded, dry_run=False, worker_mode=WorkerMode.SERVICE)
+    tracker = RecordingTracker(issue)
+    orchestrator.tracker = tracker
+    orchestrator.worker_id = "worker-1"
+    orchestrator.worker_state_store.start(
+        worker_id="worker-1",
+        pid=os.getpid(),
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+    original_run_role = orchestrator._run_role
+
+    async def fake_run_role(record, role, context):
+        result = await original_run_role(record, role, context)
+        if role.name == "reviewer":
+            orchestrator.worker_state_store.start(
+                worker_id="worker-2",
+                pid=os.getpid(),
+                mode=WorkerMode.SERVICE,
+                poll_interval_seconds=60,
+            )
+        return result
+
+    orchestrator._run_role = fake_run_role  # type: ignore[method-assign]
+
+    record = asyncio.run(orchestrator.run_issue_by_id(1, force=True))
+
+    assert record is not None
+    assert record.status == RunLifecycle.RETRY_PENDING
+    assert record.next_retry_at is not None
+    assert record.last_error is not None
+    assert "lease lost" in record.last_error.lower()
+    assert tracker.branch_calls == []
+    assert tracker.pr_calls == []
+    assert tracker.comment_calls == []
+
+
+def test_orchestrator_stages_human_approval_request_without_external_writes(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    loaded.data.merge_policy.mode = PublicationMode.HUMAN_APPROVAL
+    loaded.data.safety.allow_open_pr = True
+    loaded.data.safety.allow_write_comments = True
+
+    tracker = RecordingTracker(
+        IssueRef(
+            id=2,
+            number=2,
+            title="Improve README quickstart",
+            body="Document install and test steps for contributors.",
+            labels=["docs"],
+            comments=[],
+        )
+    )
+    orchestrator = Orchestrator(loaded, dry_run=False)
+    orchestrator.tracker = tracker
+
+    record = asyncio.run(orchestrator.run_issue_by_id(2, force=True))
+
+    assert record is not None
+    assert record.status == RunLifecycle.COMPLETED
+    assert record.approval_request is not None
+    assert record.approval_request.status == ApprovalStatus.PENDING
+    assert [action.action for action in record.approval_request.actions] == [
+        "post_comment",
+        "create_branch",
+        "open_pr",
+    ]
+    assert tracker.branch_calls == []
+    assert tracker.pr_calls == []
+    assert tracker.comment_calls == []
+    assert "approval-request" in record.role_artifacts

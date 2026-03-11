@@ -113,6 +113,7 @@ def build_dashboard_tui_model(snapshot: dict[str, object]) -> DashboardTuiModel:
     meta = _mapping(snapshot.get("meta"))
     hero = _mapping(snapshot.get("hero"))
     counts = _mapping(snapshot.get("counts"))
+    worker = _mapping(snapshot.get("worker"))
     reports = _mapping(snapshot.get("reports"))
     retention = _mapping(snapshot.get("sync_retention"))
     ops = _mapping(snapshot.get("ops_snapshots"))
@@ -128,13 +129,14 @@ def build_dashboard_tui_model(snapshot: dict[str, object]) -> DashboardTuiModel:
             f"Runs {counts.get('visible_runs', 0)}/{counts.get('total_runs', 0)} | "
             f"Reports {reports.get('total', 0)} | "
             f"Handoffs {counts.get('visible_sync_handoffs', 0)} | "
+            f"Approvals {counts.get('pending_approvals', 0)} | "
             f"Retention issues {retention.get('total_issues', 0)}"
         ),
         (
             f"Ops history {ops.get('history_entry_count', 0)} | "
             f"Ops archives {ops.get('archive_entry_count', 0)} | "
-            f"Policy drift reports {counts.get('policy_drift_reports', 0)} | "
-            f"Last updated {meta.get('last_updated', 'n/a')}"
+            f"Worker {worker.get('status', 'not_running')} | "
+            f"Last poll {worker.get('last_poll_age_human', 'n/a')}"
         ),
     )
     return DashboardTuiModel(
@@ -156,11 +158,15 @@ def _build_runs_section(snapshot: dict[str, object]) -> DashboardTuiSection:
     for run in _list_of_dicts(snapshot.get("runs")):
         issue_id = run.get("issue_id", "?")
         issue_title = run.get("issue_title", "Untitled issue")
+        status = str(run.get("status", "unknown"))
         details = [
             f"run_id: {run.get('run_id', 'n/a')}",
             f"backend: {run.get('backend_mode', 'n/a')}",
             f"updated_at: {run.get('updated_at', 'n/a')}",
         ]
+        next_retry_at = _string(run.get("next_retry_at"))
+        if next_retry_at:
+            details.append(f"next_retry_at: {next_retry_at}")
         current_role = _string(run.get("current_role"))
         if current_role:
             details.append(f"current_role: {current_role}")
@@ -170,6 +176,14 @@ def _build_runs_section(snapshot: dict[str, object]) -> DashboardTuiSection:
         last_error = _string(run.get("last_error"))
         if last_error:
             details.append(f"last_error: {last_error}")
+        if status == RunLifecycle.RETRY_PENDING.value:
+            if isinstance(issue_id, int):
+                details.append(
+                    "retry: queued for the next `repoagents run` poll; "
+                    f"use `repoagents trigger {issue_id}` to execute immediately"
+                )
+            else:
+                details.append("retry: queued for the next `repoagents run` poll")
         workspace_path = _string(run.get("workspace_path"))
         if workspace_path:
             details.append(f"workspace: {workspace_path}")
@@ -181,20 +195,33 @@ def _build_runs_section(snapshot: dict[str, object]) -> DashboardTuiSection:
         if external_actions:
             labels = ", ".join(str(item.get("action", "action")) for item in external_actions[:6])
             details.append(f"external_actions: {labels}")
+        approval = _mapping(run.get("approval"))
+        if approval:
+            details.append(f"approval_status: {approval.get('status', 'pending')}")
+            details.append(f"approval_summary: {approval.get('summary', 'Approval pending.')}")
+            labels = ", ".join(
+                str(item.get("action", "action"))
+                for item in _list_of_dicts(approval.get("actions"))
+            )
+            details.append(f"approval_actions: {labels or 'none'}")
         actions: tuple[DashboardTuiAction, ...] = ()
-        if isinstance(issue_id, int) and str(run.get("status", "unknown")) != RunLifecycle.IN_PROGRESS.value:
+        if isinstance(issue_id, int) and status != RunLifecycle.IN_PROGRESS.value:
             actions = (
                 DashboardTuiAction(
                     key="retry_issue",
                     label=f"Retry issue #{issue_id}",
-                    confirmation_prompt=f"Schedule issue #{issue_id} for immediate retry? [y/N]",
+                    confirmation_prompt=(
+                        f"Queue issue #{issue_id} for retry? "
+                        f"A running `repoagents run` loop must pick it up, "
+                        f"or use `repoagents trigger {issue_id}` to run it now. [y/N]"
+                    ),
                 ),
             )
         entries.append(
             DashboardTuiEntry(
                 title=f"#{issue_id} {issue_title}",
-                subtitle=f"{run.get('status', 'unknown')} | attempts={run.get('attempts', 0)}",
-                status=str(run.get("status", "unknown")),
+                subtitle=f"{_run_status_label(status)} | attempts={run.get('attempts', 0)}",
+                status=status,
                 details=tuple(details),
                 actions=actions,
                 context={
@@ -741,7 +768,11 @@ def execute_dashboard_tui_action(
         updated = store.force_retry(issue_id, "Manual retry requested from dashboard TUI.")
         if updated is None:
             raise RuntimeError(f"Unable to schedule retry for issue #{issue_id}.")
-        return f"Issue #{issue_id} scheduled for immediate retry."
+        return (
+            f"Issue #{issue_id} queued for retry. "
+            f"A running `repoagents run` loop will pick it up; "
+            f"use `repoagents trigger {issue_id}` to run it now."
+        )
 
     if section_key == "reports" and action.key == "refresh_report":
         report_key = entry.context.get("report_key")
@@ -970,12 +1001,18 @@ def _status_tag(status: str) -> str:
         "completed": "done",
         "failed": "fail",
         "in_progress": "run",
-        "retry_pending": "wait",
+        "retry_pending": "queue",
         "clean": "ok",
         "attention": "warn",
         "issues": "err",
         "available": "ok",
     }.get(normalized, normalized[:5] or "n/a")
+
+
+def _run_status_label(status: str) -> str:
+    if status.lower() == RunLifecycle.RETRY_PENDING.value:
+        return "queued retry"
+    return status
 
 
 def _mapping(value: object) -> dict[str, object]:

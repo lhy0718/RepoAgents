@@ -3,14 +3,23 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import os
 
 import yaml
 
 from repoagents.config import load_config
 from repoagents.dashboard import build_dashboard
-from repoagents.models import ExternalActionResult, RunLifecycle, RunRecord
+from repoagents.models import (
+    ApprovalActionProposal,
+    ApprovalRequest,
+    ApprovalStatus,
+    ExternalActionResult,
+    RunLifecycle,
+    RunRecord,
+    WorkerMode,
+)
 from repoagents.ops_status import build_ops_status_exports, build_ops_status_snapshot
-from repoagents.orchestrator import RunStateStore
+from repoagents.orchestrator import RunStateStore, WorkerStateStore
 
 
 def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
@@ -197,6 +206,73 @@ def test_build_dashboard_renders_recent_runs_and_links(demo_repo: Path) -> None:
     assert "Tests did not cover the empty-string branch." in dashboard_markdown
     assert "## Sync handoffs" in dashboard_markdown
     assert "- bundle_key: issue:1|head:repoagents/issue-1-fix-empty-input" in dashboard_markdown
+
+
+def test_build_dashboard_includes_worker_snapshot(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    worker_store = WorkerStateStore(loaded.state_dir / "worker.json")
+    record = worker_store.start(
+        worker_id="worker-1",
+        pid=os.getpid(),
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+    worker_store.complete_poll(record.worker_id, run_count=0)
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        refresh_seconds=30,
+        formats=("json", "markdown"),
+    )
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert payload["worker"]["status"] == "idle"
+    assert payload["worker"]["pid"] == os.getpid()
+    assert payload["runtime"]["worker_state_path"].endswith("worker.json")
+
+
+def test_build_dashboard_serializes_approval_requests(demo_repo: Path) -> None:
+    loaded = load_config(demo_repo)
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-approval",
+            issue_id=4,
+            issue_title="Needs approval",
+            fingerprint="approval-4",
+            status=RunLifecycle.COMPLETED,
+            approval_request=ApprovalRequest(
+                status=ApprovalStatus.PENDING,
+                summary="Maintainer approval required before publish.",
+                policy_summary="Human approval remains required before publishing changes.",
+                review_summary="Reviewer approved with low risk.",
+                actions=[
+                    ApprovalActionProposal(
+                        action="open_pr",
+                        summary="Open the generated draft PR.",
+                    )
+                ],
+            ),
+        )
+    )
+
+    result = build_dashboard(
+        loaded,
+        limit=10,
+        refresh_seconds=30,
+        formats=("json", "markdown"),
+    )
+    payload = json.loads(result.exported_paths["json"].read_text(encoding="utf-8"))
+    markdown = result.exported_paths["markdown"].read_text(encoding="utf-8")
+
+    assert payload["counts"]["pending_approvals"] == 1
+    assert payload["runs"][0]["approval"]["status"] == "pending"
+    assert payload["runs"][0]["approval"]["actions"][0]["action"] == "open_pr"
+    assert "- approval_status: pending" in markdown
+    assert "## Worker" in markdown
+    assert "- status: not_running" in markdown
 
 
 def test_build_dashboard_includes_sync_retention_snapshot(demo_repo: Path) -> None:

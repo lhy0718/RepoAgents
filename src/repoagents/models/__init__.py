@@ -1,5 +1,9 @@
 from repoagents.models.domain import (
+    ApprovalActionProposal,
+    ApprovalRequest,
+    ApprovalStatus,
     CURRENT_RUN_STATE_VERSION,
+    CURRENT_WORKER_STATE_VERSION,
     DiffReport,
     EngineeringResult,
     ExternalActionResult,
@@ -20,10 +24,18 @@ from repoagents.models.domain import (
     RunRecord,
     RunStateFile,
     TriageResult,
+    WorkerLifecycle,
+    WorkerMode,
+    WorkerRecord,
+    WorkerStateFile,
 )
 
 __all__ = [
     "CURRENT_RUN_STATE_VERSION",
+    "CURRENT_WORKER_STATE_VERSION",
+    "ApprovalActionProposal",
+    "ApprovalRequest",
+    "ApprovalStatus",
     "DiffReport",
     "EngineeringResult",
     "ExternalActionResult",
@@ -44,4 +56,8 @@ __all__ = [
     "RunRecord",
     "RunStateFile",
     "TriageResult",
+    "WorkerLifecycle",
+    "WorkerMode",
+    "WorkerRecord",
+    "WorkerStateFile",
 ]

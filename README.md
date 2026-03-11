@@ -319,6 +319,14 @@ repoagents init --upgrade
 repoagents doctor
 repoagents run
 repoagents run --dry-run
+repoagents service start
+repoagents service status
+repoagents service restart
+repoagents service stop
+repoagents approval ls
+repoagents approval show 123
+repoagents approval approve 123 --reason "ready"
+repoagents approval reject 123 --reason "needs changes"
 repoagents trigger 123 --dry-run
 repoagents webhook --event issues --payload webhook.json --dry-run
 repoagents status
@@ -348,6 +356,8 @@ Helpful flags:
 - `repoagents init --upgrade --force` refreshes drifted managed files from the packaged scaffold.
 - `repoagents doctor --format all` exports JSON and Markdown operator snapshots under `.ai-repoagents/reports/doctor.json` and `.ai-repoagents/reports/doctor.md`.
 - `repoagents run --once` executes a single polling cycle and exits.
+- `repoagents service start` launches a detached repo-local worker, while `repoagents service status`, `repoagents service restart`, and `repoagents service stop` inspect, replace, or stop it through `.ai-repoagents/state/worker.json`. `service stop` also clears a stale worker record when the tracked pid is already gone.
+- `repoagents approval ls` and `repoagents approval show <issue-id>` review pending human-approval requests from one CLI surface. `repoagents approval approve|reject <issue-id>` records a maintainer decision plus artifacts, but does not auto-publish writes in this slice.
 - `repoagents status --issue 123` inspects the latest persisted run for one issue.
 - `repoagents status` also summarizes current report health, the active policy thresholds, an aggregate `policy_health` line, and the current ops snapshot index posture so operators can see both reporting health and handoff history posture without opening the dashboard. It warns when raw report exports still carry an older embedded policy. `status` and `doctor` now reuse the same related-report detail block shape as the sync/cleanup CLI, so drift warnings and remediation render consistently across operator surfaces.
 - `repoagents status --format all` exports JSON and Markdown status snapshots under `.ai-repoagents/reports/status.json` and `.ai-repoagents/reports/status.md`.

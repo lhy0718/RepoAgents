@@ -12,7 +12,8 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-CURRENT_RUN_STATE_VERSION = 1
+CURRENT_RUN_STATE_VERSION = 2
+CURRENT_WORKER_STATE_VERSION = 1
 LEGACY_RUN_STATE_VERSION = 0
 
 
@@ -59,6 +60,12 @@ class PublicationMode(StrEnum):
     HUMAN_APPROVAL = "human_approval"
 
 
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class RunLifecycle(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -66,6 +73,18 @@ class RunLifecycle(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+class WorkerMode(StrEnum):
+    FOREGROUND = "foreground"
+    SERVICE = "service"
+
+
+class WorkerLifecycle(StrEnum):
+    STARTING = "starting"
+    IDLE = "idle"
+    POLLING = "polling"
+    STOPPED = "stopped"
 
 
 class IssueComment(BaseModel):
@@ -167,6 +186,28 @@ class ExternalActionResult(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class ApprovalActionProposal(BaseModel):
+    action: str
+    summary: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ApprovalRequest(BaseModel):
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    requested_at: datetime = Field(default_factory=utc_now)
+    requested_by: str = "repoagents"
+    decided_at: datetime | None = None
+    decided_by: str | None = None
+    decision_reason: str | None = None
+    publication_mode: PublicationMode = PublicationMode.HUMAN_APPROVAL
+    summary: str
+    policy_summary: str
+    review_summary: str
+    request_artifact_path: str | None = None
+    decision_artifact_path: str | None = None
+    actions: list[ApprovalActionProposal] = Field(default_factory=list)
+
+
 class RunRecord(BaseModel):
     run_id: str
     issue_id: int
@@ -186,6 +227,7 @@ class RunRecord(BaseModel):
     summary: str | None = None
     role_artifacts: dict[str, str] = Field(default_factory=dict)
     external_actions: list[ExternalActionResult] = Field(default_factory=list)
+    approval_request: ApprovalRequest | None = None
 
     def touch(self) -> None:
         self.updated_at = utc_now()
@@ -194,3 +236,31 @@ class RunRecord(BaseModel):
 class RunStateFile(BaseModel):
     version: int = CURRENT_RUN_STATE_VERSION
     runs: dict[str, RunRecord] = Field(default_factory=dict)
+
+
+class WorkerRecord(BaseModel):
+    worker_id: str
+    pid: int
+    mode: WorkerMode
+    status: WorkerLifecycle
+    poll_interval_seconds: int
+    started_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    last_heartbeat_at: datetime = Field(default_factory=utc_now)
+    last_poll_started_at: datetime | None = None
+    last_poll_completed_at: datetime | None = None
+    last_poll_run_count: int = 0
+    stop_requested_at: datetime | None = None
+    stop_reason: str | None = None
+    stopped_at: datetime | None = None
+    last_error: str | None = None
+
+    def touch(self) -> None:
+        now = utc_now()
+        self.updated_at = now
+        self.last_heartbeat_at = now
+
+
+class WorkerStateFile(BaseModel):
+    version: int = CURRENT_WORKER_STATE_VERSION
+    worker: WorkerRecord | None = None

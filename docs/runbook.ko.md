@@ -20,7 +20,8 @@
 2. `uv run repoagents status`로 최신 상태를 확인한다
 3. `uv run repoagents dashboard`로 로컬 대시보드를 갱신한다
 4. `uv run repoagents run`으로 polling loop를 실행한다
-5. 표적 개입이 필요하면 `uv run repoagents trigger <issue-id>` 또는 `uv run repoagents webhook ...`를 사용한다
+5. 분리된 repo-local worker가 필요하면 `uv run repoagents service start`를 사용한다
+6. 표적 개입이 필요하면 `uv run repoagents trigger <issue-id>` 또는 `uv run repoagents webhook ...`를 사용한다
 
 ## 명령 참고
 
@@ -30,6 +31,10 @@ uv run repoagents doctor --format all
 uv run repoagents run
 uv run repoagents run --once
 uv run repoagents run --dry-run
+uv run repoagents service start
+uv run repoagents service status
+uv run repoagents service restart
+uv run repoagents service stop
 uv run repoagents trigger 123
 uv run repoagents trigger 123 --dry-run
 uv run repoagents webhook --event issues --payload webhook.json --dry-run
@@ -42,7 +47,9 @@ uv run repoagents ops status --format all
 uv run repoagents github smoke --require-write-ready
 uv run repoagents ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
 uv run repoagents ops snapshot --archive --history-limit 10 --prune-history
+```
 
+`uv run repoagents service restart`는 현재 worker가 멈출 때까지 기다린 뒤 replacement를 시작합니다. `uv run repoagents service stop`은 저장된 pid가 이미 사라진 경우 stale worker record도 함께 정리합니다.
 명령은 아래 latest/history index도 함께 갱신합니다.
 
 - `.ai-repoagents/reports/ops/latest.json`
@@ -214,6 +221,8 @@ RepoAgents의 기본값은 계속 보수적입니다.
 - 위험한 diff는 여전히 사람 판단이 필요함
 - docs/tests 변경은 정책에 따라 draft PR까지 갈 수 있지만 merge는 수동
 - secrets, CI/CD 변경, auth 민감 경로, 대규모 삭제는 incident로 취급하고 검토
+- `repoagents approval ls`, `repoagents approval show <issue-id>`로 pending publication action을 확인
+- `repoagents approval approve|reject <issue-id>`는 maintainer 결정과 artifact를 기록하며, publish는 이번 슬라이스에서는 수동 유지
 
 ## 권장 운영 주기
 

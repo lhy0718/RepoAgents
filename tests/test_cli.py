@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import os
 import re
 import subprocess
 import tarfile
@@ -15,9 +16,20 @@ import yaml
 
 from repoagents.cli.app import app
 from repoagents.config import load_config
-from repoagents.models import ExternalActionResult, IssueComment, IssueRef, RunLifecycle, RunRecord
+from repoagents.models import (
+    ApprovalActionProposal,
+    ApprovalRequest,
+    ApprovalStatus,
+    ExternalActionResult,
+    IssueComment,
+    IssueRef,
+    RunLifecycle,
+    RunRecord,
+    WorkerLifecycle,
+    WorkerMode,
+)
 from repoagents.models.domain import utc_now
-from repoagents.orchestrator import RunStateStore
+from repoagents.orchestrator import RunStateStore, WorkerStateStore
 from repoagents.sync_audit import SyncAuditBuildResult
 
 
@@ -3607,7 +3619,7 @@ def test_cli_sync_apply_bundle_archives_related_pr_handoff(demo_repo: Path, monk
     assert "20260308T010203000001Z-pr-body.md" in list_result.stdout
 
 
-def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
+def test_cli_retry_queues_issue_for_next_poll(demo_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(demo_repo)
     store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     future_retry = utc_now() + timedelta(days=365)
@@ -3628,12 +3640,321 @@ def test_cli_retry_forces_immediate_rerun(demo_repo: Path, monkeypatch) -> None:
     reloaded = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
     record = reloaded.get(1)
     assert result.exit_code == 0
-    assert "scheduled for immediate retry" in result.stdout
+    assert "queued for retry" in result.stdout
+    assert "repoagents run" in result.stdout
+    assert "repoagents trigger 1" in result.stdout
     assert record is not None
     assert record.status == RunLifecycle.RETRY_PENDING
     assert record.next_retry_at is not None
     assert record.next_retry_at < future_retry
     assert record.last_error == "Manual retry requested from CLI."
+
+
+def test_cli_status_prints_worker_snapshot(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    worker_store = WorkerStateStore(loaded.state_dir / "worker.json")
+    record = worker_store.start(
+        worker_id="worker-1",
+        pid=os.getpid(),
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+    worker_store.complete_poll(record.worker_id, run_count=0)
+
+    result = runner.invoke(app, ["status"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "Worker: status=idle" in result.stdout
+    assert "pid=" in result.stdout
+
+
+def test_cli_status_prints_approval_inbox_summary(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    store = RunStateStore(loaded.state_dir / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-approval",
+            issue_id=5,
+            issue_title="Needs maintainer decision",
+            fingerprint="approval-5",
+            status=RunLifecycle.COMPLETED,
+            approval_request=ApprovalRequest(
+                status=ApprovalStatus.PENDING,
+                summary="Maintainer approval required before publish.",
+                policy_summary="Human approval remains required before publishing changes.",
+                review_summary="Reviewer approved with low risk.",
+                actions=[
+                    ApprovalActionProposal(
+                        action="open_pr",
+                        summary="Open the draft pull request.",
+                    )
+                ],
+            ),
+        )
+    )
+
+    result = runner.invoke(app, ["status"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "Approval inbox: pending=1 approved=0 rejected=0" in result.stdout
+    assert "approval: status=pending" in result.stdout
+
+
+def test_cli_service_status_prints_worker_snapshot(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    worker_store = WorkerStateStore(loaded.state_dir / "worker.json")
+    record = worker_store.start(
+        worker_id="worker-1",
+        pid=os.getpid(),
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+    worker_store.complete_poll(record.worker_id, run_count=0)
+
+    result = runner.invoke(app, ["service", "status"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "Worker: status=idle" in result.stdout
+    assert "last_poll=" in result.stdout
+
+
+def test_cli_service_start_spawns_detached_worker(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    calls: dict[str, object] = {}
+
+    class DummyProcess:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        return DummyProcess()
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(app_module, "_enforce_workspace_run_policy", lambda loaded: None)
+    monkeypatch.setattr(
+        app_module,
+        "_wait_for_worker_snapshot",
+        lambda loaded, expected_pid, timeout_seconds: {
+            "status": "starting",
+            "mode": "service",
+            "pid": expected_pid,
+            "heartbeat_age_human": "0s",
+            "last_poll_age_human": "n/a",
+            "worker_id": "worker-1",
+            "last_poll_completed_at": None,
+            "stop_requested": False,
+            "last_error": None,
+        },
+    )
+
+    result = runner.invoke(app, ["service", "start"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert calls["command"] == [app_module.sys.executable, "-m", "repoagents", "service", "run-loop"]
+    assert calls["kwargs"]["cwd"] == str(demo_repo)
+    assert calls["kwargs"]["start_new_session"] is True
+    assert "RepoAgents service started with pid=4242" in result.stdout
+
+
+def test_cli_service_stop_requests_worker_shutdown(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    worker_store = WorkerStateStore(loaded.state_dir / "worker.json")
+    worker_store.start(
+        worker_id="worker-1",
+        pid=os.getpid(),
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+
+    result = runner.invoke(app, ["service", "stop", "--wait-seconds", "0"], catch_exceptions=False)
+
+    snapshot = WorkerStateStore(loaded.state_dir / "worker.json").get()
+    assert result.exit_code == 0
+    assert "Stop requested for worker worker-1" in result.stdout
+    assert snapshot is not None
+    assert snapshot.stop_requested_at is not None
+
+
+def test_cli_service_stop_clears_stale_worker_record(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    loaded = load_config(demo_repo)
+    worker_store = WorkerStateStore(loaded.state_dir / "worker.json")
+    worker_store.start(
+        worker_id="worker-1",
+        pid=999999,
+        mode=WorkerMode.SERVICE,
+        poll_interval_seconds=60,
+    )
+    monkeypatch.setattr(app_module, "_pid_exists", lambda pid: False)
+
+    result = runner.invoke(app, ["service", "stop", "--wait-seconds", "0"], catch_exceptions=False)
+
+    snapshot = WorkerStateStore(loaded.state_dir / "worker.json").get()
+    assert result.exit_code == 0
+    assert "Cleared stale worker record for worker-1" in result.stdout
+    assert snapshot is not None
+    assert snapshot.status == WorkerLifecycle.STOPPED
+
+
+def test_cli_service_restart_stops_then_starts_worker(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    calls: dict[str, object] = {}
+
+    def fake_stop(loaded, *, wait_seconds, reason, quiet_if_not_running=False):
+        calls["stop"] = (wait_seconds, reason, quiet_if_not_running)
+        return {"status": "stopped"}
+
+    def fake_start(loaded):
+        calls["started"] = True
+        return {
+            "status": "starting",
+            "mode": "service",
+            "pid": 4242,
+            "heartbeat_age_human": "0s",
+            "last_poll_age_human": "n/a",
+            "worker_id": "worker-2",
+            "last_poll_completed_at": None,
+            "stop_requested": False,
+            "last_error": None,
+        }
+
+    monkeypatch.setattr(app_module, "_enforce_workspace_run_policy", lambda loaded: None)
+    monkeypatch.setattr(app_module, "_stop_worker_service", fake_stop)
+    monkeypatch.setattr(app_module, "_start_worker_service", fake_start)
+
+    result = runner.invoke(app, ["service", "restart", "--wait-seconds", "3"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert calls["stop"] == (3, "Restart requested from CLI.", True)
+    assert calls["started"] is True
+    assert "Worker: status=starting mode=service pid=4242" in result.stdout
+
+
+def test_cli_approval_ls_and_show_render_pending_requests(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-9",
+            issue_id=9,
+            issue_title="Approval pending issue",
+            fingerprint="approval-9",
+            status=RunLifecycle.COMPLETED,
+            approval_request=ApprovalRequest(
+                status=ApprovalStatus.PENDING,
+                summary="Maintainer approval required before publish.",
+                policy_summary="Human approval remains required before publishing changes.",
+                review_summary="Reviewer approved with low risk.",
+                actions=[
+                    ApprovalActionProposal(
+                        action="post_comment",
+                        summary="Post the generated issue comment.",
+                        payload={"artifact_path": "/tmp/approval-comment.md"},
+                    )
+                ],
+            ),
+        )
+    )
+
+    list_result = runner.invoke(app, ["approval", "ls"], catch_exceptions=False)
+    show_result = runner.invoke(app, ["approval", "show", "9"], catch_exceptions=False)
+
+    assert list_result.exit_code == 0
+    assert "Approval inbox: pending=1 approved=0 rejected=0" in list_result.stdout
+    assert "issue=9 run_id=run-9 approval=pending" in list_result.stdout
+    assert show_result.exit_code == 0
+    assert "Approval request for issue #9" in show_result.stdout
+    assert "post_comment: Post the generated issue comment." in show_result.stdout
+    assert "artifact_path: /tmp/approval-comment.md" in show_result.stdout
+
+
+def test_cli_approval_approve_records_decision_artifact(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-10",
+            issue_id=10,
+            issue_title="Approve me",
+            fingerprint="approval-10",
+            status=RunLifecycle.COMPLETED,
+            approval_request=ApprovalRequest(
+                status=ApprovalStatus.PENDING,
+                summary="Maintainer approval required before publish.",
+                policy_summary="Human approval remains required before publishing changes.",
+                review_summary="Reviewer approved with low risk.",
+                actions=[
+                    ApprovalActionProposal(
+                        action="open_pr",
+                        summary="Open the draft pull request.",
+                    )
+                ],
+            ),
+        )
+    )
+    monkeypatch.setenv("REPOAGENTS_APPROVER", "repoagents-tests")
+
+    result = runner.invoke(
+        app,
+        ["approval", "approve", "10", "--reason", "Looks safe to publish."],
+        catch_exceptions=False,
+    )
+
+    reloaded = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json").get(10)
+    decision_path = demo_repo / ".ai-repoagents" / "artifacts" / "issue-10" / "run-10" / "approval-decision.md"
+    assert result.exit_code == 0
+    assert "Approved pending actions for issue #10." in result.stdout
+    assert reloaded is not None
+    assert reloaded.approval_request is not None
+    assert reloaded.approval_request.status == ApprovalStatus.APPROVED
+    assert reloaded.approval_request.decision_reason == "Looks safe to publish."
+    assert reloaded.approval_request.decided_by == "repoagents-tests"
+    assert decision_path.exists()
+
+
+def test_cli_approval_reject_requires_pending_request(demo_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(demo_repo)
+    store = RunStateStore(demo_repo / ".ai-repoagents" / "state" / "runs.json")
+    store.upsert(
+        RunRecord(
+            run_id="run-11",
+            issue_id=11,
+            issue_title="Already decided",
+            fingerprint="approval-11",
+            status=RunLifecycle.COMPLETED,
+            approval_request=ApprovalRequest(
+                status=ApprovalStatus.REJECTED,
+                summary="Maintainer approval required before publish.",
+                policy_summary="Human approval remains required before publishing changes.",
+                review_summary="Reviewer approved with low risk.",
+                decided_at=utc_now(),
+                decision_reason="Out of scope.",
+                actions=[
+                    ApprovalActionProposal(
+                        action="post_comment",
+                        summary="Post the generated issue comment.",
+                    )
+                ],
+            ),
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        ["approval", "reject", "11", "--reason", "Still out of scope."],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "approval is already rejected" in _normalized_cli_output(result)
 
 
 def test_cli_clean_removes_terminal_run_workspace_and_artifacts(demo_repo: Path, monkeypatch) -> None:

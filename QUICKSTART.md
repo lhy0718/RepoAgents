@@ -275,8 +275,15 @@ uv run repoagents webhook --event issues --payload webhook.json --dry-run
 - run the full release preflight gate: `uv run repoagents release check --format all`
 - validate local release assets: `uv run repoagents release assets --build --smoke-install --format all`
 - run one issue immediately: `uv run repoagents trigger 123`
+- start the detached repo-local worker: `uv run repoagents service start`
+- inspect the detached worker: `uv run repoagents service status`
+- restart the detached worker after config changes or a lease takeover: `uv run repoagents service restart`
+- request the detached worker to stop: `uv run repoagents service stop`
+- review the approval inbox: `uv run repoagents approval ls`
+- inspect one approval request: `uv run repoagents approval show 123`
+- record a maintainer approval decision: `uv run repoagents approval approve 123 --reason "ready for manual publish"`
 - validate a GitHub webhook payload: `uv run repoagents webhook --event issues --payload webhook.json --dry-run`
-- force an immediate retry: `uv run repoagents retry 123`
+- queue a retry for the next poll cycle: `uv run repoagents retry 123`
 - preview stale local cleanup: `uv run repoagents clean --dry-run`
 - preview manifest-aware sync archive cleanup: `uv run repoagents clean --sync-applied --dry-run`
 - export cleanup preview/report: `uv run repoagents clean --sync-applied --dry-run --report --report-format all`

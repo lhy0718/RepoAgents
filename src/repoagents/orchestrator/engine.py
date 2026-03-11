@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
+import os
 from pathlib import Path
 
 from repoagents.backend import BackendExecutionError, build_backend
 from repoagents.config import LoadedConfig
 from repoagents.logging import get_logger
 from repoagents.models import (
+    ApprovalActionProposal,
+    ApprovalRequest,
+    ApprovalStatus,
     IssueRef,
     PublicationMode,
     ReviewDecision,
@@ -16,10 +20,12 @@ from repoagents.models import (
     RiskLevel,
     RunLifecycle,
     RunRecord,
+    WorkerLifecycle,
+    WorkerMode,
 )
 from repoagents.models.domain import utc_now
 from repoagents.orchestrator.publication import PublicationDraft, PublicationRenderer
-from repoagents.orchestrator.state import RunStateStore
+from repoagents.orchestrator.state import RunStateStore, WorkerStateStore
 from repoagents.orchestrator.webhooks import WebhookDecision, parse_github_webhook
 from repoagents.policies import evaluate_policy
 from repoagents.prompts import PromptRenderer
@@ -39,6 +45,8 @@ from repoagents.utils import (
     rank_duplicate_candidates,
     render_duplicate_candidates_context,
     sanitize_branch_name,
+    write_json_file,
+    write_text_file,
 )
 from repoagents.workspace import build_workspace_manager
 
@@ -59,10 +67,22 @@ class DryRunPreview:
     pr_body_preview: str
 
 
+class WorkerLeaseLostError(RuntimeError):
+    """Raised when a worker no longer owns the active worker lease."""
+
+
 class Orchestrator:
-    def __init__(self, loaded: LoadedConfig, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        loaded: LoadedConfig,
+        dry_run: bool = False,
+        *,
+        worker_mode: WorkerMode | None = None,
+    ) -> None:
         self.loaded = loaded
         self.dry_run = dry_run
+        self.worker_mode = worker_mode
+        self.worker_id: str | None = None
         self.logger = get_logger("repoagents.orchestrator")
         ensure_dir(self.loaded.workspace_root)
         ensure_dir(self.loaded.artifacts_dir)
@@ -74,6 +94,7 @@ class Orchestrator:
         self.artifacts = ArtifactStore(loaded.artifacts_dir)
         self.workspace_manager = build_workspace_manager(loaded)
         self.state_store = RunStateStore(loaded.state_dir / "runs.json")
+        self.worker_state_store = WorkerStateStore(loaded.state_dir / "worker.json")
         recovered = self.state_store.recover_in_progress_runs()
         if recovered:
             self.logger.warning(
@@ -94,9 +115,62 @@ class Orchestrator:
 
     async def run_forever(self) -> None:
         poll = self.loaded.data.tracker.poll_interval_seconds
-        while True:
-            await self.run_once()
-            await asyncio.sleep(poll)
+        worker_enabled = self.worker_mode is not None
+        stop_reason = "Worker loop stopped."
+        if worker_enabled and self.worker_mode is not None:
+            self.worker_id = self._new_worker_id()
+            self.worker_state_store.start(
+                worker_id=self.worker_id,
+                pid=os.getpid(),
+                mode=self.worker_mode,
+                poll_interval_seconds=poll,
+            )
+            self.logger.info(
+                "Worker loop started.",
+                extra={
+                    "worker_id": self.worker_id,
+                    "worker_mode": self.worker_mode.value,
+                    "pid": os.getpid(),
+                    "poll_interval_seconds": poll,
+                },
+            )
+        try:
+            while True:
+                if worker_enabled and self.worker_id:
+                    if not self.worker_state_store.holds_lease(self.worker_id):
+                        stop_reason = "Worker lease lost to another process."
+                        break
+                    if self.worker_state_store.stop_requested(self.worker_id):
+                        stop_reason = "Stop requested from service control command."
+                        break
+                    if self.worker_state_store.begin_poll(self.worker_id) is None:
+                        stop_reason = "Worker lease lost to another process."
+                        break
+                try:
+                    result = await self.run_once()
+                except Exception as exc:
+                    if worker_enabled and self.worker_id:
+                        updated = self.worker_state_store.fail_poll(self.worker_id, error=str(exc))
+                        if updated is None and isinstance(exc, WorkerLeaseLostError):
+                            stop_reason = "Worker lease lost to another process."
+                            break
+                    raise
+                if worker_enabled and self.worker_id:
+                    updated = self.worker_state_store.complete_poll(self.worker_id, run_count=len(result))
+                    if updated is None:
+                        stop_reason = "Worker lease lost to another process."
+                        break
+                sleep_reason = await self._sleep_until_next_poll(poll)
+                if sleep_reason is not None:
+                    stop_reason = sleep_reason
+                    break
+        finally:
+            if worker_enabled and self.worker_id:
+                self.worker_state_store.mark_stopped(self.worker_id, reason=stop_reason)
+                self.logger.info(
+                    "Worker loop stopped.",
+                    extra={"worker_id": self.worker_id, "worker_mode": self.worker_mode.value},
+                )
 
     async def run_once(self) -> list[RunRecord] | list[DryRunPreview]:
         issues = await self.tracker.list_open_issues()
@@ -230,9 +304,11 @@ class Orchestrator:
         )
 
         try:
+            self._ensure_worker_lease(record=record, stage="preparing workspace")
             workspace = await self.workspace_manager.prepare_workspace(issue, run_id)
             record.workspace_path = str(workspace)
             self.state_store.upsert(record)
+            self._ensure_worker_lease(record=record, stage="building repo context")
             repo_context = build_repo_context(workspace)
             duplicate_candidates = rank_duplicate_candidates(issue, open_issues)
             context = PipelineContext(
@@ -287,62 +363,88 @@ class Orchestrator:
                 f"{triage.summary} {plan.summary} {engineering.summary} "
                 f"{final_review.summary} {policy.summary}"
             )
-            published_pr_url = await self._publish_changes(
-                record=record,
+            publication_draft = self._build_publication_draft(
                 issue=issue,
-                workspace=workspace,
                 triage=triage,
                 plan=plan,
                 engineering=engineering,
                 review=final_review,
                 policy_summary=policy.summary,
-                publication_mode=policy.publication_mode,
+                preview_only=False,
             )
+            published_pr_url = None
+            if policy.publication_mode == PublicationMode.HUMAN_APPROVAL and final_review.decision == ReviewDecision.APPROVE:
+                self._ensure_worker_lease(record=record, stage="staging approval request")
+                record.approval_request = self._create_approval_request(
+                    record=record,
+                    issue=issue,
+                    engineering=engineering,
+                    review=final_review,
+                    draft=publication_draft,
+                    policy_summary=policy.summary,
+                )
+            else:
+                record.approval_request = None
+                self._ensure_worker_lease(record=record, stage="publishing changes")
+                published_pr_url = await self._publish_changes(
+                    record=record,
+                    issue=issue,
+                    workspace=workspace,
+                    triage=triage,
+                    plan=plan,
+                    engineering=engineering,
+                    review=final_review,
+                    policy_summary=policy.summary,
+                    publication_mode=policy.publication_mode,
+                )
+                if published_pr_url:
+                    publication_draft.pr_url = published_pr_url
             self.state_store.upsert(record)
             self.logger.info(
                 "Issue run completed.",
                 extra=self._run_log_extra(record),
             )
 
-            if self.loaded.data.safety.allow_write_comments:
+            if self.loaded.data.safety.allow_write_comments and record.approval_request is None:
+                self._ensure_worker_lease(record=record, stage="posting issue comment")
                 comment_result = await self.tracker.post_comment(
                     issue.id,
-                    self.publication_renderer.render_issue_comment(
-                        self._build_publication_draft(
-                            issue=issue,
-                            triage=triage,
-                            plan=plan,
-                            engineering=engineering,
-                            review=final_review,
-                            policy_summary=policy.summary,
-                            pr_url=published_pr_url,
-                            preview_only=False,
-                        )
-                    ),
+                    self.publication_renderer.render_issue_comment(publication_draft),
                 )
                 record.external_actions.append(comment_result)
                 self.state_store.upsert(record)
             return record
         except Exception as exc:  # noqa: BLE001
-            backoff = self.loaded.data.agent.base_retry_seconds * (2 ** (attempts - 1))
             record.last_error = str(exc)
             record.current_role = None
             record.finished_at = utc_now()
-            if attempts >= self.loaded.data.agent.retry_limit:
-                record.status = RunLifecycle.FAILED
-                record.next_retry_at = None
-            else:
+            if isinstance(exc, WorkerLeaseLostError):
                 record.status = RunLifecycle.RETRY_PENDING
-                record.next_retry_at = utc_now() + timedelta(seconds=backoff)
+                record.next_retry_at = utc_now()
+            else:
+                backoff = self.loaded.data.agent.base_retry_seconds * (2 ** (attempts - 1))
+                if attempts >= self.loaded.data.agent.retry_limit:
+                    record.status = RunLifecycle.FAILED
+                    record.next_retry_at = None
+                else:
+                    record.status = RunLifecycle.RETRY_PENDING
+                    record.next_retry_at = utc_now() + timedelta(seconds=backoff)
             self.state_store.upsert(record)
-            self.logger.error(
-                "Issue run failed.",
-                extra=self._run_log_extra(record),
-                exc_info=exc,
-            )
+            if isinstance(exc, WorkerLeaseLostError):
+                self.logger.warning(
+                    "Issue run requeued after worker lease loss.",
+                    extra=self._run_log_extra(record),
+                )
+            else:
+                self.logger.error(
+                    "Issue run failed.",
+                    extra=self._run_log_extra(record),
+                    exc_info=exc,
+                )
             return record
 
     async def _run_role(self, record: RunRecord, role, context: PipelineContext):
+        self._ensure_worker_lease(record=record, stage=f"starting role {role.name}")
         record.current_role = role.name
         self.state_store.upsert(record)
         self.logger.info(
@@ -350,6 +452,7 @@ class Orchestrator:
             extra=self._run_log_extra(record, role=role.name),
         )
         result, artifacts = await role.run(context)
+        self._ensure_worker_lease(record=record, stage=f"completing role {role.name}")
         record.role_artifacts[role.name] = artifacts["markdown"]
         self.state_store.upsert(record)
         self.logger.info(
@@ -412,6 +515,30 @@ class Orchestrator:
         prefix = "preview" if preview else "run"
         return f"{prefix}-{issue_id}-{stamp}"
 
+    def _new_worker_id(self) -> str:
+        stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+        return f"worker-{os.getpid()}-{stamp}"
+
+    async def _sleep_until_next_poll(self, poll_interval_seconds: int) -> str | None:
+        if poll_interval_seconds <= 0:
+            return None
+        deadline = asyncio.get_running_loop().time() + poll_interval_seconds
+        while True:
+            if self.worker_id:
+                if not self.worker_state_store.holds_lease(self.worker_id):
+                    return "Worker lease lost to another process."
+                if self.worker_state_store.stop_requested(self.worker_id):
+                    return "Stop requested from service control command."
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return None
+            if self.worker_id and self.worker_state_store.heartbeat(
+                self.worker_id,
+                status=WorkerLifecycle.IDLE,
+            ) is None:
+                return "Worker lease lost to another process."
+            await asyncio.sleep(min(1.0, remaining))
+
     async def _publish_changes(
         self,
         record: RunRecord,
@@ -433,6 +560,7 @@ class Orchestrator:
         if review.decision != ReviewDecision.APPROVE:
             return None
 
+        self._ensure_worker_lease(record=record, stage="creating branch")
         branch_result = await self.tracker.create_branch(
             issue_id=issue.id,
             name=self._build_branch_name(issue, record.run_id),
@@ -444,6 +572,7 @@ class Orchestrator:
         if not branch_result.executed:
             return None
 
+        self._ensure_worker_lease(record=record, stage="opening pull request")
         pr_result = await self.tracker.open_pr(
             issue_id=issue.id,
             title=self.publication_renderer.render_pr_title(
@@ -475,6 +604,128 @@ class Orchestrator:
         record.external_actions.append(pr_result)
         self.state_store.upsert(record)
         return pr_result.payload.get("url")
+
+    def _create_approval_request(
+        self,
+        *,
+        record: RunRecord,
+        issue: IssueRef,
+        engineering,
+        review: ReviewResult,
+        draft: PublicationDraft,
+        policy_summary: str,
+    ) -> ApprovalRequest | None:
+        artifact_dir = self.artifacts.role_dir(issue.id, record.run_id)
+        actions: list[ApprovalActionProposal] = []
+
+        if self.loaded.data.safety.allow_write_comments:
+            comment_path = artifact_dir / "approval-comment.md"
+            write_text_file(comment_path, self.publication_renderer.render_issue_comment(draft))
+            record.role_artifacts["approval-comment"] = str(comment_path)
+            actions.append(
+                ApprovalActionProposal(
+                    action="post_comment",
+                    summary="Post the generated issue comment after maintainer approval.",
+                    payload={"artifact_path": str(comment_path)},
+                )
+            )
+
+        if self.loaded.data.safety.allow_open_pr and engineering.changed_files and review.decision == ReviewDecision.APPROVE:
+            branch_name = self._build_branch_name(issue, record.run_id)
+            pr_title = self.publication_renderer.render_pr_title(draft)
+            pr_body_path = artifact_dir / "approval-pr-body.md"
+            pr_metadata_path = artifact_dir / "approval-pr.json"
+            write_text_file(pr_body_path, self.publication_renderer.render_pr_body(draft))
+            write_json_file(
+                pr_metadata_path,
+                {
+                    "issue_id": issue.id,
+                    "branch_name": branch_name,
+                    "title": pr_title,
+                    "draft": True,
+                },
+            )
+            record.role_artifacts["approval-pr-body"] = str(pr_body_path)
+            actions.extend(
+                [
+                    ApprovalActionProposal(
+                        action="create_branch",
+                        summary="Create and push the proposed branch after maintainer approval.",
+                        payload={
+                            "branch_name": branch_name,
+                            "commit_message": f"repoagents: address issue #{issue.id}",
+                        },
+                    ),
+                    ApprovalActionProposal(
+                        action="open_pr",
+                        summary="Open the generated draft pull request after maintainer approval.",
+                        payload={
+                            "title": pr_title,
+                            "body_artifact_path": str(pr_body_path),
+                            "metadata_artifact_path": str(pr_metadata_path),
+                            "draft": True,
+                        },
+                    ),
+                ]
+            )
+
+        if not actions:
+            return None
+
+        request = ApprovalRequest(
+            summary="Maintainer approval is required before RepoAgents performs queued publication actions.",
+            policy_summary=policy_summary,
+            review_summary=review.summary,
+            actions=actions,
+        )
+        request_path = artifact_dir / "approval-request.md"
+        request.request_artifact_path = str(request_path)
+        write_text_file(request_path, self._render_approval_request_markdown(record=record, request=request))
+        write_json_file(artifact_dir / "approval-request.json", request.model_dump(mode="json"))
+        record.role_artifacts["approval-request"] = str(request_path)
+        return request
+
+    def _render_approval_request_markdown(
+        self,
+        *,
+        record: RunRecord,
+        request: ApprovalRequest,
+    ) -> str:
+        lines = [
+            "# Approval Request",
+            "",
+            f"- issue: #{record.issue_id} {record.issue_title}",
+            f"- run_id: {record.run_id}",
+            f"- status: {request.status.value}",
+            f"- requested_at: {request.requested_at.isoformat()}",
+            f"- publication_mode: {request.publication_mode.value}",
+            f"- policy: {request.policy_summary}",
+            f"- review: {request.review_summary}",
+            "",
+            "## Proposed actions",
+        ]
+        for action in request.actions:
+            lines.append(f"- {action.action}: {action.summary}")
+            for key, value in sorted(action.payload.items()):
+                lines.append(f"  - {key}: {value}")
+        return "\n".join(lines) + "\n"
+
+    def _ensure_worker_lease(self, *, record: RunRecord, stage: str) -> None:
+        if self.worker_mode is None or self.worker_id is None:
+            return
+        if self.worker_state_store.holds_lease(self.worker_id):
+            return
+        self.logger.warning(
+            "Worker lease lost; requeueing issue.",
+            extra={
+                "worker_id": self.worker_id,
+                "worker_mode": self.worker_mode.value,
+                "issue_id": record.issue_id,
+                "run_id": record.run_id,
+                "stage": stage,
+            },
+        )
+        raise WorkerLeaseLostError(f"Worker lease lost during {stage}; requeueing current issue.")
 
     def _build_publication_draft(
         self,

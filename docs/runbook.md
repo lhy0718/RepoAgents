@@ -20,7 +20,8 @@ Normal operating flow:
 2. Inspect the latest state with `uv run repoagents status`
 3. Render the local dashboard with `uv run repoagents dashboard`
 4. Run the polling loop with `uv run repoagents run`
-5. Use `uv run repoagents trigger <issue-id>` or `uv run repoagents webhook ...` for targeted intervention
+5. Use `uv run repoagents service start` when you want a detached repo-local worker
+6. Use `uv run repoagents trigger <issue-id>` or `uv run repoagents webhook ...` for targeted intervention
 
 ## Command reference
 
@@ -30,6 +31,10 @@ uv run repoagents doctor --format all
 uv run repoagents run
 uv run repoagents run --once
 uv run repoagents run --dry-run
+uv run repoagents service start
+uv run repoagents service status
+uv run repoagents service restart
+uv run repoagents service stop
 uv run repoagents trigger 123
 uv run repoagents trigger 123 --dry-run
 uv run repoagents webhook --event issues --payload webhook.json --dry-run
@@ -42,7 +47,9 @@ uv run repoagents ops status --format all
 uv run repoagents github smoke --require-write-ready
 uv run repoagents ops snapshot --include-cleanup-preview --include-cleanup-result --include-sync-check --include-sync-repair-preview --archive
 uv run repoagents ops snapshot --archive --history-limit 10 --prune-history
+```
 
+`uv run repoagents service restart` waits for the current worker to stop before launching a replacement. `uv run repoagents service stop` also clears a stale worker record when the saved pid is already gone.
 The command also refreshes:
 
 - `.ai-repoagents/reports/ops/latest.json`
@@ -214,6 +221,8 @@ RepoAgents remains conservative by default:
 - dangerous diffs still require human judgment
 - docs/tests changes may open a draft PR depending on policy, but merge stays manual
 - secrets, CI/CD changes, auth-sensitive paths, and large deletions should be reviewed as incidents
+- use `repoagents approval ls` / `repoagents approval show <issue-id>` to inspect pending publication actions
+- `repoagents approval approve|reject <issue-id>` records the maintainer decision and artifacts; publish remains manual in this slice
 
 ## Recommended routine
 
